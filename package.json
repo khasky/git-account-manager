@@ -1,0 +1,38 @@
+{
+  "name": "git-account-manager",
+  "private": true,
+  "version": "0.1.0",
+  "author": {
+    "name": "Ryan Khasky",
+    "url": "https://github.com/khasky"
+  },
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev:web": "vite",
+    "dev:desktop": "tauri dev",
+    "build:web": "tsc && vite build",
+    "build:desktop": "tauri build",
+    "preview:web": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-autostart": "^2.5.1",
+    "@tauri-apps/plugin-dialog": "^2.7.0",
+    "@tauri-apps/plugin-opener": "^2.5.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.2.2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  },
+  "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
+}
