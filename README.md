@@ -20,9 +20,43 @@ Built with **Tauri v2** (Rust) + **React** + **TypeScript** + **Tailwind CSS**.
 
 ![](./screenshots/git-account-manager-3.png)
 
-## Prerequisites
+## Installation
 
-### Node.js (v18+)
+Download the latest release for your OS from the [Releases](https://github.com/khasky/git-account-manager/releases/) page.
+
+### Quick Start Guide
+
+1. Windows
+
+- Download the .msi installer
+- Run the installer and follow the on-screen instructions
+
+2. macOS
+
+- Download the .dmg file
+- Open the .dmg file
+- Drag the app to your Applications folder
+
+3. Linux
+
+- Download the .AppImage file
+- Make it executable: chmod +x GitAccountManager.AppImage
+- Run it: ./GitAccountManager.AppImage
+
+## Security Notes
+
+- Tokens are stored in plain text in the JSON file
+- This is a simple tool for personal use
+- For enhanced security, consider:
+  - Using SSH keys instead of HTTPS/PAT
+  - Encrypting the storage file
+  - Using a credential manager
+
+## Development
+
+### Prerequisites
+
+#### Node.js (v18+)
 
 Download from [nodejs.org](https://nodejs.org/) or install via winget:
 
@@ -30,13 +64,13 @@ Download from [nodejs.org](https://nodejs.org/) or install via winget:
 winget install OpenJS.NodeJS.LTS
 ```
 
-### pnpm
+#### pnpm
 
 ```bash
 npm install -g pnpm
 ```
 
-### Rust & Cargo
+#### Rust & Cargo
 
 **Windows:**
 
@@ -72,7 +106,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 ```
 
-### Git & ssh-keygen
+#### Git & ssh-keygen
 
 Git must be installed and available in PATH (needed for `git config` and `ssh-keygen`).
 
@@ -81,7 +115,7 @@ git --version
 ssh-keygen -V
 ```
 
-## Install & Run
+### Install & Run
 
 ```bash
 pnpm install
@@ -94,7 +128,7 @@ pnpm install
 | **Web** (browser only, faster UI work; Tauri APIs unavailable) | `pnpm dev:web`     | Vite on [http://localhost:1420](http://localhost:1420)             |
 | **Desktop** (full Tauri shell)                                 | `pnpm dev:desktop` | Same as `pnpm tauri dev`; starts the Vite dev server automatically |
 
-## Build
+### Build
 
 | Target      | Command              | Output                                                               |
 | ----------- | -------------------- | -------------------------------------------------------------------- |
@@ -109,7 +143,7 @@ Installers are generated under `src-tauri/target/release/bundle/`.
 pnpm preview:web
 ```
 
-## IDE Setup
+### IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
 
@@ -166,3 +200,24 @@ After you click **Connect with GitLab**, the browser completes authorization and
 2. Temporarily disable VPN / third-party firewall / HTTPS-scanning antivirus to see if the error disappears (then re-enable and narrow the exception).
 
 **Note:** OAuth in this app targets **GitLab.com** (`gitlab.com`). Self-managed GitLab instances use different hostnames and are not covered by the built-in URLs.
+
+## Future Improvements
+
+- **Authentication options:** support SSH keys and personal access tokens.
+- **Clipboard:** copy SSH public keys to the clipboard from the app.
+- **Per-account keys:** view and manage SSH keys for each saved account.
+- **Bitbucket:** connect **Bitbucket.org** from a profile, alongside GitHub and GitLab.
+
+## Contributing
+
+Contributions are welcome! Here's how you can contribute:
+
+1. Fork the repository.
+2. Create a new branch: `git checkout -b feature-branch-name`.
+3. Make your changes and commit them: `git commit -m 'Add some feature'`.
+4. Push to the branch: `git push origin feature-branch-name`.
+5. Submit a pull request.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](https://github.com/khasky/git-account-manager/blob/main/LICENSE) file for details.
