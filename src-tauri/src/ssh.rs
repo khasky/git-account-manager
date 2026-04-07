@@ -20,10 +20,16 @@ pub fn generate_key(email: &str, key_name: &str) -> Result<SshKeyPair, String> {
         return Err(format!("Key '{}' already exists", key_name));
     }
 
-    let output = Command::new("ssh-keygen")
-        .args(["-t", "ed25519", "-C", email, "-f"])
+    let mut cmd = Command::new("ssh-keygen");
+    cmd.args(["-t", "ed25519", "-C", email, "-f"])
         .arg(&private_path)
-        .args(["-N", ""])
+        .args(["-N", ""]);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let output = cmd
         .output()
         .map_err(|e| format!("Failed to run ssh-keygen: {}", e))?;
 

@@ -1,6 +1,6 @@
 [package]
 name = "git-account-manager"
-version = "0.1.1"
+version = "0.1.2"
 description = "A cross-platform desktop app for managing Git profiles. Switch your Git identity, SSH config, and connected accounts in one click."
 authors = ["https://github.com/khasky"]
 edition = "2021"
