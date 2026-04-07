@@ -137,6 +137,21 @@ pnpm install
 
 Installers are generated under `src-tauri/target/release/bundle/`.
 
+### GitHub releases (CI)
+
+Pushing a **version tag** triggers the [Build & Release](.github/workflows/build.yml) workflow: it builds installers for Windows, Linux, and macOS, then attaches them to a GitHub Release.
+
+1. Bump the version consistently in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`.
+2. Commit and push those changes to `main` (or your default branch).
+3. Create a tag whose name starts with **`v`** (the workflow only publishes on `refs/tags/v*`):
+
+```bash
+git tag v0.1.0   # same version as in tauri/package
+git push origin v0.1.0
+```
+
+Pushes to `main` or pull requests still run the build jobs, but the **release** job runs **only** on a tag push like the above. If you run the workflow manually from the Actions tab, the release step is skipped for the same reason (the ref is a branch, not a tag).
+
 **Preview production web build**
 
 ```bash
