@@ -1,8 +1,8 @@
 [package]
 name = "git-account-manager"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "0.1.1"
+description = "A cross-platform desktop app for managing Git profiles. Switch your Git identity, SSH config, and connected accounts in one click."
+authors = ["https://github.com/khasky"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -32,4 +32,5 @@ open = "5"
 urlencoding = "2"
 tokio = { version = "1", features = ["rt"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-clipboard-manager = "2"
 

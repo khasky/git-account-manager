@@ -134,9 +134,19 @@ export default function ProfileForm({
   const [glCountdown, setGlCountdown] = useState(0);
   const glCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const glCancelledRef = useRef(false);
+  const glConnectingRef = useRef(false);
+
+  useEffect(() => {
+    glConnectingRef.current = gl.connecting;
+  }, [gl.connecting]);
+
+  function abortGitLabOAuthBackend() {
+    void invoke("gitlab_oauth_abort").catch(() => {});
+  }
 
   function cancelGitLabAuth() {
     glCancelledRef.current = true;
+    abortGitLabOAuthBackend();
     if (glCountdownRef.current) {
       clearInterval(glCountdownRef.current);
       glCountdownRef.current = null;
@@ -145,13 +155,35 @@ export default function ProfileForm({
     updateGl({ connecting: false, error: "" });
   }
 
+  function handleProfileCancel() {
+    if (gl.connecting) {
+      glCancelledRef.current = true;
+      abortGitLabOAuthBackend();
+      if (glCountdownRef.current) {
+        clearInterval(glCountdownRef.current);
+        glCountdownRef.current = null;
+      }
+      setGlCountdown(0);
+      updateGl({ connecting: false, error: "" });
+    }
+    if (gh.connecting || gh.deviceCode) {
+      cancelGitHubAuth();
+    }
+    onCancel();
+  }
+
+  const handleProfileCancelRef = useRef(handleProfileCancel);
+  handleProfileCancelRef.current = handleProfileCancel;
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !disconnectTarget) onCancel();
+      if (e.key === "Escape" && !disconnectTarget) {
+        handleProfileCancelRef.current();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onCancel, disconnectTarget]);
+  }, [disconnectTarget]);
 
   useEffect(() => {
     invoke<SshKeyInfo[]>("list_ssh_keys")
@@ -165,6 +197,9 @@ export default function ProfileForm({
       if (ghTimeoutRef.current) clearTimeout(ghTimeoutRef.current);
       if (ghCountdownRef.current) clearInterval(ghCountdownRef.current);
       if (glCountdownRef.current) clearInterval(glCountdownRef.current);
+      if (glConnectingRef.current) {
+        void invoke("gitlab_oauth_abort").catch(() => {});
+      }
     };
   }, []);
 
@@ -525,6 +560,12 @@ export default function ProfileForm({
                     </button>
                   )}
                 </div>
+                {platform === "gitlab" && (
+                  <p className="text-xs text-fg-5">
+                    The sign-in link was copied to your clipboard — paste it in
+                    a browser if the page did not open.
+                  </p>
+                )}
               </div>
             ) : (
               <button
@@ -788,7 +829,10 @@ export default function ProfileForm({
           <h2 className="text-lg font-semibold text-fg">
             {isEdit ? "Edit Profile" : "New Profile"}
           </h2>
-          <button onClick={onCancel} className="text-fg-4 hover:text-fg-2">
+          <button
+            onClick={handleProfileCancel}
+            className="text-fg-4 hover:text-fg-2"
+          >
             <svg
               className="h-5 w-5"
               fill="none"
@@ -882,7 +926,7 @@ export default function ProfileForm({
             {saving ? "Saving..." : isEdit ? "Save Changes" : "Create Profile"}
           </button>
           <button
-            onClick={onCancel}
+            onClick={handleProfileCancel}
             className="rounded-md bg-subtle px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:bg-hover"
           >
             Cancel

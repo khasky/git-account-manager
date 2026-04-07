@@ -5,6 +5,8 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 // --------------- GitHub Device Flow ---------------
 
@@ -98,7 +100,7 @@ pub fn build_gitlab_auth_url(client_id: &str, redirect_uri: &str, challenge: &st
 pub const GITLAB_CALLBACK_PORT: u16 = 19847;
 const GITLAB_CALLBACK_TIMEOUT_SECS: u64 = 120;
 
-pub fn wait_for_callback(listener: TcpListener) -> Result<String, String> {
+pub fn wait_for_callback(listener: TcpListener, cancel: Arc<AtomicBool>) -> Result<String, String> {
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let deadline = std::time::Instant::now()
         + std::time::Duration::from_secs(GITLAB_CALLBACK_TIMEOUT_SECS);
@@ -107,6 +109,9 @@ pub fn wait_for_callback(listener: TcpListener) -> Result<String, String> {
         match listener.accept() {
             Ok((s, _)) => break s,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if cancel.load(Ordering::SeqCst) {
+                    return Err("Authorization cancelled.".to_string());
+                }
                 if std::time::Instant::now() > deadline {
                     return Err("Authorization timed out. Please try again.".to_string());
                 }

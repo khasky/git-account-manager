@@ -1,6 +1,6 @@
 # Git Account Manager
 
-Cross-platform desktop app for managing multiple GitHub/GitLab accounts. Switch SSH keys, git identity, and platform connections in one click.
+A cross-platform desktop app for managing Git profiles. Switch your Git identity, SSH config, and connected accounts in one click.
 
 Built with **Tauri v2** (Rust) + **React** + **TypeScript** + **Tailwind CSS**.
 

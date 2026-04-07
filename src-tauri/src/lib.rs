@@ -5,7 +5,11 @@ mod platform;
 mod ssh;
 mod storage;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+
 use tauri::Manager;
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use git::GitIdentity;
 use models::{DeviceCodeResponse, OAuthSettings, PlatformUser, Profile, SshKeyInfo, SshKeyPair};
@@ -169,8 +173,44 @@ async fn github_oauth_poll(
 
 // ---- OAuth: GitLab PKCE ----
 
+fn gitlab_oauth_cancel_slot() -> &'static Mutex<Option<Arc<AtomicBool>>> {
+    static SLOT: OnceLock<Mutex<Option<Arc<AtomicBool>>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(None))
+}
+
+fn register_gitlab_oauth_cancel(flag: Arc<AtomicBool>) {
+    if let Ok(mut g) = gitlab_oauth_cancel_slot().lock() {
+        *g = Some(flag);
+    }
+}
+
+fn clear_gitlab_oauth_cancel_slot() {
+    if let Ok(mut g) = gitlab_oauth_cancel_slot().lock() {
+        *g = None;
+    }
+}
+
 #[tauri::command]
-async fn gitlab_oauth_connect(client_id: String) -> Result<String, String> {
+fn gitlab_oauth_abort() {
+    if let Ok(guard) = gitlab_oauth_cancel_slot().lock() {
+        if let Some(flag) = guard.as_ref() {
+            flag.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+#[tauri::command]
+async fn gitlab_oauth_connect(app: tauri::AppHandle, client_id: String) -> Result<String, String> {
+    let cancel = Arc::new(AtomicBool::new(false));
+    register_gitlab_oauth_cancel(cancel.clone());
+    struct ClearGitlabOauthSlot;
+    impl Drop for ClearGitlabOauthSlot {
+        fn drop(&mut self) {
+            clear_gitlab_oauth_cancel_slot();
+        }
+    }
+    let _clear_slot = ClearGitlabOauthSlot;
+
     let (verifier, challenge) = oauth::generate_pkce();
 
     let port = oauth::GITLAB_CALLBACK_PORT;
@@ -180,11 +220,16 @@ async fn gitlab_oauth_connect(client_id: String) -> Result<String, String> {
 
     let auth_url = oauth::build_gitlab_auth_url(&client_id, &redirect_uri, &challenge);
 
+    let _ = app.clipboard().write_text(auth_url.clone());
+
     open::that(&auth_url).map_err(|e| format!("Failed to open browser: {}", e))?;
 
-    let code = tokio::task::spawn_blocking(move || oauth::wait_for_callback(listener))
-        .await
-        .map_err(|e| e.to_string())??;
+    let cancel_for_wait = cancel.clone();
+    let code = tokio::task::spawn_blocking(move || {
+        oauth::wait_for_callback(listener, cancel_for_wait)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     oauth::gitlab_exchange_code(&client_id, &code, &redirect_uri, &verifier).await
 }
@@ -225,6 +270,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -299,6 +345,7 @@ pub fn run() {
             github_oauth_start,
             github_oauth_poll,
             gitlab_oauth_connect,
+            gitlab_oauth_abort,
             get_settings,
             save_settings,
             get_git_identity,
