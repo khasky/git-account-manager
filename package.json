@@ -1,0 +1,101 @@
+{
+  "name": "git-account-manager",
+  "private": true,
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": {
+    "name": "Khasky",
+    "url": "https://github.com/khasky"
+  },
+  "description": "A desktop Git account manager for identity switching across popular code hosting platforms.",
+  "keywords": [
+    "git",
+    "git-config",
+    "account-manager",
+    "identity",
+    "ssh",
+    "ssh-keys",
+    "github",
+    "gitlab",
+    "bitbucket",
+    "tauri",
+    "desktop-app"
+  ],
+  "homepage": "https://github.com/khasky/git-account-manager",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khasky/git-account-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/khasky/git-account-manager/issues"
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/khasky"
+    },
+    {
+      "type": "patreon",
+      "url": "https://www.patreon.com/khasky"
+    },
+    {
+      "type": "ko-fi",
+      "url": "https://ko-fi.com/khasky"
+    }
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev:web": "vite",
+    "dev:desktop": "tauri dev",
+    "build:web": "tsc && vite build",
+    "build:desktop": "tauri build",
+    "build:desktop:signed": "tauri build --config src-tauri/tauri.updater.conf.json",
+    "preview:web": "vite preview",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "check:tauri": "node scripts/check-tauri-parity.mjs",
+    "screenshots": "node scripts/screenshots/capture.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "tauri": "tauri",
+    "release": "commit-and-tag-version",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-autostart": "^2.5.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.2.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "@tauri-apps/cli": "^2.11.4",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.3.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "commit-and-tag-version": "^12.7.3",
+    "husky": "^9.1.7",
+    "jsdom": "^30.0.1",
+    "playwright": "^1.62.1",
+    "typescript": "~5.8.3",
+    "vite": "^7.3.5",
+    "vitest": "^4.1.11"
+  },
+  "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
+}
