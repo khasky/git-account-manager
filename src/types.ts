@@ -38,6 +38,14 @@ export interface PlatformUser {
 export interface OAuthSettings {
   github_client_id: string;
   gitlab_client_id: string;
+  /** Windows: use OpenSSH for TortoiseGit + Git CLI (registry + core.sshCommand). */
+  use_openssh_for_git_tools: boolean;
+}
+
+/** Result of `openssh_integration_probe` — Windows-only integration. */
+export interface OpenSshIntegrationProbe {
+  available: boolean;
+  sshExe: string | null;
 }
 
 export interface DeviceCodeResponse {

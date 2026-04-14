@@ -49,6 +49,9 @@ pub struct OAuthSettings {
     pub github_client_id: String,
     #[serde(default = "default_gitlab_client_id")]
     pub gitlab_client_id: String,
+    /// When true (Windows only), write TortoiseGit SSH client registry value and set Git `core.sshCommand` to OpenSSH so `~/.ssh/config` applies everywhere.
+    #[serde(default)]
+    pub use_openssh_for_git_tools: bool,
 }
 
 impl Default for OAuthSettings {
@@ -56,6 +59,7 @@ impl Default for OAuthSettings {
         Self {
             github_client_id: default_github_client_id(),
             gitlab_client_id: default_gitlab_client_id(),
+            use_openssh_for_git_tools: false,
         }
     }
 }

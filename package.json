@@ -1,9 +1,9 @@
 {
   "name": "git-account-manager",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "author": {
-    "name": "Ryan Khasky",
+    "name": "Khasky",
     "url": "https://github.com/khasky"
   },
   "license": "MIT",

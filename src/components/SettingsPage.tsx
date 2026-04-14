@@ -6,11 +6,24 @@ import {
   disable as disableAutostart,
   isEnabled as isAutostartEnabled,
 } from "@tauri-apps/plugin-autostart";
-import { OAuthSettings } from "../types";
+import { OAuthSettings, OpenSshIntegrationProbe } from "../types";
 import { useTheme } from "../ThemeContext";
 
 interface Props {
   onBack: () => void;
+}
+
+function formatInvokeError(e: unknown): string {
+  if (typeof e === "string") return e;
+  if (
+    e &&
+    typeof e === "object" &&
+    "message" in e &&
+    typeof (e as { message: unknown }).message === "string"
+  ) {
+    return (e as { message: string }).message;
+  }
+  return "Could not save settings. Try again.";
 }
 
 const SunIcon = () => (
@@ -64,9 +77,14 @@ const MonitorIcon = () => (
 export default function SettingsPage({ onBack }: Props) {
   const [githubId, setGithubId] = useState("");
   const [gitlabId, setGitlabId] = useState("");
+  const [useOpenSsh, setUseOpenSsh] = useState(false);
+  const [openSshProbe, setOpenSshProbe] = useState<OpenSshIntegrationProbe | null>(
+    null,
+  );
   const [autostart, setAutostart] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const { preference, setPreference } = useTheme();
 
   useEffect(() => {
@@ -74,8 +92,12 @@ export default function SettingsPage({ onBack }: Props) {
       .then((s) => {
         setGithubId(s.github_client_id);
         setGitlabId(s.gitlab_client_id);
+        setUseOpenSsh(Boolean(s.use_openssh_for_git_tools));
       })
       .catch(() => {});
+    invoke<OpenSshIntegrationProbe>("openssh_integration_probe")
+      .then(setOpenSshProbe)
+      .catch(() => setOpenSshProbe({ available: false, sshExe: null }));
     isAutostartEnabled()
       .then(setAutostart)
       .catch(() => {});
@@ -105,17 +127,23 @@ export default function SettingsPage({ onBack }: Props) {
 
   async function handleSave() {
     setSaving(true);
+    setSaveError("");
     try {
       await invoke("save_settings", {
         settings: {
           github_client_id: githubId.trim(),
           gitlab_client_id: gitlabId.trim(),
+          use_openssh_for_git_tools: useOpenSsh,
         },
       });
+      const probe = await invoke<OpenSshIntegrationProbe>(
+        "openssh_integration_probe",
+      );
+      setOpenSshProbe(probe);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setSaveError(formatInvokeError(e));
     } finally {
       setSaving(false);
     }
@@ -200,6 +228,75 @@ export default function SettingsPage({ onBack }: Props) {
             </button>
           </div>
         </div>
+
+        {/* TortoiseGit + Git: OpenSSH (Windows) */}
+        {openSshProbe?.available ? (
+          <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
+            <h3 className="font-medium text-fg-2">
+              TortoiseGit and command-line Git
+            </h3>
+            <p className="text-xs text-fg-4 leading-relaxed">
+              TortoiseGit normally uses TortoiseGitPlink, which does not read your
+              OpenSSH <code className="text-fg-3">%USERPROFILE%\.ssh\config</code>{" "}
+              the same way. Turn this on to point TortoiseGit at{" "}
+              <code className="text-fg-3">ssh.exe</code> and set Git&apos;s global{" "}
+              <code className="text-fg-3">core.sshCommand</code>, so the SSH keys
+              and hosts managed here work in both places.
+            </p>
+            {openSshProbe.sshExe ? (
+              <p className="text-xs text-fg-5">
+                Detected OpenSSH:{" "}
+                <code className="break-all text-fg-3">{openSshProbe.sshExe}</code>
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                No <code className="text-fg-3">ssh.exe</code> was found in usual
+                locations. Install{" "}
+                <a
+                  className="text-link hover:text-link-hover"
+                  href="https://git-scm.com/download/win"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Git for Windows
+                </a>{" "}
+                or enable the OpenSSH optional feature in Windows Settings before
+                turning this on.
+              </p>
+            )}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-fg-3">Use OpenSSH everywhere</p>
+                <p className="text-xs text-fg-5">
+                  Writes TortoiseGit&apos;s SSH client path and{" "}
+                  <code className="text-fg-4">core.sshCommand</code>. Turning off
+                  removes that registry value and unsets{" "}
+                  <code className="text-fg-4">core.sshCommand</code>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUseOpenSsh(!useOpenSsh)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                  useOpenSsh ? "bg-emerald-600" : "bg-toggle-off"
+                }`}
+                aria-pressed={useOpenSsh}
+              >
+                <span
+                  className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                    useOpenSsh ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+            {useOpenSsh && !openSshProbe.sshExe ? (
+              <p className="text-xs text-red-600 dark:text-red-400">
+                Saving with this enabled will fail until OpenSSH (
+                <code className="text-fg-3">ssh.exe</code>) is available.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* GitHub OAuth */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
@@ -294,6 +391,11 @@ export default function SettingsPage({ onBack }: Props) {
           {saving ? "Saving..." : "Save Settings"}
         </button>
         {saved && <span className="text-sm text-success-fg">Saved!</span>}
+        {saveError ? (
+          <span className="max-w-md text-sm text-red-600 dark:text-red-400">
+            {saveError}
+          </span>
+        ) : null}
       </div>
     </div>
   );

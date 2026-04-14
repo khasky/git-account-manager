@@ -12,7 +12,7 @@ Built with **Tauri v2** (Rust) + **React** + **TypeScript** + **Tailwind CSS**.
 - **OAuth sign-in** — **GitHub** via device code flow; **GitLab.com** via browser authorization and PKCE (local callback). OAuth app **Client / Application IDs** are configurable in Settings (with built-in defaults).
 - **SSH keys** — Generate **Ed25519** keys with `ssh-keygen`, attach an existing key from `~/.ssh`, **upload** keys to GitHub/GitLab, and optionally **remove** keys from the host when deleting a profile.
 - **System tray** — Closing the window hides the app; restore or quit from the tray menu.
-- **Settings** — OAuth credentials, **launch at login** (autostart), and **light / dark / system** theme.
+- **Settings** — OAuth credentials, **launch at login** (autostart), and **light / dark / system** theme, optional **OpenSSH** mode for **TortoiseGit** and **Git CLI**.
 
 ![](./screenshots/git-account-manager-1.png)
 

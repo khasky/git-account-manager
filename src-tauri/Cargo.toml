@@ -1,6 +1,6 @@
 [package]
 name = "git-account-manager"
-version = "0.1.2"
+version = "0.1.3"
 description = "A cross-platform desktop app for managing Git profiles. Switch your Git identity, SSH config, and connected accounts in one click."
 authors = ["https://github.com/khasky"]
 edition = "2021"
@@ -33,4 +33,7 @@ urlencoding = "2"
 tokio = { version = "1", features = ["rt"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
 

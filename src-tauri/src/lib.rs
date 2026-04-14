@@ -1,6 +1,7 @@
 mod git;
 mod models;
 mod oauth;
+mod openssh_integration;
 mod platform;
 mod ssh;
 mod storage;
@@ -251,9 +252,24 @@ fn get_settings() -> Result<OAuthSettings, String> {
 
 #[tauri::command]
 fn save_settings(settings: OAuthSettings) -> Result<(), String> {
+    #[cfg(windows)]
+    if settings.use_openssh_for_git_tools {
+        openssh_integration::ensure_ssh_available()?;
+    }
+
     let mut state = storage::load_state();
     state.oauth = settings;
-    storage::save_state(&state)
+    storage::save_state(&state)?;
+
+    #[cfg(windows)]
+    openssh_integration::apply(state.oauth.use_openssh_for_git_tools)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn openssh_integration_probe() -> openssh_integration::OpenSshIntegrationProbe {
+    openssh_integration::probe()
 }
 
 // ---- Git Identity ----
@@ -276,6 +292,14 @@ pub fn run() {
             None,
         ))
         .setup(|app| {
+            #[cfg(windows)]
+            {
+                let state = storage::load_state();
+                if state.oauth.use_openssh_for_git_tools {
+                    let _ = openssh_integration::apply(true);
+                }
+            }
+
             use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
             use tauri::tray::TrayIconBuilder;
 
@@ -348,6 +372,7 @@ pub fn run() {
             gitlab_oauth_abort,
             get_settings,
             save_settings,
+            openssh_integration_probe,
             get_git_identity,
         ])
         .run(tauri::generate_context!())
