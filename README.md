@@ -10,7 +10,7 @@ Built with **Tauri v2** (Rust) + **React** + **TypeScript** + **Tailwind CSS**.
 - **One-click activation** — Activating a profile updates **global** `git config user.name` and `user.email`, and rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** uses that profile's key.
 - **Default platform** — If both GitHub and GitLab are connected, choose which account supplies the active **git identity** (name/email).
 - **OAuth sign-in** — **GitHub** via device code flow; **GitLab.com** via browser authorization and PKCE (local callback). OAuth app **Client / Application IDs** are configurable in Settings (with built-in defaults).
-- **SSH keys** — Generate **Ed25519** keys with `ssh-keygen`, attach an existing key from `~/.ssh`, **upload** keys to GitHub/GitLab, and optionally **remove** keys from the host when deleting a profile.
+- **SSH keys** — Generate **Ed25519** keys with `ssh-keygen`, attach an existing key from `~/.ssh`, **upload** keys to GitHub/GitLab, optionally **remove** keys from the host when deleting a profile, and **copy a public key** to the clipboard from the profile editor.
 - **System tray** — Closing the window hides the app; restore or quit from the tray menu.
 - **Settings** — OAuth credentials, **launch at login** (autostart), and **light / dark / system** theme, optional **OpenSSH** mode for **TortoiseGit** and **Git CLI**.
 
@@ -211,15 +211,14 @@ After you click **Connect with GitLab**, the browser completes authorization and
 
 **Quick checks**
 
-1. In a terminal on the same PC: `curl -I https://gitlab.com/oauth/token` (or open the URL in a browser; you may get a method-not-allowed response—that still proves reachability).
+1. In a terminal on the same PC: `curl -I https://gitlab.com/oauth/token` (or open the URL in a browser; you may get a method-not-allowed response, that still proves reachability).
 2. Temporarily disable VPN / third-party firewall / HTTPS-scanning antivirus to see if the error disappears (then re-enable and narrow the exception).
 
 **Note:** OAuth in this app targets **GitLab.com** (`gitlab.com`). Self-managed GitLab instances use different hostnames and are not covered by the built-in URLs.
 
 ## Future Improvements
 
-- **Authentication options:** support SSH keys and personal access tokens.
-- **Clipboard:** copy SSH public keys to the clipboard from the app.
+- **Authentication options:** support personal access tokens.
 - **Per-account keys:** view and manage SSH keys for each saved account.
 - **Bitbucket:** connect **Bitbucket.org** from a profile, alongside GitHub and GitLab.
 

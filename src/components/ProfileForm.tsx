@@ -11,6 +11,24 @@ import {
   DeviceCodeResponse,
 } from "../types";
 import ConfirmDialog, { DialogAction } from "./ConfirmDialog";
+import { copySshPublicKey } from "../copySshPublicKey";
+
+const CopyIcon = () => (
+  <svg
+    className="h-3.5 w-3.5"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2}
+    aria-hidden
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+    />
+  </svg>
+);
 
 interface Props {
   profile: Profile | null;
@@ -108,6 +126,8 @@ export default function ProfileForm({
   } | null>(null);
   const [error, setError] = useState("");
   const [settings, setSettings] = useState<OAuthSettings | null>(null);
+  const [copiedPublicPath, setCopiedPublicPath] = useState<string | null>(null);
+  const copyHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const ghPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ghTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,6 +159,26 @@ export default function ProfileForm({
   useEffect(() => {
     glConnectingRef.current = gl.connecting;
   }, [gl.connecting]);
+
+  useEffect(() => {
+    return () => {
+      if (copyHintTimerRef.current) clearTimeout(copyHintTimerRef.current);
+    };
+  }, []);
+
+  async function handleCopyPublicKey(publicKeyPath: string) {
+    try {
+      await copySshPublicKey(publicKeyPath);
+      if (copyHintTimerRef.current) clearTimeout(copyHintTimerRef.current);
+      setCopiedPublicPath(publicKeyPath);
+      copyHintTimerRef.current = setTimeout(() => {
+        setCopiedPublicPath(null);
+        copyHintTimerRef.current = null;
+      }, 2000);
+    } catch {
+      /* ignore */
+    }
+  }
 
   function abortGitLabOAuthBackend() {
     void invoke("gitlab_oauth_abort").catch(() => {});
@@ -646,24 +686,40 @@ export default function ProfileForm({
             <div>
               <label className="mb-1 block text-xs text-fg-4">SSH Key</label>
               {section.sshPrivateKeyPath && section.keyUploaded ? (
-                <div className="flex items-center gap-2 rounded-md border border-active-border bg-active-bg px-3 py-2">
-                  <svg
-                    className="h-4 w-4 text-success-icon"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                  <span className="text-xs text-success-fg">
-                    {section.sshPrivateKeyPath.split(/[\\/]/).pop()} — uploaded
-                    to {label}
-                  </span>
+                <div className="flex flex-col gap-2 rounded-md border border-active-border bg-active-bg px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <svg
+                      className="h-4 w-4 shrink-0 text-success-icon"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                    <span className="text-xs text-success-fg">
+                      {section.sshPrivateKeyPath.split(/[\\/]/).pop()} — uploaded
+                      to {label}
+                    </span>
+                  </div>
+                  {section.sshPublicKeyPath ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopyPublicKey(section.sshPublicKeyPath)
+                      }
+                      className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-bd-s bg-input px-2.5 py-1 text-xs font-medium text-fg-2 transition-colors hover:bg-hover"
+                    >
+                      <CopyIcon />
+                      {copiedPublicPath === section.sshPublicKeyPath
+                        ? "Copied"
+                        : "Copy public key"}
+                    </button>
+                  ) : null}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -700,17 +756,37 @@ export default function ProfileForm({
                       ) : (
                         <div className="max-h-28 space-y-1 overflow-y-auto">
                           {sshKeys.map((k) => (
-                            <button
+                            <div
                               key={k.private_key_path}
-                              onClick={() => selectKey(k, update)}
-                              className={`w-full rounded-md border px-2 py-1.5 text-left text-xs transition-colors ${
-                                section.selectedKey === k.private_key_path
-                                  ? "border-selected-border bg-selected-bg text-selected-fg"
-                                  : "border-bd-s bg-input text-fg-3 hover:border-bd-s"
-                              }`}
+                              className="flex gap-1"
                             >
-                              {k.name}
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => selectKey(k, update)}
+                                className={`min-w-0 flex-1 rounded-md border px-2 py-1.5 text-left text-xs transition-colors ${
+                                  section.selectedKey === k.private_key_path
+                                    ? "border-selected-border bg-selected-bg text-selected-fg"
+                                    : "border-bd-s bg-input text-fg-3 hover:border-bd-s"
+                                }`}
+                              >
+                                {k.name}
+                              </button>
+                              <button
+                                type="button"
+                                title="Copy public key"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleCopyPublicKey(k.public_key_path);
+                                }}
+                                className={`flex shrink-0 items-center justify-center rounded-md border px-2 py-1.5 transition-colors ${
+                                  copiedPublicPath === k.public_key_path
+                                    ? "border-selected-border bg-selected-bg text-selected-fg"
+                                    : "border-bd-s bg-input text-fg-4 hover:border-bd-s hover:text-fg-2"
+                                }`}
+                              >
+                                <CopyIcon />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       )}
