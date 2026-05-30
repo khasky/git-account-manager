@@ -164,6 +164,28 @@ pnpm preview:web
 
 ## Troubleshooting
 
+### Windows: "Windows protected your PC" (SmartScreen) when running the installer
+
+When you launch the Windows installer (`Git.Account.Manager_<version>_x64_en-US.msi`), Microsoft Defender SmartScreen may show a blue full-screen dialog titled **"Windows protected your PC"**, with the message *"Microsoft Defender SmartScreen prevented an unrecognized app from starting"* and **Publisher: Unknown publisher**.
+
+This is **not** a malware detection. SmartScreen is **reputation-based**: it warns about any installer that is **not signed with a paid code-signing certificate** or that has not yet accumulated enough download "reputation" with Microsoft. The Git Account Manager installer is currently **unsigned** — adding a code-signing certificate is a planned step, not an indication that the app is unsafe.
+
+**Why you can trust it**
+
+| Reason | Detail |
+| ------ | ------ |
+| **Open source** | The full source code is public on [GitHub](https://github.com/khasky/git-account-manager) and licensed under **MIT** — anyone can read, audit, or rebuild it. |
+| **Reproducible builds** | Official installers are produced automatically by the [GitHub Actions release workflow](.github/workflows/build.yml) from that public source, not handcrafted on a developer's machine. |
+| **Official source only** | Download installers **only** from the [GitHub Releases](https://github.com/khasky/git-account-manager/releases) page. Never trust a copy from a third-party mirror. |
+
+**How to continue the installation**
+
+1. In the SmartScreen dialog, click **More info** (skip this if the **Run anyway** button is already shown, as in the expanded view).
+2. Confirm the app name is **Git Account Manager** and the file matches the one downloaded from GitHub Releases.
+3. Click **Run anyway** to proceed with the installation.
+
+The warning typically disappears for everyone once the installer is code-signed or has earned enough SmartScreen reputation over time.
+
 ### GitHub: `GitHub device code error: {"error":"Not Found"}`
 
 This is returned when GitHub responds with an error to the **device authorization** request (`POST https://github.com/login/device/code`). The app shows the response body from GitHub; `Not Found` usually means GitHub does not accept the **Client ID** or the app is not set up for this flow.

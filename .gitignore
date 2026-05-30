@@ -49,3 +49,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+_todo/
