@@ -49,4 +49,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-_todo/
+.code-review-graph
+_todo
