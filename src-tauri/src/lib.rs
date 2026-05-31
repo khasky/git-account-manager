@@ -19,12 +19,12 @@ use models::{DeviceCodeResponse, OAuthSettings, PlatformUser, Profile, SshKeyInf
 
 #[tauri::command]
 fn get_profiles() -> Result<Vec<Profile>, String> {
-    Ok(storage::load_state().profiles)
+    Ok(storage::load_state()?.profiles)
 }
 
 #[tauri::command]
 fn save_profile(mut profile: Profile) -> Result<(), String> {
-    let mut state = storage::load_state();
+    let mut state = storage::load_state()?;
     let is_new = !state.profiles.iter().any(|p| p.id == profile.id);
     let has_active = state.profiles.iter().any(|p| p.is_active);
 
@@ -50,7 +50,7 @@ fn save_profile(mut profile: Profile) -> Result<(), String> {
 
 #[tauri::command]
 fn delete_profile(id: String) -> Result<(), String> {
-    let state = storage::load_state();
+    let state = storage::load_state()?;
     let has_github_remaining = state.profiles.iter().any(|p| p.id != id && p.github.is_some());
     let has_gitlab_remaining = state.profiles.iter().any(|p| p.id != id && p.gitlab.is_some());
 
@@ -69,7 +69,7 @@ fn delete_profile(id: String) -> Result<(), String> {
 
 #[tauri::command]
 fn activate_profile(id: String) -> Result<(), String> {
-    let mut state = storage::load_state();
+    let mut state = storage::load_state()?;
     for p in &mut state.profiles {
         p.is_active = p.id == id;
     }
@@ -270,7 +270,7 @@ async fn gitlab_oauth_connect(app: tauri::AppHandle, client_id: String) -> Resul
 
 #[tauri::command]
 fn get_settings() -> Result<OAuthSettings, String> {
-    let mut oauth = storage::load_state().oauth;
+    let mut oauth = storage::load_state()?.oauth;
     let defaults = OAuthSettings::default();
     if oauth.github_client_id.is_empty() {
         oauth.github_client_id = defaults.github_client_id;
@@ -288,7 +288,7 @@ fn save_settings(settings: OAuthSettings) -> Result<(), String> {
         openssh_integration::ensure_ssh_available()?;
     }
 
-    let mut state = storage::load_state();
+    let mut state = storage::load_state()?;
     state.oauth = settings;
     storage::save_state(&state)?;
 
@@ -325,8 +325,10 @@ pub fn run() {
         .setup(|app| {
             #[cfg(windows)]
             {
-                let state = storage::load_state();
-                if state.oauth.use_openssh_for_git_tools {
+                let openssh_enabled = storage::load_state()
+                    .map(|s| s.oauth.use_openssh_for_git_tools)
+                    .unwrap_or(false);
+                if openssh_enabled {
                     let _ = openssh_integration::apply(true);
                 }
             }
