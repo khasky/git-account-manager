@@ -8,12 +8,13 @@ import {
 } from "@tauri-apps/plugin-autostart";
 import { OAuthSettings, OpenSshIntegrationProbe } from "../types";
 import { useTheme } from "../ThemeContext";
+import { useI18n, fmt, rich, LANGUAGES, type LangCode } from "../i18n";
 
 interface Props {
   onBack: () => void;
 }
 
-function formatInvokeError(e: unknown): string {
+function formatInvokeError(e: unknown, fallback: string): string {
   if (typeof e === "string") return e;
   if (
     e &&
@@ -23,7 +24,7 @@ function formatInvokeError(e: unknown): string {
   ) {
     return (e as { message: string }).message;
   }
-  return "Could not save settings. Try again.";
+  return fallback;
 }
 
 const SunIcon = () => (
@@ -86,6 +87,7 @@ export default function SettingsPage({ onBack }: Props) {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const { preference, setPreference } = useTheme();
+  const { m, lang, setLang } = useI18n();
 
   useEffect(() => {
     invoke<OAuthSettings>("get_settings")
@@ -143,16 +145,16 @@ export default function SettingsPage({ onBack }: Props) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      setSaveError(formatInvokeError(e));
+      setSaveError(formatInvokeError(e, m.settings.saveError));
     } finally {
       setSaving(false);
     }
   }
 
   const themeOptions = [
-    { value: "light" as const, label: "Light", icon: <SunIcon /> },
-    { value: "dark" as const, label: "Dark", icon: <MoonIcon /> },
-    { value: "system" as const, label: "System", icon: <MonitorIcon /> },
+    { value: "light" as const, label: m.theme.light, icon: <SunIcon /> },
+    { value: "dark" as const, label: m.theme.dark, icon: <MoonIcon /> },
+    { value: "system" as const, label: m.theme.system, icon: <MonitorIcon /> },
   ];
 
   return (
@@ -173,20 +175,18 @@ export default function SettingsPage({ onBack }: Props) {
             />
           </svg>
         </button>
-        <h2 className="text-lg font-semibold text-fg">Settings</h2>
+        <h2 className="text-lg font-semibold text-fg">{m.settings.title}</h2>
       </div>
 
       <div className="flex-1 space-y-6 overflow-y-auto p-6">
         {/* General */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
-          <h3 className="font-medium text-fg-2">General</h3>
+          <h3 className="font-medium text-fg-2">{m.settings.general}</h3>
 
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-fg-3">Theme</p>
-              <p className="text-xs text-fg-5">
-                Choose light, dark, or match your system
-              </p>
+              <p className="text-sm text-fg-3">{m.settings.theme}</p>
+              <p className="text-xs text-fg-5">{m.settings.themeHint}</p>
             </div>
             <div className="flex rounded-lg border border-bd">
               {themeOptions.map((opt) => (
@@ -209,10 +209,8 @@ export default function SettingsPage({ onBack }: Props) {
 
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-fg-3">Launch at system startup</p>
-              <p className="text-xs text-fg-5">
-                App starts minimized to system tray
-              </p>
+              <p className="text-sm text-fg-3">{m.settings.autostart}</p>
+              <p className="text-xs text-fg-5">{m.settings.autostartHint}</p>
             </div>
             <button
               onClick={toggleAutostart}
@@ -227,51 +225,56 @@ export default function SettingsPage({ onBack }: Props) {
               />
             </button>
           </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-fg-3">{m.settings.language}</p>
+              <p className="text-xs text-fg-5">{m.settings.languageHint}</p>
+            </div>
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value as LangCode)}
+              className="rounded-md border border-bd-s bg-input px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* TortoiseGit + Git: OpenSSH (Windows) */}
         {openSshProbe?.available ? (
           <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
-            <h3 className="font-medium text-fg-2">
-              TortoiseGit and command-line Git
-            </h3>
+            <h3 className="font-medium text-fg-2">{m.settings.tortoise.title}</h3>
             <p className="text-xs text-fg-4 leading-relaxed">
-              TortoiseGit normally uses TortoiseGitPlink, which does not read your
-              OpenSSH <code className="text-fg-3">%USERPROFILE%\.ssh\config</code>{" "}
-              the same way. Turn this on to point TortoiseGit at{" "}
-              <code className="text-fg-3">ssh.exe</code> and set Git&apos;s global{" "}
-              <code className="text-fg-3">core.sshCommand</code>, so the SSH keys
-              and hosts managed here work in both places.
+              {rich(m.settings.tortoise.intro)}
             </p>
             {openSshProbe.sshExe ? (
               <p className="text-xs text-fg-5">
-                Detected OpenSSH:{" "}
-                <code className="break-all text-fg-3">{openSshProbe.sshExe}</code>
+                {rich(
+                  fmt(m.settings.tortoise.detected, {
+                    path: openSshProbe.sshExe,
+                  }),
+                  { codeClass: "break-all text-fg-3" },
+                )}
               </p>
             ) : (
               <p className="text-xs text-amber-600 dark:text-amber-400">
-                No <code className="text-fg-3">ssh.exe</code> was found in usual
-                locations. Install{" "}
-                <a
-                  className="text-link hover:text-link-hover"
-                  href="https://git-scm.com/download/win"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Git for Windows
-                </a>{" "}
-                or enable the OpenSSH optional feature in Windows Settings before
-                turning this on.
+                {rich(m.settings.tortoise.notFound, {
+                  href: "https://git-scm.com/download/win",
+                })}
               </p>
             )}
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm text-fg-3">Use OpenSSH everywhere</p>
+                <p className="text-sm text-fg-3">{m.settings.tortoise.toggle}</p>
                 <p className="text-xs text-fg-5">
-                  Writes TortoiseGit&apos;s SSH client path and{" "}
-                  <code className="text-fg-4">core.sshCommand</code>. Turning off
-                  removes that registry value and unsets{" "}
-                  <code className="text-fg-4">core.sshCommand</code>.
+                  {rich(m.settings.tortoise.toggleHint, {
+                    codeClass: "text-fg-4",
+                  })}
                 </p>
               </div>
               <button
@@ -291,8 +294,7 @@ export default function SettingsPage({ onBack }: Props) {
             </div>
             {useOpenSsh && !openSshProbe.sshExe ? (
               <p className="text-xs text-red-600 dark:text-red-400">
-                Saving with this enabled will fail until OpenSSH (
-                <code className="text-fg-3">ssh.exe</code>) is available.
+                {rich(m.settings.tortoise.willFail)}
               </p>
             ) : null}
           </div>
@@ -300,83 +302,51 @@ export default function SettingsPage({ onBack }: Props) {
 
         {/* GitHub OAuth */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
-          <h3 className="font-medium text-fg-2">GitHub OAuth</h3>
-          <p className="text-xs text-fg-4">
-            Required for "Connect with GitHub" button.
-          </p>
+          <h3 className="font-medium text-fg-2">{m.settings.github.title}</h3>
+          <p className="text-xs text-fg-4">{m.settings.github.required}</p>
           <ol className="list-inside list-decimal space-y-1 text-xs text-fg-4">
             <li>
-              Go to{" "}
-              <button
-                onClick={() =>
-                  openUrl("https://github.com/settings/developers")
-                }
-                className="text-link hover:text-link-hover"
-              >
-                GitHub Developer Settings
-              </button>
+              {rich(m.settings.github.step1, {
+                onLink: () => openUrl("https://github.com/settings/developers"),
+              })}
             </li>
-            <li>Click "New OAuth App"</li>
-            <li>
-              Set <b>Homepage URL</b> to{" "}
-              <code className="text-fg-3">http://localhost</code>
-            </li>
-            <li>
-              Set <b>Authorization callback URL</b> to{" "}
-              <code className="text-fg-3">http://localhost/callback</code>
-            </li>
-            <li>
-              Check <b>"Enable Device Flow"</b>
-            </li>
-            <li>Copy the Client ID below</li>
+            <li>{rich(m.settings.github.step2)}</li>
+            <li>{rich(m.settings.github.step3)}</li>
+            <li>{rich(m.settings.github.step4)}</li>
+            <li>{rich(m.settings.github.step5)}</li>
+            <li>{rich(m.settings.github.step6)}</li>
           </ol>
           <input
             type="text"
             value={githubId}
             onChange={(e) => setGithubId(e.target.value)}
-            placeholder="GitHub OAuth Client ID"
+            placeholder={m.settings.github.placeholder}
             className="w-full rounded-md border border-bd-s bg-input px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
           />
         </div>
 
         {/* GitLab OAuth */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
-          <h3 className="font-medium text-fg-2">GitLab OAuth</h3>
-          <p className="text-xs text-fg-4">
-            Required for "Connect with GitLab" button.
-          </p>
+          <h3 className="font-medium text-fg-2">{m.settings.gitlab.title}</h3>
+          <p className="text-xs text-fg-4">{m.settings.gitlab.required}</p>
           <ol className="list-inside list-decimal space-y-1 text-xs text-fg-4">
             <li>
-              Go to{" "}
-              <button
-                onClick={() =>
-                  openUrl("https://gitlab.com/-/user_settings/applications")
-                }
-                className="text-link hover:text-link-hover"
-              >
-                GitLab Applications
-              </button>
+              {rich(m.settings.gitlab.step1, {
+                onLink: () =>
+                  openUrl("https://gitlab.com/-/user_settings/applications"),
+              })}
             </li>
-            <li>
-              Click <b>"Add new application"</b>
-            </li>
-            <li>
-              Set <b>Redirect URI</b> to{" "}
-              <code className="text-fg-3">http://localhost:19847/callback</code>
-            </li>
-            <li>
-              Check scopes: <b>api</b>
-            </li>
-            <li>
-              Uncheck <b>"Confidential"</b>
-            </li>
-            <li>Copy the Application ID below</li>
+            <li>{rich(m.settings.gitlab.step2)}</li>
+            <li>{rich(m.settings.gitlab.step3)}</li>
+            <li>{rich(m.settings.gitlab.step4)}</li>
+            <li>{rich(m.settings.gitlab.step5)}</li>
+            <li>{rich(m.settings.gitlab.step6)}</li>
           </ol>
           <input
             type="text"
             value={gitlabId}
             onChange={(e) => setGitlabId(e.target.value)}
-            placeholder="GitLab Application ID"
+            placeholder={m.settings.gitlab.placeholder}
             className="w-full rounded-md border border-bd-s bg-input px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
           />
         </div>
@@ -388,9 +358,9 @@ export default function SettingsPage({ onBack }: Props) {
           disabled={saving}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
         >
-          {saving ? "Saving..." : "Save Settings"}
+          {saving ? m.settings.saving : m.settings.save}
         </button>
-        {saved && <span className="text-sm text-success-fg">Saved!</span>}
+        {saved && <span className="text-sm text-success-fg">{m.settings.saved}</span>}
         {saveError ? (
           <span className="max-w-md text-sm text-red-600 dark:text-red-400">
             {saveError}

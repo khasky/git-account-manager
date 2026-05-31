@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Profile } from "./types";
 import { useTheme } from "./ThemeContext";
+import { useI18n, fmt } from "./i18n";
 import ProfileCard from "./components/ProfileCard";
 import ProfileForm from "./components/ProfileForm";
 import SettingsPage from "./components/SettingsPage";
@@ -64,6 +65,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [toastMsg, setToastMsg] = useState("");
   const { preference, setPreference } = useTheme();
+  const { m } = useI18n();
   const [themeOpen, setThemeOpen] = useState(false);
   const themeRef = useRef<HTMLDivElement>(null);
 
@@ -111,9 +113,13 @@ function App() {
       await invoke("activate_profile", { id });
       await loadProfiles();
       const p = profiles.find((pr) => pr.id === id);
-      showToast(`Activated: ${p?.name || "profile"}`);
+      showToast(
+        fmt(m.app.toastActivated, {
+          name: p?.name || m.app.toastProfileFallback,
+        }),
+      );
     } catch (e) {
-      showToast(`Error: ${e}`);
+      showToast(fmt(m.app.toastError, { error: String(e) }));
     }
   }
 
@@ -150,9 +156,9 @@ function App() {
       await invoke("delete_profile", { id });
       await loadProfiles();
       setView("list");
-      showToast(`Deleted: ${profile.name}`);
+      showToast(fmt(m.app.toastDeleted, { name: profile.name }));
     } catch (e) {
-      showToast(`Error: ${e}`);
+      showToast(fmt(m.app.toastError, { error: String(e) }));
     }
   }
 
@@ -165,23 +171,25 @@ function App() {
       });
       await loadProfiles();
       showToast(
-        `Default identity: ${platform === "github" ? "GitHub" : "GitLab"}`,
+        fmt(m.app.toastDefaultIdentity, {
+          platform: platform === "github" ? "GitHub" : "GitLab",
+        }),
       );
     } catch (e) {
-      showToast(`Error: ${e}`);
+      showToast(fmt(m.app.toastError, { error: String(e) }));
     }
   }
 
   async function handleSave(_profile: Profile) {
     await loadProfiles();
     setView("list");
-    showToast("Profile saved");
+    showToast(m.app.toastProfileSaved);
   }
 
   const themeOptions = [
-    { value: "light" as const, label: "Light", icon: <SunIcon /> },
-    { value: "dark" as const, label: "Dark", icon: <MoonIcon /> },
-    { value: "system" as const, label: "System", icon: <MonitorIcon /> },
+    { value: "light" as const, label: m.theme.light, icon: <SunIcon /> },
+    { value: "dark" as const, label: m.theme.dark, icon: <MoonIcon /> },
+    { value: "system" as const, label: m.theme.system, icon: <MonitorIcon /> },
   ];
 
   const currentIcon =
@@ -220,9 +228,7 @@ function App() {
       <header className="flex items-center justify-between border-b border-bd px-6 py-4">
         <div>
           <h1 className="text-xl font-bold text-fg">Git Account Manager</h1>
-          <p className="text-xs text-fg-4">
-            Manage SSH keys, git identity, and platform accounts
-          </p>
+          <p className="text-xs text-fg-4">{m.app.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -230,7 +236,7 @@ function App() {
               openUrl("https://github.com/khasky/git-account-manager")
             }
             className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
-            title="GitHub Repository"
+            title={m.app.githubRepo}
           >
             <svg className="h-5 w-5" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
@@ -240,7 +246,7 @@ function App() {
             <button
               onClick={() => setThemeOpen((v) => !v)}
               className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
-              title="Theme"
+              title={m.app.themeTitle}
             >
               {currentIcon}
             </button>
@@ -269,7 +275,7 @@ function App() {
           <button
             onClick={() => setView("settings")}
             className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
-            title="OAuth Settings"
+            title={m.app.oauthSettings}
           >
             <svg
               className="h-5 w-5"
@@ -307,7 +313,7 @@ function App() {
                 d="M12 4v16m8-8H4"
               />
             </svg>
-            New Profile
+            {m.app.newProfile}
           </button>
         </div>
       </header>
@@ -315,7 +321,7 @@ function App() {
       <main className="flex-1 overflow-y-auto p-6">
         {loading ? (
           <div className="flex items-center justify-center py-20 text-fg-4">
-            Loading...
+            {m.app.loading}
           </div>
         ) : profiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
@@ -332,15 +338,13 @@ function App() {
                 d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
               />
             </svg>
-            <p className="mb-2 text-lg text-fg-4">No profiles yet</p>
-            <p className="mb-4 text-sm text-fg-5">
-              Create your first profile to get started
-            </p>
+            <p className="mb-2 text-lg text-fg-4">{m.app.noProfiles}</p>
+            <p className="mb-4 text-sm text-fg-5">{m.app.noProfilesHint}</p>
             <button
               onClick={handleAdd}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
             >
-              Create Profile
+              {m.app.createProfile}
             </button>
           </div>
         ) : (

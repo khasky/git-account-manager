@@ -2,6 +2,7 @@ import { useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Profile, PlatformAccount } from "../types";
 import ConfirmDialog, { DialogAction } from "./ConfirmDialog";
+import { useI18n, fmt } from "../i18n";
 
 interface Props {
   profile: Profile;
@@ -28,6 +29,7 @@ function PlatformBadge({
   canClick: boolean;
   onClick: () => void;
 }) {
+  const { m } = useI18n();
   const profileUrl =
     platform === "github"
       ? `https://github.com/${account.username}`
@@ -46,7 +48,9 @@ function PlatformBadge({
       className={wrapper}
       onClick={canClick ? onClick : undefined}
       role={canClick ? "button" : undefined}
-      title={canClick ? `Set ${label} as default git identity` : undefined}
+      title={
+        canClick ? fmt(m.card.setDefaultTitle, { platform: label }) : undefined
+      }
     >
       <div className="flex items-center gap-2 text-sm text-fg-3">
         {icon}
@@ -64,7 +68,7 @@ function PlatformBadge({
         </span>
         {isDefault && canClick && (
           <span className="ml-auto text-[10px] font-medium text-link">
-            default
+            {m.card.default}
           </span>
         )}
       </div>
@@ -95,6 +99,7 @@ export default function ProfileCard({
   onDelete,
   onSetDefault,
 }: Props) {
+  const { m } = useI18n();
   const defaultP =
     profile.default_platform || (profile.github ? "github" : "gitlab");
   const hasBoth = !!profile.github && !!profile.gitlab;
@@ -106,7 +111,7 @@ export default function ProfileCard({
     ...(keys.length > 0
       ? [
           {
-            label: "Delete profile and SSH keys",
+            label: m.card.deleteAndKeys,
             variant: "danger" as const,
             onClick: () => {
               setShowDeleteDialog(false);
@@ -114,7 +119,7 @@ export default function ProfileCard({
             },
           },
           {
-            label: "Delete profile, keep SSH keys",
+            label: m.card.deleteKeepKeys,
             variant: "default" as const,
             onClick: () => {
               setShowDeleteDialog(false);
@@ -124,7 +129,7 @@ export default function ProfileCard({
         ]
       : [
           {
-            label: "Delete profile",
+            label: m.card.deleteProfile,
             variant: "danger" as const,
             onClick: () => {
               setShowDeleteDialog(false);
@@ -133,7 +138,7 @@ export default function ProfileCard({
           },
         ]),
     {
-      label: "Cancel",
+      label: m.card.cancel,
       variant: "cancel" as const,
       onClick: () => setShowDeleteDialog(false),
     },
@@ -153,7 +158,7 @@ export default function ProfileCard({
             <h3 className="text-lg font-semibold text-fg">{profile.name}</h3>
             {profile.is_active && (
               <span className="rounded-full bg-emerald-600/80 px-2 py-0.5 text-xs font-medium text-emerald-100">
-                Active
+                {m.card.active}
               </span>
             )}
           </div>
@@ -208,33 +213,33 @@ export default function ProfileCard({
               onClick={() => onActivate(profile.id)}
               className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500"
             >
-              Activate
+              {m.card.activate}
             </button>
           )}
           <button
             onClick={() => onEdit(profile)}
             className="rounded-md bg-subtle px-3 py-1.5 text-xs font-medium text-fg-2 transition-colors hover:bg-hover"
           >
-            Edit
+            {m.card.edit}
           </button>
           <button
             onClick={() => setShowDeleteDialog(true)}
             className="rounded-md bg-subtle px-3 py-1.5 text-xs font-medium text-danger-fg transition-colors hover:bg-danger-hover"
           >
-            Delete
+            {m.card.delete}
           </button>
         </div>
       </div>
 
       <ConfirmDialog
         open={showDeleteDialog}
-        title={`Delete profile "${profile.name}"?`}
+        title={fmt(m.card.deleteTitle, { name: profile.name })}
         actions={deleteActions}
       >
-        <p className="mb-3 text-sm text-fg-3">This action cannot be undone.</p>
+        <p className="mb-3 text-sm text-fg-3">{m.card.deleteBody}</p>
         {keys.length > 0 && (
           <div className="space-y-1">
-            <p className="text-xs text-fg-4">Associated SSH keys:</p>
+            <p className="text-xs text-fg-4">{m.card.deleteKeysLabel}</p>
             {keys.map((k) => (
               <div
                 key={k}

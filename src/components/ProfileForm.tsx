@@ -12,6 +12,7 @@ import {
 } from "../types";
 import ConfirmDialog, { DialogAction } from "./ConfirmDialog";
 import { copySshPublicKey } from "../copySshPublicKey";
+import { useI18n, fmt, rich } from "../i18n";
 
 const CopyIcon = () => (
   <svg
@@ -105,6 +106,7 @@ export default function ProfileForm({
   onDelete,
 }: Props) {
   const isEdit = profile !== null;
+  const { m } = useI18n();
 
   const [name, setName] = useState(profile?.name || "");
   const [defaultPlatform, setDefaultPlatform] = useState(
@@ -283,7 +285,7 @@ export default function ProfileForm({
         updateGh({
           connecting: false,
           deviceCode: null,
-          error: "Authorization timed out. Please try again.",
+          error: m.form.authTimedOut,
         });
       }, expiresIn * 1000);
 
@@ -407,7 +409,7 @@ export default function ProfileForm({
     update: (p: Partial<PlatformState>) => void,
   ) {
     if (!section.token) {
-      update({ error: "Connect to platform first" });
+      update({ error: m.form.errConnectFirst });
       return;
     }
     update({ error: "" });
@@ -466,11 +468,11 @@ export default function ProfileForm({
 
   async function handleSave() {
     if (!name.trim()) {
-      setError("Profile name is required");
+      setError(m.form.errProfileName);
       return;
     }
     if (!gh.connected && !gl.connected) {
-      setError("Connect at least one platform");
+      setError(m.form.errConnectOne);
       return;
     }
     setSaving(true);
@@ -511,15 +513,12 @@ export default function ProfileForm({
     if (err === "settings_required") {
       return (
         <p className="text-xs text-danger-fg">
-          Configure {platform === "github" ? "GitHub" : "GitLab"} OAuth Client
-          ID in{" "}
-          <button
-            onClick={onSettings}
-            className="font-medium text-link underline hover:text-link-hover"
-          >
-            Settings
-          </button>{" "}
-          first
+          {rich(
+            fmt(m.form.errSettingsRequired, {
+              platform: platform === "github" ? "GitHub" : "GitLab",
+            }),
+            { onLink: onSettings },
+          )}
         </p>
       );
     }
@@ -557,13 +556,13 @@ export default function ProfileForm({
           <div className="space-y-3">
             {section.deviceCode ? (
               <div className="space-y-2 rounded-md border border-info-border bg-info-bg p-3">
-                <p className="text-sm text-fg-3">Enter this code on GitHub:</p>
+                <p className="text-sm text-fg-3">{m.form.enterCode}</p>
                 <p className="font-mono text-2xl font-bold tracking-widest text-link">
                   {section.deviceCode.user_code}
                 </p>
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-fg-4">
-                    Waiting for authorization...
+                    {m.form.waitingAuth}
                     {ghCountdown > 0 && (
                       <span className="ml-1 text-fg-5">
                         ({Math.floor(ghCountdown / 60)}:
@@ -575,7 +574,7 @@ export default function ProfileForm({
                     onClick={cancelGitHubAuth}
                     className="rounded-md bg-subtle px-3 py-1 text-xs text-fg-3 transition-colors hover:bg-hover hover:text-fg"
                   >
-                    Cancel
+                    {m.form.cancel}
                   </button>
                 </div>
               </div>
@@ -583,7 +582,7 @@ export default function ProfileForm({
               <div className="space-y-2 rounded-md border border-info-border bg-info-bg p-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-fg-4">
-                    Waiting for browser authorization...
+                    {m.form.waitingBrowser}
                     {platform === "gitlab" && glCountdown > 0 && (
                       <span className="ml-1 text-fg-5">
                         ({Math.floor(glCountdown / 60)}:
@@ -596,14 +595,13 @@ export default function ProfileForm({
                       onClick={cancelGitLabAuth}
                       className="rounded-md bg-subtle px-3 py-1 text-xs text-fg-3 transition-colors hover:bg-hover hover:text-fg"
                     >
-                      Cancel
+                      {m.form.cancel}
                     </button>
                   )}
                 </div>
                 {platform === "gitlab" && (
                   <p className="text-xs text-fg-5">
-                    The sign-in link was copied to your clipboard — paste it in
-                    a browser if the page did not open.
+                    {m.form.gitlabClipboardHint}
                   </p>
                 )}
               </div>
@@ -612,7 +610,7 @@ export default function ProfileForm({
                 onClick={onConnect}
                 className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
               >
-                Connect with {label}
+                {fmt(m.form.connectWith, { platform: label })}
               </button>
             )}
             {section.error && renderError(section.error, platform)}
@@ -620,7 +618,9 @@ export default function ProfileForm({
         ) : (
           <div className="space-y-3">
             <div>
-              <label className="mb-1 block text-xs text-fg-4">Git Name</label>
+              <label className="mb-1 block text-xs text-fg-4">
+                {m.form.gitName}
+              </label>
               <input
                 type="text"
                 value={section.gitName}
@@ -629,7 +629,9 @@ export default function ProfileForm({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-fg-4">Git Email</label>
+              <label className="mb-1 block text-xs text-fg-4">
+                {m.form.gitEmail}
+              </label>
               {section.noreplyEmail || section.publicEmail ? (
                 <div className="space-y-1.5">
                   {section.noreplyEmail && (
@@ -642,7 +644,7 @@ export default function ProfileForm({
                       }`}
                     >
                       <span className="shrink-0 rounded bg-badge-ok-bg px-1 py-0.5 text-[10px] font-medium text-badge-ok-fg">
-                        noreply
+                        {m.form.noreplyBadge}
                       </span>
                       <span className="truncate">{section.noreplyEmail}</span>
                     </button>
@@ -660,7 +662,7 @@ export default function ProfileForm({
                         }`}
                       >
                         <span className="shrink-0 rounded bg-subtle px-1 py-0.5 text-[10px] font-medium text-fg-3">
-                          public
+                          {m.form.publicBadge}
                         </span>
                         <span className="truncate">{section.publicEmail}</span>
                       </button>
@@ -669,7 +671,7 @@ export default function ProfileForm({
                     type="text"
                     value={section.gitEmail}
                     onChange={(e) => update({ gitEmail: e.target.value })}
-                    placeholder="or enter custom email"
+                    placeholder={m.form.customEmailPlaceholder}
                     className="w-full rounded-md border border-bd-s bg-input px-2.5 py-1.5 text-xs text-fg outline-none focus:border-blue-500"
                   />
                 </div>
@@ -684,7 +686,9 @@ export default function ProfileForm({
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-fg-4">SSH Key</label>
+              <label className="mb-1 block text-xs text-fg-4">
+                {m.form.sshKey}
+              </label>
               {section.sshPrivateKeyPath && section.keyUploaded ? (
                 <div className="flex flex-col gap-2 rounded-md border border-active-border bg-active-bg px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 items-center gap-2">
@@ -702,8 +706,11 @@ export default function ProfileForm({
                       />
                     </svg>
                     <span className="text-xs text-success-fg">
-                      {section.sshPrivateKeyPath.split(/[\\/]/).pop()} — uploaded
-                      to {label}
+                      {fmt(m.form.uploadedTo, {
+                        file:
+                          section.sshPrivateKeyPath.split(/[\\/]/).pop() || "",
+                        platform: label,
+                      })}
                     </span>
                   </div>
                   {section.sshPublicKeyPath ? (
@@ -716,8 +723,8 @@ export default function ProfileForm({
                     >
                       <CopyIcon />
                       {copiedPublicPath === section.sshPublicKeyPath
-                        ? "Copied"
-                        : "Copy public key"}
+                        ? m.form.copied
+                        : m.form.copyPublicKey}
                     </button>
                   ) : null}
                 </div>
@@ -728,13 +735,13 @@ export default function ProfileForm({
                       onClick={() => update({ sshSource: "generate" })}
                       className={`rounded-md px-2 py-1 text-xs ${section.sshSource === "generate" ? "bg-blue-600 text-white" : "bg-subtle text-fg-3"}`}
                     >
-                      Generate & Upload
+                      {m.form.generateUpload}
                     </button>
                     <button
                       onClick={() => update({ sshSource: "existing" })}
                       className={`rounded-md px-2 py-1 text-xs ${section.sshSource === "existing" ? "bg-blue-600 text-white" : "bg-subtle text-fg-3"}`}
                     >
-                      Use Existing
+                      {m.form.useExisting}
                     </button>
                   </div>
 
@@ -745,14 +752,12 @@ export default function ProfileForm({
                       }
                       className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500"
                     >
-                      Generate SSH Key & Add to {label}
+                      {fmt(m.form.generateAddTo, { platform: label })}
                     </button>
                   ) : (
                     <div className="space-y-2">
                       {sshKeys.length === 0 ? (
-                        <p className="text-xs text-fg-5">
-                          No SSH keys found in ~/.ssh
-                        </p>
+                        <p className="text-xs text-fg-5">{m.form.noSshKeys}</p>
                       ) : (
                         <div className="max-h-28 space-y-1 overflow-y-auto">
                           {sshKeys.map((k) => (
@@ -773,7 +778,7 @@ export default function ProfileForm({
                               </button>
                               <button
                                 type="button"
-                                title="Copy public key"
+                                title={m.form.copyPublicKey}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   void handleCopyPublicKey(k.public_key_path);
@@ -797,7 +802,7 @@ export default function ProfileForm({
                           }
                           className="rounded-md bg-subtle px-3 py-1.5 text-xs text-fg-2 hover:bg-hover"
                         >
-                          Upload to {label}
+                          {fmt(m.form.uploadTo, { platform: label })}
                         </button>
                       )}
                     </div>
@@ -819,7 +824,7 @@ export default function ProfileForm({
               }
               className="text-xs text-danger-fg hover:underline"
             >
-              Disconnect
+              {m.form.disconnect}
             </button>
           </div>
         )}
@@ -874,25 +879,25 @@ export default function ProfileForm({
     ...(disconnectTarget?.keyPath
       ? [
           {
-            label: "Disconnect and delete SSH key",
+            label: m.form.disconnectAndDelete,
             variant: "danger" as const,
             onClick: () => handleDisconnect(true),
           },
           {
-            label: "Disconnect, keep SSH key",
+            label: m.form.disconnectKeep,
             variant: "default" as const,
             onClick: () => handleDisconnect(false),
           },
         ]
       : [
           {
-            label: "Disconnect",
+            label: m.form.disconnect,
             variant: "danger" as const,
             onClick: () => handleDisconnect(false),
           },
         ]),
     {
-      label: "Cancel",
+      label: m.form.cancel,
       variant: "cancel" as const,
       onClick: () => setDisconnectTarget(null),
     },
@@ -903,7 +908,7 @@ export default function ProfileForm({
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-bd px-6 py-4">
           <h2 className="text-lg font-semibold text-fg">
-            {isEdit ? "Edit Profile" : "New Profile"}
+            {isEdit ? m.form.editTitle : m.form.newTitle}
           </h2>
           <button
             onClick={handleProfileCancel}
@@ -928,13 +933,13 @@ export default function ProfileForm({
         <div className="flex-1 space-y-4 overflow-y-auto p-6">
           <div>
             <label className="mb-1 block text-sm font-medium text-fg-3">
-              Profile Name
+              {m.form.profileName}
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Personal, Work"
+              placeholder={m.form.profileNamePlaceholder}
               className="w-full rounded-md border border-bd-s bg-input px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
             />
           </div>
@@ -945,17 +950,13 @@ export default function ProfileForm({
           {gh.connected && gl.connected && (
             <div className="rounded-lg border border-bd bg-raised-40 p-4">
               <label className="mb-1 block text-sm font-medium text-fg-3">
-                Default Git Identity
+                {m.form.defaultIdentity}
               </label>
               <p className="mb-1 text-xs text-fg-5">
-                Since both platforms are connected, choose which identity to use
-                for{" "}
-                <code className="text-fg-4">git config --global user.name</code>{" "}
-                and <code className="text-fg-4">user.email</code>.
+                {rich(m.form.defaultIdentityHint1, { codeClass: "text-fg-4" })}
               </p>
               <p className="mb-3 text-xs text-fg-5">
-                This email will be used in all your commits by default. Select a
-                platform below to switch.
+                {m.form.defaultIdentityHint2}
               </p>
               <div className="mb-3 flex gap-3">
                 {(["github", "gitlab"] as const).map((p) => (
@@ -973,7 +974,7 @@ export default function ProfileForm({
                 ))}
               </div>
               <p className="text-xs text-fg-4">
-                Active:{" "}
+                {m.form.activeLabel}{" "}
                 <span className="font-medium text-fg-2">
                   {defaultPlatform === "github" ? gh.gitName : gl.gitName}
                 </span>{" "}
@@ -999,28 +1000,33 @@ export default function ProfileForm({
             disabled={saving}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
           >
-            {saving ? "Saving..." : isEdit ? "Save Changes" : "Create Profile"}
+            {saving
+              ? m.form.saving
+              : isEdit
+                ? m.form.saveChanges
+                : m.form.createProfile}
           </button>
           <button
             onClick={handleProfileCancel}
             className="rounded-md bg-subtle px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:bg-hover"
           >
-            Cancel
+            {m.form.cancel}
           </button>
         </div>
       </div>
 
       <ConfirmDialog
         open={disconnectTarget !== null}
-        title={`Disconnect ${disconnectTarget?.platform === "github" ? "GitHub" : "GitLab"}?`}
+        title={fmt(m.form.disconnectTitle, {
+          platform:
+            disconnectTarget?.platform === "github" ? "GitHub" : "GitLab",
+        })}
         actions={disconnectActions}
       >
-        <p className="mb-3 text-sm text-fg-3">
-          This action cannot be undone. The OAuth token will be removed.
-        </p>
+        <p className="mb-3 text-sm text-fg-3">{m.form.disconnectBody}</p>
         {disconnectKeyName && (
           <div className="space-y-1">
-            <p className="text-xs text-fg-4">Associated SSH key:</p>
+            <p className="text-xs text-fg-4">{m.form.disconnectKeyLabel}</p>
             <div className="rounded bg-raised px-2 py-1 font-mono text-xs text-fg-3">
               {disconnectKeyName}
             </div>
