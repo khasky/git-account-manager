@@ -140,6 +140,9 @@ pub fn update_ssh_config(profiles: &[Profile]) -> Result<(), String> {
         if let Some(gl) = &profile.gitlab {
             entries.push(host_entry("gitlab.com", "gitlab.com", &gl.ssh_private_key_path));
         }
+        if let Some(bb) = &profile.bitbucket {
+            entries.push(host_entry("bitbucket.org", "bitbucket.org", &bb.ssh_private_key_path));
+        }
     }
 
     for profile in profiles {
@@ -149,6 +152,9 @@ pub fn update_ssh_config(profiles: &[Profile]) -> Result<(), String> {
         }
         if let Some(gl) = &profile.gitlab {
             entries.push(host_entry(&format!("gitlab-{}", slug), "gitlab.com", &gl.ssh_private_key_path));
+        }
+        if let Some(bb) = &profile.bitbucket {
+            entries.push(host_entry(&format!("bitbucket-{}", slug), "bitbucket.org", &bb.ssh_private_key_path));
         }
     }
 

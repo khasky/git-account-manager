@@ -53,10 +53,12 @@ fn delete_profile(id: String) -> Result<(), String> {
     let state = storage::load_state()?;
     let has_github_remaining = state.profiles.iter().any(|p| p.id != id && p.github.is_some());
     let has_gitlab_remaining = state.profiles.iter().any(|p| p.id != id && p.gitlab.is_some());
+    let has_bitbucket_remaining = state.profiles.iter().any(|p| p.id != id && p.bitbucket.is_some());
 
     let mut hosts_to_clean: Vec<&str> = Vec::new();
     if !has_github_remaining { hosts_to_clean.push("github.com"); }
     if !has_gitlab_remaining { hosts_to_clean.push("gitlab.com"); }
+    if !has_bitbucket_remaining { hosts_to_clean.push("bitbucket.org"); }
     if !hosts_to_clean.is_empty() {
         ssh::clean_known_hosts(&hosts_to_clean).ok();
     }
@@ -310,6 +312,27 @@ fn get_git_identity() -> Result<GitIdentity, String> {
     git::get_global_identity()
 }
 
+// ---- Tray ----
+
+// Handles to the tray menu items, kept in managed state so the frontend can
+// relabel them when the interface language changes (the menu is built once at
+// startup; translations live in the webview, not in Rust).
+struct TrayMenuItems {
+    show: tauri::menu::MenuItem<tauri::Wry>,
+    quit: tauri::menu::MenuItem<tauri::Wry>,
+}
+
+#[tauri::command]
+fn set_tray_labels(
+    show: String,
+    quit: String,
+    items: tauri::State<'_, TrayMenuItems>,
+) -> Result<(), String> {
+    items.show.set_text(show).map_err(|e| e.to_string())?;
+    items.quit.set_text(quit).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ---- App Entry ----
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -346,6 +369,12 @@ pub fn run() {
             let quit =
                 MenuItem::with_id(app, "quit", "Close Git Account Manager", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &sep, &quit])?;
+
+            // Keep handles so `set_tray_labels` can localize the menu at runtime.
+            app.manage(TrayMenuItems {
+                show: show.clone(),
+                quit: quit.clone(),
+            });
 
             let _tray = TrayIconBuilder::new()
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
@@ -412,6 +441,7 @@ pub fn run() {
             save_settings,
             openssh_integration_probe,
             get_git_identity,
+            set_tray_labels,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

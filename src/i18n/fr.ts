@@ -26,6 +26,10 @@ export const fr: Messages = {
     downloading: `Téléchargement de la mise à jour… {percent}%`,
     failed: `Échec de la mise à jour : {error}`,
   },
+  tray: {
+    show: `Afficher la fenêtre`,
+    quit: `Fermer Git Account Manager`,
+  },
   theme: {
     light: `Clair`,
     dark: `Sombre`,
@@ -77,6 +81,13 @@ export const fr: Messages = {
     saved: `Enregistré !`,
   },
   form: {
+    bitbucket: {
+      help: `Bitbucket nécessite un <a>jeton d'API Atlassian avec scopes</a> — utilisez « Create API token with scopes » (un jeton simple ne fonctionne pas).`,
+      emailPlaceholder: `E-mail du compte Atlassian`,
+      tokenPlaceholder: `Jeton d'API`,
+      scopesHint: `Sélectionnez les scopes : read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket.`,
+      errCreds: `Saisissez votre e-mail Atlassian et votre jeton d'API.`,
+    },
     editTitle: `Modifier le profil`,
     newTitle: `Nouveau profil`,
     profileName: `Nom du profil`,

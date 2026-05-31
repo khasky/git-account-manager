@@ -26,6 +26,10 @@ export const de: Messages = {
     downloading: `Update wird heruntergeladen… {percent}%`,
     failed: `Update fehlgeschlagen: {error}`,
   },
+  tray: {
+    show: `Fenster anzeigen`,
+    quit: `Git Account Manager schließen`,
+  },
   theme: {
     light: `Hell`,
     dark: `Dunkel`,
@@ -77,6 +81,13 @@ export const de: Messages = {
     saved: `Gespeichert!`,
   },
   form: {
+    bitbucket: {
+      help: `Bitbucket benötigt ein <a>Atlassian API token mit Scopes</a> — nutze „Create API token with scopes“ (ein einfaches Token funktioniert nicht).`,
+      emailPlaceholder: `Atlassian-Konto-E-Mail`,
+      tokenPlaceholder: `API-Token`,
+      scopesHint: `Scopes auswählen: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket.`,
+      errCreds: `Gib sowohl deine Atlassian-E-Mail als auch das API-Token ein.`,
+    },
     editTitle: `Profil bearbeiten`,
     newTitle: `Neues Profil`,
     profileName: `Profilname`,

@@ -32,6 +32,7 @@ pub async fn verify_token(platform: &str, token: &str) -> Result<PlatformUser, S
     match platform {
         "github" => verify_github(&client, token).await,
         "gitlab" => verify_gitlab(&client, token).await,
+        "bitbucket" => verify_bitbucket(&client, token).await,
         _ => Err(format!("Unknown platform: {}", platform)),
     }
 }
@@ -136,6 +137,10 @@ pub async fn delete_ssh_key_from_platform(
     let client = Client::new();
     let local = normalize_key(pub_key_content);
 
+    if platform == "bitbucket" {
+        return delete_bitbucket_key(&client, token, &local).await;
+    }
+
     let (url, auth_header) = match platform {
         "github" => ("https://api.github.com/user/keys", format!("Bearer {}", token)),
         "gitlab" => ("https://gitlab.com/api/v4/user/keys", format!("Bearer {}", token)),
@@ -186,6 +191,7 @@ pub async fn upload_ssh_key(
     match platform {
         "github" => upload_github_key(&client, token, title, key_content).await,
         "gitlab" => upload_gitlab_key(&client, token, title, key_content).await,
+        "bitbucket" => upload_bitbucket_key(&client, token, title, key_content).await,
         _ => Err(format!("Unknown platform: {}", platform)),
     }
 }
@@ -241,6 +247,189 @@ async fn upload_gitlab_key(
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("GitLab API error: {}", body));
+    }
+
+    Ok(())
+}
+
+// --------------- Bitbucket (Atlassian API token, HTTP Basic auth) ---------------
+
+fn basic_auth(token: &str) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    format!("Basic {}", STANDARD.encode(token))
+}
+
+#[derive(Deserialize)]
+struct BitbucketUser {
+    uuid: String,
+    nickname: Option<String>,
+    display_name: Option<String>,
+    links: Option<BitbucketLinks>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketLinks {
+    avatar: Option<BitbucketLink>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketLink {
+    href: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketEmails {
+    values: Vec<BitbucketEmail>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketEmail {
+    email: String,
+    is_primary: bool,
+}
+
+#[derive(Deserialize)]
+struct BitbucketKeyList {
+    values: Vec<BitbucketKey>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketKey {
+    uuid: String,
+    key: String,
+}
+
+async fn bitbucket_get_user(client: &Client, token: &str) -> Result<BitbucketUser, String> {
+    let resp = client
+        .get("https://api.bitbucket.org/2.0/user")
+        .header("Authorization", basic_auth(token))
+        .header("User-Agent", "git-account-manager")
+        .send()
+        .await
+        .map_err(|e| format!("Bitbucket API request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Bitbucket API error: {}", resp.status()));
+    }
+
+    resp.json::<BitbucketUser>().await.map_err(|e| e.to_string())
+}
+
+async fn verify_bitbucket(client: &Client, token: &str) -> Result<PlatformUser, String> {
+    let user = bitbucket_get_user(client, token).await?;
+    let username = user.nickname.clone().unwrap_or_else(|| user.uuid.clone());
+    let avatar_url = user.links.and_then(|l| l.avatar).and_then(|a| a.href);
+    let email = fetch_bitbucket_primary_email(client, token).await;
+
+    Ok(PlatformUser {
+        username,
+        name: user.display_name,
+        email,
+        // Bitbucket has no GitHub/GitLab-style noreply commit email.
+        noreply_email: None,
+        avatar_url,
+    })
+}
+
+async fn fetch_bitbucket_primary_email(client: &Client, token: &str) -> Option<String> {
+    let resp = client
+        .get("https://api.bitbucket.org/2.0/user/emails")
+        .header("Authorization", basic_auth(token))
+        .header("User-Agent", "git-account-manager")
+        .send()
+        .await
+        .ok()?;
+
+    let emails: BitbucketEmails = resp.json().await.ok()?;
+    emails
+        .values
+        .iter()
+        .find(|e| e.is_primary)
+        .or_else(|| emails.values.first())
+        .map(|e| e.email.clone())
+}
+
+async fn upload_bitbucket_key(
+    client: &Client,
+    token: &str,
+    title: &str,
+    key: &str,
+) -> Result<(), String> {
+    let uuid = bitbucket_get_user(client, token).await?.uuid;
+    let url = format!(
+        "https://api.bitbucket.org/2.0/users/{}/ssh-keys",
+        urlencoding::encode(&uuid)
+    );
+
+    let resp = client
+        .post(&url)
+        .header("Authorization", basic_auth(token))
+        .header("User-Agent", "git-account-manager")
+        .json(&serde_json::json!({ "key": key, "label": title }))
+        .send()
+        .await
+        .map_err(|e| format!("Bitbucket API request failed: {}", e))?;
+
+    // 400/409 => key already registered; treat as success like GitHub/GitLab.
+    let status = resp.status().as_u16();
+    if status == 400 || status == 409 {
+        return Ok(());
+    }
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Bitbucket API error: {}", body));
+    }
+
+    Ok(())
+}
+
+async fn delete_bitbucket_key(
+    client: &Client,
+    token: &str,
+    local_normalized: &str,
+) -> Result<(), String> {
+    let uuid = bitbucket_get_user(client, token).await?.uuid;
+    let base = format!(
+        "https://api.bitbucket.org/2.0/users/{}/ssh-keys",
+        urlencoding::encode(&uuid)
+    );
+
+    let resp = client
+        .get(&base)
+        .header("Authorization", basic_auth(token))
+        .header("User-Agent", "git-account-manager")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to list keys: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to list keys: HTTP {}", resp.status()));
+    }
+
+    let list: BitbucketKeyList = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse keys: {}", e))?;
+
+    for remote in &list.values {
+        if normalize_key(&remote.key) == local_normalized {
+            let delete_url = format!("{}/{}", base, urlencoding::encode(&remote.uuid));
+            let del_resp = client
+                .delete(&delete_url)
+                .header("Authorization", basic_auth(token))
+                .header("User-Agent", "git-account-manager")
+                .send()
+                .await
+                .map_err(|e| format!("Failed to delete key: {}", e))?;
+            if !del_resp.status().is_success() && del_resp.status().as_u16() != 404 {
+                return Err(format!(
+                    "Failed to delete key from bitbucket: HTTP {}",
+                    del_resp.status()
+                ));
+            }
+            return Ok(());
+        }
     }
 
     Ok(())

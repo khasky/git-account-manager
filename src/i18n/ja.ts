@@ -26,6 +26,10 @@ export const ja: Messages = {
     downloading: `アップデートをダウンロード中… {percent}%`,
     failed: `更新に失敗しました: {error}`,
   },
+  tray: {
+    show: `ウィンドウを表示`,
+    quit: `Git Account Manager を終了`,
+  },
   theme: {
     light: `ライト`,
     dark: `ダーク`,
@@ -77,6 +81,13 @@ export const ja: Messages = {
     saved: `保存しました!`,
   },
   form: {
+    bitbucket: {
+      help: `Bitbucket には <a>スコープ付き Atlassian API トークン</a> が必要です。「Create API token with scopes」を使用してください（スコープなしのトークンは動作しません）。`,
+      emailPlaceholder: `Atlassian アカウントのメール`,
+      tokenPlaceholder: `API トークン`,
+      scopesHint: `スコープを選択: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket`,
+      errCreds: `Atlassian のメールと API トークンの両方を入力してください。`,
+    },
     editTitle: `プロフィールを編集`,
     newTitle: `新しいプロフィール`,
     profileName: `プロフィール名`,

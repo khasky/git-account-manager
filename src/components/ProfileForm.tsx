@@ -118,10 +118,17 @@ export default function ProfileForm({
   const [gl, setGl] = useState<PlatformState>(
     platformFromAccount(profile?.gitlab),
   );
+  const [bb, setBb] = useState<PlatformState>(
+    platformFromAccount(profile?.bitbucket),
+  );
+  // Bitbucket connects via a pasted Atlassian API token (email + token),
+  // not OAuth — these hold the two inputs until "Connect" combines them.
+  const [bbEmail, setBbEmail] = useState("");
+  const [bbToken, setBbToken] = useState("");
   const [sshKeys, setSshKeys] = useState<SshKeyInfo[]>([]);
   const [saving, setSaving] = useState(false);
   const [disconnectTarget, setDisconnectTarget] = useState<{
-    platform: "github" | "gitlab";
+    platform: "github" | "gitlab" | "bitbucket";
     keyPath: string;
     pubKeyPath: string;
     token: string;
@@ -249,6 +256,11 @@ export default function ProfileForm({
     setGh((prev) => ({ ...prev, ...p }));
   const updateGl = (p: Partial<PlatformState>) =>
     setGl((prev) => ({ ...prev, ...p }));
+  const updateBb = (p: Partial<PlatformState>) =>
+    setBb((prev) => ({ ...prev, ...p }));
+
+  const platformLabel = (p: string) =>
+    p === "github" ? "GitHub" : p === "gitlab" ? "GitLab" : "Bitbucket";
 
   async function connectGitHub() {
     if (!settings?.github_client_id) {
@@ -403,8 +415,38 @@ export default function ProfileForm({
     }
   }
 
+  async function connectBitbucket() {
+    if (!bbEmail.trim() || !bbToken.trim()) {
+      updateBb({ error: m.form.bitbucket.errCreds });
+      return;
+    }
+    updateBb({ connecting: true, error: "" });
+    try {
+      // Bitbucket REST uses HTTP Basic auth; the token field stores "email:token".
+      const combined = `${bbEmail.trim()}:${bbToken.trim()}`;
+      const user = await invoke<PlatformUser>("verify_platform_token", {
+        platform: "bitbucket",
+        token: combined,
+      });
+      const pubEmail = user.email || "";
+      updateBb({
+        connecting: false,
+        connected: true,
+        token: combined,
+        username: user.username,
+        gitName: user.name || user.username,
+        gitEmail: pubEmail,
+        publicEmail: pubEmail,
+        noreplyEmail: "",
+      });
+      setBbToken("");
+    } catch (e) {
+      updateBb({ connecting: false, error: String(e) });
+    }
+  }
+
   async function generateAndUpload(
-    platform: "github" | "gitlab",
+    platform: "github" | "gitlab" | "bitbucket",
     section: PlatformState,
     update: (p: Partial<PlatformState>) => void,
   ) {
@@ -444,7 +486,7 @@ export default function ProfileForm({
   }
 
   async function uploadExistingKey(
-    platform: "github" | "gitlab",
+    platform: "github" | "gitlab" | "bitbucket",
     section: PlatformState,
     update: (p: Partial<PlatformState>) => void,
   ) {
@@ -471,7 +513,7 @@ export default function ProfileForm({
       setError(m.form.errProfileName);
       return;
     }
-    if (!gh.connected && !gl.connected) {
+    if (!gh.connected && !gl.connected && !bb.connected) {
       setError(m.form.errConnectOne);
       return;
     }
@@ -496,6 +538,7 @@ export default function ProfileForm({
       default_platform: defaultPlatform,
       github: buildAccount(gh),
       gitlab: buildAccount(gl),
+      bitbucket: buildAccount(bb),
       is_active: profile?.is_active || false,
     };
 
@@ -515,7 +558,7 @@ export default function ProfileForm({
         <p className="text-xs text-danger-fg">
           {rich(
             fmt(m.form.errSettingsRequired, {
-              platform: platform === "github" ? "GitHub" : "GitLab",
+              platform: platformLabel(platform),
             }),
             { onLink: onSettings },
           )}
@@ -527,7 +570,7 @@ export default function ProfileForm({
 
   function renderPlatform(
     label: string,
-    platform: "github" | "gitlab",
+    platform: "github" | "gitlab" | "bitbucket",
     section: PlatformState,
     update: (p: Partial<PlatformState>) => void,
     onConnect: () => void,
@@ -542,7 +585,9 @@ export default function ProfileForm({
                 openUrl(
                   platform === "github"
                     ? `https://github.com/${section.username}`
-                    : `https://gitlab.com/${section.username}`,
+                    : platform === "gitlab"
+                      ? `https://gitlab.com/${section.username}`
+                      : `https://bitbucket.org/${section.username}`,
                 )
               }
               className="text-sm text-link hover:text-link-hover hover:underline"
@@ -553,6 +598,43 @@ export default function ProfileForm({
         </div>
 
         {!section.connected ? (
+          platform === "bitbucket" ? (
+            <div className="space-y-2">
+              <p className="text-xs text-fg-5">
+                {rich(m.form.bitbucket.help, {
+                  onLink: () =>
+                    openUrl(
+                      "https://id.atlassian.com/manage-profile/security/api-tokens",
+                    ),
+                })}
+              </p>
+              <input
+                type="text"
+                value={bbEmail}
+                onChange={(e) => setBbEmail(e.target.value)}
+                placeholder={m.form.bitbucket.emailPlaceholder}
+                className="w-full rounded-md border border-bd-s bg-input px-2.5 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
+              />
+              <input
+                type="password"
+                value={bbToken}
+                onChange={(e) => setBbToken(e.target.value)}
+                placeholder={m.form.bitbucket.tokenPlaceholder}
+                className="w-full rounded-md border border-bd-s bg-input px-2.5 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
+              />
+              <p className="text-xs text-fg-5">{m.form.bitbucket.scopesHint}</p>
+              <button
+                onClick={onConnect}
+                disabled={section.connecting}
+                className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+              >
+                {section.connecting
+                  ? m.form.waitingAuth
+                  : fmt(m.form.connectWith, { platform: label })}
+              </button>
+              {section.error && renderError(section.error, platform)}
+            </div>
+          ) : (
           <div className="space-y-3">
             {section.deviceCode ? (
               <div className="space-y-2 rounded-md border border-info-border bg-info-bg p-3">
@@ -615,6 +697,7 @@ export default function ProfileForm({
             )}
             {section.error && renderError(section.error, platform)}
           </div>
+          )
         ) : (
           <div className="space-y-3">
             <div>
@@ -835,7 +918,12 @@ export default function ProfileForm({
   async function handleDisconnect(deleteKeys: boolean) {
     if (!disconnectTarget) return;
     const { platform, keyPath, pubKeyPath, token } = disconnectTarget;
-    const update = platform === "github" ? updateGh : updateGl;
+    const update =
+      platform === "github"
+        ? updateGh
+        : platform === "gitlab"
+          ? updateGl
+          : updateBb;
 
     if (deleteKeys && keyPath) {
       if (token && pubKeyPath) {
@@ -853,15 +941,22 @@ export default function ProfileForm({
     if (profile) {
       const otherGh = platform === "github" ? false : gh.connected;
       const otherGl = platform === "gitlab" ? false : gl.connected;
+      const otherBb = platform === "bitbucket" ? false : bb.connected;
 
-      if (!otherGh && !otherGl) {
+      if (!otherGh && !otherGl && !otherBb) {
         onDelete(profile.id, false);
         return;
       }
 
       const updatedGh = platform === "github" ? undefined : profile.github;
       const updatedGl = platform === "gitlab" ? undefined : profile.gitlab;
-      const updated = { ...profile, github: updatedGh, gitlab: updatedGl };
+      const updatedBb = platform === "bitbucket" ? undefined : profile.bitbucket;
+      const updated = {
+        ...profile,
+        github: updatedGh,
+        gitlab: updatedGl,
+        bitbucket: updatedBb,
+      };
       try {
         await invoke("save_profile", { profile: updated });
         onSave(updated);
@@ -902,6 +997,17 @@ export default function ProfileForm({
       onClick: () => setDisconnectTarget(null),
     },
   ];
+
+  const connectedPlatforms = (
+    [
+      ["github", "GitHub", gh],
+      ["gitlab", "GitLab", gl],
+      ["bitbucket", "Bitbucket", bb],
+    ] as const
+  ).filter((entry) => entry[2].connected);
+  const activeSection =
+    connectedPlatforms.find((e) => e[0] === defaultPlatform)?.[2] ??
+    connectedPlatforms[0]?.[2];
 
   return (
     <>
@@ -946,8 +1052,15 @@ export default function ProfileForm({
 
           {renderPlatform("GitHub", "github", gh, updateGh, connectGitHub)}
           {renderPlatform("GitLab", "gitlab", gl, updateGl, connectGitLab)}
+          {renderPlatform(
+            "Bitbucket",
+            "bitbucket",
+            bb,
+            updateBb,
+            connectBitbucket,
+          )}
 
-          {gh.connected && gl.connected && (
+          {connectedPlatforms.length >= 2 && (
             <div className="rounded-lg border border-bd bg-raised-40 p-4">
               <label className="mb-1 block text-sm font-medium text-fg-3">
                 {m.form.defaultIdentity}
@@ -958,8 +1071,8 @@ export default function ProfileForm({
               <p className="mb-3 text-xs text-fg-5">
                 {m.form.defaultIdentityHint2}
               </p>
-              <div className="mb-3 flex gap-3">
-                {(["github", "gitlab"] as const).map((p) => (
+              <div className="mb-3 flex flex-wrap gap-3">
+                {connectedPlatforms.map(([p, plabel]) => (
                   <button
                     key={p}
                     onClick={() => setDefaultPlatform(p)}
@@ -969,21 +1082,21 @@ export default function ProfileForm({
                         : "bg-subtle text-fg-3"
                     }`}
                   >
-                    {p === "github" ? "GitHub" : "GitLab"}
+                    {plabel}
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-fg-4">
-                {m.form.activeLabel}{" "}
-                <span className="font-medium text-fg-2">
-                  {defaultPlatform === "github" ? gh.gitName : gl.gitName}
-                </span>{" "}
-                <span className="text-fg-5">
-                  &lt;
-                  {defaultPlatform === "github" ? gh.gitEmail : gl.gitEmail}
-                  &gt;
-                </span>
-              </p>
+              {activeSection && (
+                <p className="text-xs text-fg-4">
+                  {m.form.activeLabel}{" "}
+                  <span className="font-medium text-fg-2">
+                    {activeSection.gitName}
+                  </span>{" "}
+                  <span className="text-fg-5">
+                    &lt;{activeSection.gitEmail}&gt;
+                  </span>
+                </p>
+              )}
             </div>
           )}
 
@@ -1018,8 +1131,7 @@ export default function ProfileForm({
       <ConfirmDialog
         open={disconnectTarget !== null}
         title={fmt(m.form.disconnectTitle, {
-          platform:
-            disconnectTarget?.platform === "github" ? "GitHub" : "GitLab",
+          platform: platformLabel(disconnectTarget?.platform || "github"),
         })}
         actions={disconnectActions}
       >

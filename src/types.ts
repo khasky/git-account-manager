@@ -13,6 +13,7 @@ export interface Profile {
   default_platform?: string;
   github?: PlatformAccount;
   gitlab?: PlatformAccount;
+  bitbucket?: PlatformAccount;
   is_active: boolean;
 }
 

@@ -94,6 +94,14 @@ function App() {
     loadProfiles();
   }, [loadProfiles]);
 
+  // Localize the system-tray menu to match the selected interface language.
+  useEffect(() => {
+    invoke("set_tray_labels", {
+      show: m.tray.show,
+      quit: m.tray.quit,
+    }).catch((e) => console.error("Failed to localize tray menu:", e));
+  }, [m.tray.show, m.tray.quit]);
+
   function showToast(msg: string) {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(""), 3000);
@@ -150,6 +158,16 @@ function App() {
             }).catch(() => {});
           }
         }
+        if (profile.bitbucket) {
+          keyPaths.push(profile.bitbucket.ssh_private_key_path);
+          if (profile.bitbucket.token && profile.bitbucket.ssh_public_key_path) {
+            await invoke("remove_ssh_key_from_platform", {
+              platform: "bitbucket",
+              token: profile.bitbucket.token,
+              publicKeyPath: profile.bitbucket.ssh_public_key_path,
+            }).catch(() => {});
+          }
+        }
         if (keyPaths.length > 0) {
           await invoke("delete_ssh_keys", { paths: keyPaths });
         }
@@ -163,7 +181,10 @@ function App() {
     }
   }
 
-  async function handleSetDefault(id: string, platform: "github" | "gitlab") {
+  async function handleSetDefault(
+    id: string,
+    platform: "github" | "gitlab" | "bitbucket",
+  ) {
     const profile = profiles.find((p) => p.id === id);
     if (!profile) return;
     try {
@@ -173,7 +194,12 @@ function App() {
       await loadProfiles();
       showToast(
         fmt(m.app.toastDefaultIdentity, {
-          platform: platform === "github" ? "GitHub" : "GitLab",
+          platform:
+            platform === "github"
+              ? "GitHub"
+              : platform === "gitlab"
+                ? "GitLab"
+                : "Bitbucket",
         }),
       );
     } catch (e) {

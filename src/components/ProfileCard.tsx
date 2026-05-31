@@ -9,7 +9,10 @@ interface Props {
   onActivate: (id: string) => void;
   onEdit: (profile: Profile) => void;
   onDelete: (id: string, deleteKeys: boolean) => void;
-  onSetDefault: (id: string, platform: "github" | "gitlab") => void;
+  onSetDefault: (
+    id: string,
+    platform: "github" | "gitlab" | "bitbucket",
+  ) => void;
 }
 
 function PlatformBadge({
@@ -24,7 +27,7 @@ function PlatformBadge({
   label: string;
   icon: React.ReactNode;
   account: PlatformAccount;
-  platform: "github" | "gitlab";
+  platform: "github" | "gitlab" | "bitbucket";
   isDefault: boolean;
   canClick: boolean;
   onClick: () => void;
@@ -33,7 +36,9 @@ function PlatformBadge({
   const profileUrl =
     platform === "github"
       ? `https://github.com/${account.username}`
-      : `https://gitlab.com/${account.username}`;
+      : platform === "gitlab"
+        ? `https://gitlab.com/${account.username}`
+        : `https://bitbucket.org/${account.username}`;
 
   const wrapper = canClick
     ? `rounded-md border px-3 py-2 transition-colors ${
@@ -89,6 +94,8 @@ function collectKeys(profile: Profile): string[] {
     keys.push(profile.github.ssh_private_key_path);
   if (profile.gitlab?.ssh_private_key_path)
     keys.push(profile.gitlab.ssh_private_key_path);
+  if (profile.bitbucket?.ssh_private_key_path)
+    keys.push(profile.bitbucket.ssh_private_key_path);
   return keys;
 }
 
@@ -100,9 +107,14 @@ export default function ProfileCard({
   onSetDefault,
 }: Props) {
   const { m } = useI18n();
+  const connectedCount =
+    (profile.github ? 1 : 0) +
+    (profile.gitlab ? 1 : 0) +
+    (profile.bitbucket ? 1 : 0);
   const defaultP =
-    profile.default_platform || (profile.github ? "github" : "gitlab");
-  const hasBoth = !!profile.github && !!profile.gitlab;
+    profile.default_platform ||
+    (profile.github ? "github" : profile.gitlab ? "gitlab" : "bitbucket");
+  const canChooseDefault = connectedCount >= 2;
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const keys = collectKeys(profile);
@@ -164,7 +176,7 @@ export default function ProfileCard({
           </div>
         </div>
 
-        {(profile.github || profile.gitlab) && (
+        {(profile.github || profile.gitlab || profile.bitbucket) && (
           <div className="mb-3 space-y-1.5">
             {profile.github && (
               <PlatformBadge
@@ -172,7 +184,7 @@ export default function ProfileCard({
                 platform="github"
                 account={profile.github}
                 isDefault={defaultP === "github"}
-                canClick={hasBoth}
+                canClick={canChooseDefault}
                 onClick={() => onSetDefault(profile.id, "github")}
                 icon={
                   <svg
@@ -191,7 +203,7 @@ export default function ProfileCard({
                 platform="gitlab"
                 account={profile.gitlab}
                 isDefault={defaultP === "gitlab"}
-                canClick={hasBoth}
+                canClick={canChooseDefault}
                 onClick={() => onSetDefault(profile.id, "gitlab")}
                 icon={
                   <svg
@@ -200,6 +212,25 @@ export default function ProfileCard({
                     fill="currentColor"
                   >
                     <path d="M282.83 170.73l-.27-.69-26.14-68.22a6.81 6.81 0 00-2.69-3.24 7 7 0 00-8 .43 7 7 0 00-2.32 3.52l-17.65 54h-71.47l-17.65-54a6.86 6.86 0 00-2.32-3.53 7 7 0 00-8-.43 6.87 6.87 0 00-2.69 3.24L97.44 170l-.26.69a48.54 48.54 0 0016.1 56.07l.09.07.24.17 39.82 29.82 19.7 14.91 12 9.06a8.07 8.07 0 009.76 0l12-9.06 19.7-14.91 40.06-30 .1-.08a48.56 48.56 0 0016.08-56.04z" />
+                  </svg>
+                }
+              />
+            )}
+            {profile.bitbucket && (
+              <PlatformBadge
+                label="Bitbucket"
+                platform="bitbucket"
+                account={profile.bitbucket}
+                isDefault={defaultP === "bitbucket"}
+                canClick={canChooseDefault}
+                onClick={() => onSetDefault(profile.id, "bitbucket")}
+                icon={
+                  <svg
+                    className="h-4 w-4 shrink-0 text-fg-4"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M.778 1.213a.768.768 0 00-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 00.77-.646l3.27-20.03a.768.768 0 00-.768-.891zM14.52 15.53H9.522L8.17 8.466h7.561z" />
                   </svg>
                 }
               />

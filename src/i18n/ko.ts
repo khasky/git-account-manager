@@ -26,6 +26,10 @@ export const ko: Messages = {
     downloading: `업데이트 다운로드 중… {percent}%`,
     failed: `업데이트 실패: {error}`,
   },
+  tray: {
+    show: `창 표시`,
+    quit: `Git Account Manager 종료`,
+  },
   theme: {
     light: `라이트`,
     dark: `다크`,
@@ -77,6 +81,13 @@ export const ko: Messages = {
     saved: `저장됨!`,
   },
   form: {
+    bitbucket: {
+      help: `Bitbucket은 <a>스코프가 있는 Atlassian API 토큰</a>이 필요합니다. "Create API token with scopes"를 사용하세요(스코프 없는 토큰은 작동하지 않음).`,
+      emailPlaceholder: `Atlassian 계정 이메일`,
+      tokenPlaceholder: `API 토큰`,
+      scopesHint: `스코프 선택: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket`,
+      errCreds: `Atlassian 이메일과 API 토큰을 모두 입력하세요.`,
+    },
     editTitle: `프로필 편집`,
     newTitle: `새 프로필`,
     profileName: `프로필 이름`,

@@ -21,6 +21,8 @@ pub struct Profile {
     pub github: Option<PlatformAccount>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gitlab: Option<PlatformAccount>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitbucket: Option<PlatformAccount>,
     pub is_active: bool,
 }
 
@@ -30,7 +32,12 @@ impl Profile {
         match platform {
             Some("github") => self.github.as_ref(),
             Some("gitlab") => self.gitlab.as_ref(),
-            _ => self.github.as_ref().or(self.gitlab.as_ref()),
+            Some("bitbucket") => self.bitbucket.as_ref(),
+            _ => self
+                .github
+                .as_ref()
+                .or(self.gitlab.as_ref())
+                .or(self.bitbucket.as_ref()),
         }
         .map(|a| (a.git_name.as_str(), a.git_email.as_str()))
     }

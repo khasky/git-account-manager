@@ -26,6 +26,10 @@ export const ru: Messages = {
     downloading: `Загрузка обновления… {percent}%`,
     failed: `Не удалось обновить: {error}`,
   },
+  tray: {
+    show: `Показать окно`,
+    quit: `Закрыть Git Account Manager`,
+  },
   theme: {
     light: `Светлая`,
     dark: `Тёмная`,
@@ -77,6 +81,13 @@ export const ru: Messages = {
     saved: `Сохранено!`,
   },
   form: {
+    bitbucket: {
+      help: `Bitbucket нужен <a>Atlassian API token со scopes</a> — жми «Create API token with scopes» (токен без scopes не работает).`,
+      emailPlaceholder: `Email аккаунта Atlassian`,
+      tokenPlaceholder: `API-токен`,
+      scopesHint: `Выбери scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket.`,
+      errCreds: `Укажите и email Atlassian, и API-токен.`,
+    },
     editTitle: `Редактировать профиль`,
     newTitle: `Новый профиль`,
     profileName: `Название профиля`,

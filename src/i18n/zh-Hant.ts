@@ -26,6 +26,10 @@ export const zhHant: Messages = {
     downloading: `正在下載更新… {percent}%`,
     failed: `更新失敗：{error}`,
   },
+  tray: {
+    show: `顯示視窗`,
+    quit: `關閉 Git Account Manager`,
+  },
   theme: {
     light: `淺色`,
     dark: `深色`,
@@ -77,6 +81,13 @@ export const zhHant: Messages = {
     saved: `已儲存！`,
   },
   form: {
+    bitbucket: {
+      help: `Bitbucket 需要帶 scopes 的 <a>Atlassian API 權杖</a>——請使用「Create API token with scopes」（無 scopes 的權杖無法使用）。`,
+      emailPlaceholder: `Atlassian 帳戶電子郵件`,
+      tokenPlaceholder: `API 權杖`,
+      scopesHint: `選擇 scopes：read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket`,
+      errCreds: `請輸入 Atlassian 電子郵件和 API 權杖。`,
+    },
     editTitle: `編輯設定檔`,
     newTitle: `新增設定檔`,
     profileName: `設定檔名稱`,

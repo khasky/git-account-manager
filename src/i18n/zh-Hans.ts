@@ -26,6 +26,10 @@ export const zhHans: Messages = {
     downloading: `正在下载更新… {percent}%`,
     failed: `更新失败：{error}`,
   },
+  tray: {
+    show: `显示窗口`,
+    quit: `关闭 Git Account Manager`,
+  },
   theme: {
     light: `浅色`,
     dark: `深色`,
@@ -77,6 +81,13 @@ export const zhHans: Messages = {
     saved: `已保存！`,
   },
   form: {
+    bitbucket: {
+      help: `Bitbucket 需要带 scopes 的 <a>Atlassian API 令牌</a>——请使用“Create API token with scopes”（无 scopes 的令牌无法使用）。`,
+      emailPlaceholder: `Atlassian 账户邮箱`,
+      tokenPlaceholder: `API 令牌`,
+      scopesHint: `选择 scopes：read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket`,
+      errCreds: `请输入 Atlassian 邮箱和 API 令牌。`,
+    },
     editTitle: `编辑配置文件`,
     newTitle: `新建配置文件`,
     profileName: `配置文件名称`,
