@@ -153,6 +153,19 @@ pnpm install
 
 Installers are generated under `src-tauri/target/release/bundle/`.
 
+### Windows packaging: why not MSIX / Microsoft Store?
+
+The Windows build produces an **MSI** (WiX) and an **NSIS** `.exe` installer — **not** an MSIX package. Distributing through the **Microsoft Store** would require MSIX, which is currently not viable: MSIX runs the app inside a container with **filesystem and registry virtualization**, and that breaks several core features even with the `runFullTrust` capability:
+
+| Feature                                      | Why MSIX breaks it                                                                                                                                                                                            |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TortoiseGit integration**                  | The app writes `HKCU\Software\TortoiseGit\SSH` so the _external_ TortoiseGit process reads it. Inside MSIX, `HKCU` writes are redirected to the package's private registry, so TortoiseGit never sees the value. |
+| **Launch at login (autostart)**              | Autostart is registered via an `HKCU` `Run` key, which MSIX also virtualizes — it would not fire at login. MSIX requires a manifest `StartupTask` extension instead.                                            |
+| **Running `git` / `ssh-keygen`**             | The app shells out to `git`, `ssh-keygen`, and `cmd` on the system `PATH`. Launching external executables from a packaged app behaves differently (container `PATH` / environment) and would need verification. |
+| **Writing `~/.ssh/config` and git config**   | The app rewrites the user's real `~/.ssh/config` and global `.gitconfig`. Packaged-app file virtualization can redirect such writes away from the real user profile.                                            |
+
+Until these are adapted (unvirtualized registry writes for TortoiseGit, a `StartupTask`-based autostart, and verified external-process / profile access), the app ships as a standard MSI + NSIS installer rather than MSIX.
+
 ### GitHub releases (CI)
 
 Pushing a **version tag** triggers the [Build & Release](.github/workflows/build.yml) workflow: it builds installers for Windows, Linux, and macOS, then attaches them to a GitHub Release.
@@ -201,6 +214,25 @@ This is **not** a malware detection. SmartScreen is **reputation-based**: it war
 3. Click **Run anyway** to proceed with the installation.
 
 The warning typically disappears for everyone once the installer is code-signed or has earned enough SmartScreen reputation over time.
+
+### Git for Windows: "Git Credential Manager" or "None" — does it matter?
+
+During **Git for Windows** setup, the **"Choose a credential helper"** step offers **Git Credential Manager (GCM)** (default) or **None**. Either choice is fine — **Git Account Manager does not require a credential helper** and works out of the box with both.
+
+This app drives Git over **SSH**, not HTTPS:
+
+- It switches your active identity with `git config --global user.name` / `user.email`.
+- It rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** uses the selected profile's key (`User git`, `IdentityFile`, `IdentitiesOnly yes`).
+- OAuth sign-in and SSH-key upload talk to the GitHub/GitLab APIs directly, not through Git.
+
+SSH authenticates with **keys**, which never use a credential helper — so the GCM-vs-None choice does not affect anything this app does.
+
+**The credential helper only matters for HTTPS remotes** (`https://github.com/...`), which this app does not manage:
+
+| Your Git remotes                                          | If you pick "None"                                                                                                                                                                                  |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SSH** (`git@github.com:...`) — what this app configures | Works out of the box; nothing else needed.                                                                                                                                                          |
+| **HTTPS** (`https://github.com/...`)                      | Git prompts for credentials on every push/pull (GitHub requires a **personal access token**, not a password). This is standard Git/HTTPS behavior, unrelated to this app — keeping **GCM** is smoother. |
 
 ### GitHub: `GitHub device code error: {"error":"Not Found"}`
 
