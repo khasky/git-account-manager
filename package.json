@@ -13,6 +13,7 @@
     "dev:desktop": "tauri dev",
     "build:web": "tsc && vite build",
     "build:desktop": "tauri build",
+    "build:desktop:signed": "tauri build --config src-tauri/tauri.updater.conf.json",
     "preview:web": "vite preview",
     "tauri": "tauri"
   },
