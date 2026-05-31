@@ -1,24 +1,59 @@
+<div align="center">
+
+<img src="src-tauri/icons/128x128.png" width="104" alt="Git Account Manager logo">
+
 # Git Account Manager
 
-A cross-platform desktop app for managing Git profiles. Switch your Git identity, SSH config, and connected accounts in one click.
+**Switch GitHub, GitLab &amp; Bitbucket identities — SSH keys, git config, and connected accounts in one click.**
 
-Built with **Tauri v2** (Rust) + **React** + **TypeScript** + **Tailwind CSS**.
+[![Release](https://img.shields.io/github/v/release/khasky/git-account-manager?style=flat-square)](https://github.com/khasky/git-account-manager/releases)
+[![Downloads](https://img.shields.io/github/downloads/khasky/git-account-manager/total?style=flat-square)](https://github.com/khasky/git-account-manager/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/khasky/git-account-manager/build.yml?style=flat-square)](../../actions)
+[![License](https://img.shields.io/github/license/khasky/git-account-manager?style=flat-square)](LICENSE)
+![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)
+[![Stars](https://img.shields.io/github/stars/khasky/git-account-manager?style=flat-square&logo=github)](../../stargazers)
+
+[Features](#features) • [Install](#installation) • [Quick start](#quick-start-guide) • [Develop](#development) • [Troubleshooting](#troubleshooting)
+
+<img src="screenshots/git-account-manager-1.png" width="760" alt="Git Account Manager">
+
+<sub>Built with <b>Tauri v2</b> (Rust) · <b>React</b> · <b>TypeScript</b> · <b>Tailwind CSS</b></sub>
+
+</div>
 
 ## Features
 
-- **Profiles** — Create, edit, and delete named accounts. Each profile can link **GitHub**, **GitLab**, or both.
-- **One-click activation** — Activating a profile updates **global** `git config user.name` and `user.email`, and rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** uses that profile's key.
-- **Default platform** — If both GitHub and GitLab are connected, choose which account supplies the active **git identity** (name/email).
-- **OAuth sign-in** — **GitHub** via device code flow; **GitLab.com** via browser authorization and PKCE (local callback). OAuth app **Client / Application IDs** are configurable in Settings (with built-in defaults).
-- **SSH keys** — Generate **Ed25519** keys with `ssh-keygen`, attach an existing key from `~/.ssh`, **upload** keys to GitHub/GitLab, optionally **remove** keys from the host when deleting a profile, and **copy a public key** to the clipboard from the profile editor.
-- **System tray** — Closing the window hides the app; restore or quit from the tray menu.
-- **Settings** — OAuth credentials, **launch at login** (autostart), and **light / dark / system** theme, optional **OpenSSH** mode for **TortoiseGit** and **Git CLI**.
+- **Profiles** — Create, edit, and delete named accounts. Each profile can link **GitHub**, **GitLab**, and **Bitbucket** — any one or several at once.
+- **One-click activation** — Activating a profile updates **global** `git config user.name` / `user.email` and rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** / **bitbucket.org** uses that profile's key.
+- **Default identity** — When several platforms are connected, choose which account supplies the active **git identity** (name/email).
+- **OAuth sign-in** — **GitHub** via device code flow, **GitLab.com** via browser authorization + PKCE, **Bitbucket** via an Atlassian API token. Client / Application IDs are configurable in Settings (with built-in defaults).
+- **SSH keys** — Generate **Ed25519** keys with `ssh-keygen`, attach an existing key from `~/.ssh`, **upload** keys to the host, optionally **remove** them when deleting a profile, and **copy a public key** to the clipboard.
+- **System tray** — Closing the window hides the app; restore or quit from the tray.
+- **Polished UX** — **Light / dark / system** themes, **11 interface languages**, launch-at-login, and an optional **OpenSSH** mode for **TortoiseGit** and **Git CLI**.
 
-![](./screenshots/git-account-manager-1.png)
+## Why Git Account Manager?
 
-![](./screenshots/git-account-manager-2.png)
+It's the only GUI in this space that also **generates and uploads** your SSH key — most alternatives only swap `git config`.
 
-![](./screenshots/git-account-manager-3.png)
+| | **Git Account Manager** | [GCM](https://github.com/git-ecosystem/git-credential-manager) | [git-account](https://github.com/uetchy/git-account) | [VS Code ext](https://marketplace.visualstudio.com/items?itemName=99sharmatushar.git-account-manager) |
+|---|:---:|:---:|:---:|:---:|
+| Desktop GUI | ✅ | ❌ | ❌ (CLI) | in-editor |
+| Generate + upload SSH key | ✅ | ❌ | ❌ | ❌ |
+| GitHub / GitLab / Bitbucket | ✅ | ✅ (+ Azure) | generic | generic |
+| One-click switch | ✅ | ❌ | CLI | ✅ |
+| Themes + 11 languages | ✅ | — | — | — |
+| HTTPS credential helper | 🚧 _planned_ | ✅ | ❌ | ❌ |
+
+<details>
+<summary><b>More screenshots</b></summary>
+
+<br>
+
+<img src="screenshots/git-account-manager-2.png" width="760" alt="Profile editor">
+
+<img src="screenshots/git-account-manager-3.png" width="760" alt="Settings">
+
+</details>
 
 ## Installation
 
@@ -26,35 +61,25 @@ Download the latest release for your OS from the [Releases](https://github.com/k
 
 ### Quick Start Guide
 
-1. Windows
+| OS | Steps |
+| --- | --- |
+| **Windows** | Download the `.msi`, run it, follow the installer. |
+| **macOS** | Download the `.dmg`, open it, drag the app to **Applications**. |
+| **Linux** | Download the `.AppImage`, `chmod +x GitAccountManager.AppImage`, then run `./GitAccountManager.AppImage`. |
 
-- Download the .msi installer
-- Run the installer and follow the on-screen instructions
-
-2. macOS
-
-- Download the .dmg file
-- Open the .dmg file
-- Drag the app to your Applications folder
-
-3. Linux
-
-- Download the .AppImage file
-- Make it executable: chmod +x GitAccountManager.AppImage
-- Run it: ./GitAccountManager.AppImage
+> First Windows launch may show a SmartScreen warning (the installer is not yet code-signed) — see [Troubleshooting](#troubleshooting).
 
 ## Security Notes
 
-- Tokens are stored in plain text in the JSON file
-- This is a simple tool for personal use
-- For enhanced security, consider:
-  - Using SSH keys instead of HTTPS/PAT
-  - Encrypting the storage file
-  - Using a credential manager
+- Tokens are currently stored in **plain text** in the app's JSON state file.
+- For enhanced security today, prefer **SSH keys** over HTTPS/PAT and keep the storage file private.
 
 ## Development
 
-### Prerequisites
+<details>
+<summary><b>Prerequisites</b> — Node 18+, pnpm, Rust, MSVC/clang/gcc, Git</summary>
+
+<br>
 
 #### Node.js (v18+)
 
@@ -131,6 +156,8 @@ git --version
 ssh-keygen -V
 ```
 
+</details>
+
 ### Install & Run
 
 ```bash
@@ -153,7 +180,10 @@ pnpm install
 
 Installers are generated under `src-tauri/target/release/bundle/`.
 
-### Windows packaging: why not MSIX / Microsoft Store?
+<details>
+<summary><b>Windows packaging: why not MSIX / Microsoft Store?</b></summary>
+
+<br>
 
 The Windows build produces an **MSI** (WiX) and an **NSIS** `.exe` installer — **not** an MSIX package. Distributing through the **Microsoft Store** would require MSIX, which is currently not viable: MSIX runs the app inside a container with **filesystem and registry virtualization**, and that breaks several core features even with the `runFullTrust` capability:
 
@@ -165,6 +195,8 @@ The Windows build produces an **MSI** (WiX) and an **NSIS** `.exe` installer —
 | **Writing `~/.ssh/config` and git config**   | The app rewrites the user's real `~/.ssh/config` and global `.gitconfig`. Packaged-app file virtualization can redirect such writes away from the real user profile.                                            |
 
 Until these are adapted (unvirtualized registry writes for TortoiseGit, a `StartupTask`-based autostart, and verified external-process / profile access), the app ships as a standard MSI + NSIS installer rather than MSIX.
+
+</details>
 
 ### GitHub releases (CI)
 
@@ -193,7 +225,10 @@ Updater artifacts (`latest.json` + per-installer `.sig`) are signed with a [mini
 
 ## Troubleshooting
 
-### Windows: "Windows protected your PC" (SmartScreen) when running the installer
+<details>
+<summary><b>Windows: "Windows protected your PC" (SmartScreen) when running the installer</b></summary>
+
+<br>
 
 When you launch the Windows installer (`Git.Account.Manager_<version>_x64_en-US.msi`), Microsoft Defender SmartScreen may show a blue full-screen dialog titled **"Windows protected your PC"**, with the message *"Microsoft Defender SmartScreen prevented an unrecognized app from starting"* and **Publisher: Unknown publisher**.
 
@@ -215,7 +250,12 @@ This is **not** a malware detection. SmartScreen is **reputation-based**: it war
 
 The warning typically disappears for everyone once the installer is code-signed or has earned enough SmartScreen reputation over time.
 
-### Git for Windows: "Git Credential Manager" or "None" — does it matter?
+</details>
+
+<details>
+<summary><b>Git for Windows: "Git Credential Manager" or "None" — does it matter?</b></summary>
+
+<br>
 
 During **Git for Windows** setup, the **"Choose a credential helper"** step offers **Git Credential Manager (GCM)** (default) or **None**. Either choice is fine — **Git Account Manager does not require a credential helper** and works out of the box with both.
 
@@ -234,7 +274,12 @@ SSH authenticates with **keys**, which never use a credential helper — so the 
 | **SSH** (`git@github.com:...`) — what this app configures | Works out of the box; nothing else needed.                                                                                                                                                          |
 | **HTTPS** (`https://github.com/...`)                      | Git prompts for credentials on every push/pull (GitHub requires a **personal access token**, not a password). This is standard Git/HTTPS behavior, unrelated to this app — keeping **GCM** is smoother. |
 
-### GitHub: `GitHub device code error: {"error":"Not Found"}`
+</details>
+
+<details>
+<summary><b>GitHub: <code>device code error: {"error":"Not Found"}</code></b></summary>
+
+<br>
 
 This is returned when GitHub responds with an error to the **device authorization** request (`POST https://github.com/login/device/code`). The app shows the response body from GitHub; `Not Found` usually means GitHub does not accept the **Client ID** or the app is not set up for this flow.
 
@@ -249,7 +294,12 @@ This is returned when GitHub responds with an error to the **device authorizatio
 
 After changing settings on GitHub, save the app, copy the Client ID again into this application, and retry **Connect with GitHub**.
 
-### GitLab (browser): `Client authentication failed due to unknown client, no client authentication included, or unsupported authentication method.`
+</details>
+
+<details>
+<summary><b>GitLab (browser): "Client authentication failed … unknown client"</b></summary>
+
+<br>
 
 This appears on **GitLab's website** (URL like `gitlab.com/oauth/authorize?...`) immediately after you click **Connect with GitLab**, when the browser opens the authorization page. GitLab rejects the OAuth application before you can approve access.
 
@@ -264,7 +314,12 @@ This appears on **GitLab's website** (URL like `gitlab.com/oauth/authorize?...`)
 
 After fixing the application on GitLab, click **Save Settings** in this app, then try **Connect with GitLab** again.
 
-### GitLab: `error sending request for url (https://gitlab.com/oauth/token)`
+</details>
+
+<details>
+<summary><b>GitLab: <code>error sending request for url (https://gitlab.com/oauth/token)</code></b></summary>
+
+<br>
 
 After you click **Connect with GitLab**, the browser completes authorization and the app exchanges the authorization code for an access token by **POST**ing to `https://gitlab.com/oauth/token`. That message is returned when the HTTP client **cannot complete the request** (no response was received). It is a **transport** failure, not a wrong Client ID or redirect URI (those usually produce a different error after GitLab responds).
 
@@ -286,15 +341,18 @@ After you click **Connect with GitLab**, the browser completes authorization and
 
 **Note:** OAuth in this app targets **GitLab.com** (`gitlab.com`). Self-managed GitLab instances use different hostnames and are not covered by the built-in URLs.
 
-## Future Improvements
+</details>
 
-- **Authentication options:** support personal access tokens.
-- **Per-account keys:** view and manage SSH keys for each saved account.
-- **Bitbucket:** connect **Bitbucket.org** from a profile, alongside GitHub and GitLab.
+## Roadmap
+
+- **HTTPS / PAT support** — work with HTTPS remotes via a built-in git **credential helper** (not just SSH).
+- **OS keychain** — move tokens out of the plaintext JSON into Windows Credential Manager / macOS Keychain / libsecret.
+- **Per-folder identity** — bind a directory to a profile via `includeIf "gitdir:…"`.
+- **CLI** — `gam set <profile>` for terminals, CI, and dotfiles.
 
 ## Contributing
 
-Contributions are welcome! Here's how you can contribute:
+Contributions are welcome!
 
 1. Fork the repository.
 2. Create a new branch: `git checkout -b feature-branch-name`.
