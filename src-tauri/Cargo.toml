@@ -1,6 +1,6 @@
 [package]
 name = "git-account-manager"
-version = "0.1.4"
+version = "0.1.5"
 description = "A cross-platform desktop app for managing Git profiles. Switch your Git identity, SSH config, and connected accounts in one click."
 authors = ["https://github.com/khasky"]
 edition = "2021"
@@ -34,7 +34,12 @@ tokio = { version = "1", features = ["rt"] }
 hostname = "0.4"
 tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-process = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+
+# Desktop-only: the updater plugin does not build for mobile targets.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
 

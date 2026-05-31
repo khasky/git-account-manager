@@ -18,6 +18,14 @@ export const ko: Messages = {
     toastDefaultIdentity: `기본 신원: {platform}`,
     toastProfileSaved: `프로필 저장됨`,
   },
+  update: {
+    available: `업데이트 사용 가능`,
+    newVersion: `버전 {version} (현재 {current})`,
+    updateNow: `지금 업데이트`,
+    later: `나중에`,
+    downloading: `업데이트 다운로드 중… {percent}%`,
+    failed: `업데이트 실패: {error}`,
+  },
   theme: {
     light: `라이트`,
     dark: `다크`,

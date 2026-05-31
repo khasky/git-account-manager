@@ -18,6 +18,14 @@ export const ptBR: Messages = {
     toastDefaultIdentity: `Identidade padrão: {platform}`,
     toastProfileSaved: `Perfil salvo`,
   },
+  update: {
+    available: `Atualização disponível`,
+    newVersion: `Versão {version} (você tem {current})`,
+    updateNow: `Atualizar`,
+    later: `Mais tarde`,
+    downloading: `Baixando atualização… {percent}%`,
+    failed: `Falha na atualização: {error}`,
+  },
   theme: {
     light: `Claro`,
     dark: `Escuro`,

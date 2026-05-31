@@ -18,6 +18,14 @@ export const uk: Messages = {
     toastDefaultIdentity: `Ідентичність за замовчуванням: {platform}`,
     toastProfileSaved: `Профіль збережено`,
   },
+  update: {
+    available: `Доступне оновлення`,
+    newVersion: `Версія {version} (у вас {current})`,
+    updateNow: `Оновити`,
+    later: `Пізніше`,
+    downloading: `Завантаження оновлення… {percent}%`,
+    failed: `Не вдалося оновити: {error}`,
+  },
   theme: {
     light: `Світла`,
     dark: `Темна`,

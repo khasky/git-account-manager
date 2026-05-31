@@ -18,6 +18,14 @@ export const ja: Messages = {
     toastDefaultIdentity: `既定のアイデンティティ: {platform}`,
     toastProfileSaved: `プロフィールを保存しました`,
   },
+  update: {
+    available: `アップデートがあります`,
+    newVersion: `バージョン {version}（現在 {current}）`,
+    updateNow: `今すぐ更新`,
+    later: `後で`,
+    downloading: `アップデートをダウンロード中… {percent}%`,
+    failed: `更新に失敗しました: {error}`,
+  },
   theme: {
     light: `ライト`,
     dark: `ダーク`,

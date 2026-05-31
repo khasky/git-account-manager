@@ -24,6 +24,14 @@ export const en = {
     toastDefaultIdentity: `Default identity: {platform}`,
     toastProfileSaved: `Profile saved`,
   },
+  update: {
+    available: `Update available`,
+    newVersion: `Version {version} (you have {current})`,
+    updateNow: `Update now`,
+    later: `Later`,
+    downloading: `Downloading update… {percent}%`,
+    failed: `Update failed: {error}`,
+  },
   theme: {
     light: `Light`,
     dark: `Dark`,

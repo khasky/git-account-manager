@@ -18,6 +18,14 @@ export const es: Messages = {
     toastDefaultIdentity: `Identidad predeterminada: {platform}`,
     toastProfileSaved: `Perfil guardado`,
   },
+  update: {
+    available: `Actualización disponible`,
+    newVersion: `Versión {version} (tienes {current})`,
+    updateNow: `Actualizar`,
+    later: `Más tarde`,
+    downloading: `Descargando actualización… {percent}%`,
+    failed: `Error al actualizar: {error}`,
+  },
   theme: {
     light: `Claro`,
     dark: `Oscuro`,

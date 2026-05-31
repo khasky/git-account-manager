@@ -7,6 +7,7 @@ import { useI18n, fmt } from "./i18n";
 import ProfileCard from "./components/ProfileCard";
 import ProfileForm from "./components/ProfileForm";
 import SettingsPage from "./components/SettingsPage";
+import UpdateBanner from "./components/UpdateBanner";
 
 type View = "list" | "form" | "settings";
 
@@ -225,6 +226,7 @@ function App() {
 
   return (
     <div className="flex h-screen flex-col bg-surface text-fg">
+      <UpdateBanner />
       <header className="flex items-center justify-between border-b border-bd px-6 py-4">
         <div>
           <h1 className="text-xl font-bold text-fg">Git Account Manager</h1>

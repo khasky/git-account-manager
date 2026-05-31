@@ -14,6 +14,8 @@ concurrency:
 
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -69,11 +71,26 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Required to sign updater artifacts (latest.json + *.sig). Generate the
+          # key pair with `pnpm tauri signer generate` and store both as repo secrets.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: --target ${{ matrix.target }}
           tauriScript: pnpm tauri
+          # On a `v*` tag push, create/append to a GitHub Release and publish the
+          # signed installers + updater manifest (latest.json). Empty on branch/PR
+          # runs, where tauri-action only builds (no release).
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: "Git Account Manager __VERSION__"
+          releaseBody: "Auto-generated release. Existing installs update in-app via the built-in updater."
+          releaseDraft: false
+          prerelease: false
 
+      # Branch/PR builds don't publish a release, so keep the installers as CI
+      # artifacts for manual download. Tag builds upload to the release instead.
       - name: Upload artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.target }}
@@ -84,23 +101,3 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
           if-no-files-found: ignore
-
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: false
-          generate_release_notes: true
-          files: artifacts/**/*

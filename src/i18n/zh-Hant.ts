@@ -18,6 +18,14 @@ export const zhHant: Messages = {
     toastDefaultIdentity: `預設身分：{platform}`,
     toastProfileSaved: `設定檔已儲存`,
   },
+  update: {
+    available: `有可用更新`,
+    newVersion: `版本 {version}（目前 {current}）`,
+    updateNow: `立即更新`,
+    later: `稍後`,
+    downloading: `正在下載更新… {percent}%`,
+    failed: `更新失敗：{error}`,
+  },
   theme: {
     light: `淺色`,
     dark: `深色`,

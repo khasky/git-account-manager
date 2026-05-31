@@ -18,6 +18,14 @@ export const ru: Messages = {
     toastDefaultIdentity: `Идентичность по умолчанию: {platform}`,
     toastProfileSaved: `Профиль сохранён`,
   },
+  update: {
+    available: `Доступно обновление`,
+    newVersion: `Версия {version} (у вас {current})`,
+    updateNow: `Обновить`,
+    later: `Позже`,
+    downloading: `Загрузка обновления… {percent}%`,
+    failed: `Не удалось обновить: {error}`,
+  },
   theme: {
     light: `Светлая`,
     dark: `Тёмная`,
