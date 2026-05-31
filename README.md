@@ -33,16 +33,18 @@
 
 ## Why Git Account Manager?
 
-It's the only GUI in this space that also **generates and uploads** your SSH key — most alternatives only swap `git config`.
+It's the only tool here that **generates and uploads an SSH key for you from a GUI** — and the only free, open-source app built specifically for juggling Git identities. The well-known alternatives either live in the terminal (`gh`, GCM) or are paid clients (GitKraken).
 
-| | **Git Account Manager** | [GCM](https://github.com/git-ecosystem/git-credential-manager) | [git-account](https://github.com/uetchy/git-account) | [VS Code ext](https://marketplace.visualstudio.com/items?itemName=99sharmatushar.git-account-manager) |
-|---|:---:|:---:|:---:|:---:|
-| Desktop GUI | ✅ | ❌ | ❌ (CLI) | in-editor |
-| Generate + upload SSH key | ✅ | ❌ | ❌ | ❌ |
-| GitHub / GitLab / Bitbucket | ✅ | ✅ (+ Azure) | generic | generic |
-| One-click switch | ✅ | ❌ | CLI | ✅ |
-| Themes + 11 languages | ✅ | — | — | — |
-| HTTPS credential helper | 🚧 _planned_ | ✅ | ❌ | ❌ |
+| | **Git Account Manager** | [`gh` CLI](https://github.com/cli/cli) | [GitHub Desktop](https://github.com/desktop/desktop) | [GCM](https://github.com/git-ecosystem/git-credential-manager) | [GitKraken](https://www.gitkraken.com/) |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Desktop GUI | ✅ | ❌ CLI | ✅ | ❌ | ✅ |
+| Generate + upload SSH key | ✅ | ⚠️ login only | ❌ | ❌ | ⚠️ |
+| GitHub / GitLab / Bitbucket | ✅ | GitHub | GitHub | ✅ +Azure | ✅ |
+| One-click identity switch | ✅ | CLI | ❌ | auto | ✅ |
+| HTTPS credential helper | 🚧 _planned_ | ✅ | ✅ | ✅ | ✅ |
+| Free & open source (MIT) | ✅ | ✅ | ✅ | ✅ | ❌ _paid_ |
+
+<sub>Measured against the most-used tools in the space — <b><code>gh</code></b> 44k★ · <b>GitHub Desktop</b> 21k★ · <b>GCM</b> 8.9k★ · <b>GitKraken</b> (popular paid client).</sub>
 
 <details>
 <summary><b>More screenshots</b></summary>
