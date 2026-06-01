@@ -4,7 +4,7 @@
 
 # Git Account Manager
 
-**Switch GitHub, GitLab &amp; Bitbucket identities — SSH keys, git config, and connected accounts in one click.**
+**A desktop Git account manager for secure identity switching across popular code hosting platforms.**
 
 [![Release](https://img.shields.io/github/v/release/khasky/git-account-manager?style=flat-square)](https://github.com/khasky/git-account-manager/releases)
 [![Downloads](https://img.shields.io/github/downloads/khasky/git-account-manager/total?style=flat-square)](https://github.com/khasky/git-account-manager/releases)
@@ -26,9 +26,12 @@
 - **Profiles** — Create, edit, and delete named accounts. Each profile can link **GitHub**, **GitLab**, and **Bitbucket** — any one or several at once.
 - **One-click activation** — Activating a profile updates **global** `git config user.name` / `user.email` and rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** / **bitbucket.org** uses that profile's key.
 - **Default identity** — When several platforms are connected, choose which account supplies the active **git identity** (name/email).
+- **Import from Git** — Start a new profile from the current global Git identity so existing `user.name` / `user.email` settings are not lost.
 - **OAuth sign-in** — **GitHub** via device code flow, **GitLab.com** via browser authorization + PKCE, **Bitbucket** via an Atlassian API token. Client / Application IDs are configurable in Settings (with built-in defaults).
+- **Secure token storage** — OAuth and API tokens are kept in the OS credential store (**Windows Credential Manager**, **macOS Keychain**, or Linux **Secret Service**) instead of plaintext JSON.
 - **SSH keys** — Generate **Ed25519** keys with `ssh-keygen`, attach an existing key from `~/.ssh`, **upload** keys to the host, optionally **remove** them when deleting a profile, and **copy a public key** to the clipboard.
-- **System tray** — Closing the window hides the app; restore or quit from the tray.
+- **System tray** — Closing the window hides the app; the tray shows the active identity, lets you switch profiles, restore the window, or quit.
+- **Auto updates** — The app checks GitHub Releases for newer signed builds and can download, install, and relaunch into the latest version from inside the app.
 - **Polished UX** — **Light / dark / system** themes, **11 interface languages**, launch-at-login, and an optional **OpenSSH** mode for **TortoiseGit** and **Git CLI**.
 
 ## Why Git Account Manager?
