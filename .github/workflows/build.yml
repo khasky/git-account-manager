@@ -87,6 +87,9 @@ jobs:
           # runs, where tauri-action only builds (no release).
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: "Git Account Manager __VERSION__"
+          # Fallback body only. The `release-notes` job below replaces this with
+          # GitHub's auto-generated notes ("Full Changelog: <prev>...<tag>" link)
+          # once every platform's build has finished.
           releaseBody: "Auto-generated release. Existing installs update in-app via the built-in updater."
           releaseDraft: false
           prerelease: false
@@ -105,3 +108,28 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
           if-no-files-found: ignore
+
+  # tauri-action publishes the release with the signed updater artifacts but a
+  # static body. After every platform build finishes, replace that body with
+  # GitHub's auto-generated notes ("What's Changed" + the
+  # "Full Changelog: <prev>...<tag>" compare link), keeping the release name.
+  # Runs in its own job so it never races tauri-action creating the release.
+  release-notes:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          release=$(gh api "repos/$REPO/releases/tags/$TAG")
+          id=$(echo "$release" | jq -r '.id')
+          name=$(echo "$release" | jq -r '.name')
+          gh api --method PATCH "repos/$REPO/releases/$id" \
+            -f name="$name" \
+            -F generate_release_notes=true
