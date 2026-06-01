@@ -33,7 +33,17 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "fragmentPaths": ["windows/wix-uninstall-icon.wxs"],
+        "componentRefs": ["UninstallDisplayIconRegistry"]
+      },
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "windows/nsis-hooks.nsh"
+      }
+    }
   },
   "plugins": {
     "updater": {
