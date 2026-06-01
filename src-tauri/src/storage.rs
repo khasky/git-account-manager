@@ -1,4 +1,4 @@
-use crate::models::AppState;
+use crate::{models::AppState, secrets};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -31,13 +31,26 @@ pub fn load_state() -> Result<AppState, String> {
     };
 
     match serde_json::from_str::<AppState>(&content) {
-        Ok(state) => Ok(state),
+        Ok(mut state) => {
+            if secrets::migrate_plaintext_tokens(&mut state)? {
+                save_state(&state)?;
+            }
+            Ok(state)
+        }
         Err(e) => {
             let hint = match backup_corrupt_file(&path, &content) {
-                Some(backup) => format!(" A backup of the original file was saved to {}.", backup.display()),
+                Some(backup) => format!(
+                    " A backup of the original file was saved to {}.",
+                    backup.display()
+                ),
                 None => String::new(),
             };
-            Err(format!("Could not parse {}: {}.{}", path.display(), e, hint))
+            Err(format!(
+                "Could not parse {}: {}.{}",
+                path.display(),
+                e,
+                hint
+            ))
         }
     }
 }

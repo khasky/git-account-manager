@@ -29,6 +29,8 @@ export const ja: Messages = {
   tray: {
     show: `ウィンドウを表示`,
     quit: `Git Account Manager を終了`,
+    activePrefix: `アクティブ:`,
+    noActiveProfile: `アクティブなプロファイルがありません`,
   },
   theme: {
     light: `ライト`,
@@ -93,6 +95,7 @@ export const ja: Messages = {
     profileName: `プロフィール名`,
     profileNamePlaceholder: `例: 個人、仕事`,
     connectWith: `{platform} に接続`,
+    importFromGit: `git config からインポート`,
     enterCode: `GitHub でこのコードを入力してください:`,
     waitingAuth: `認証を待っています...`,
     waitingBrowser: `ブラウザの認証を待っています...`,

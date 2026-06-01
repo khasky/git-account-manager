@@ -3,12 +3,14 @@ mod models;
 mod oauth;
 mod openssh_integration;
 mod platform;
+mod secrets;
 mod ssh;
 mod storage;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -23,7 +25,7 @@ fn get_profiles() -> Result<Vec<Profile>, String> {
 }
 
 #[tauri::command]
-fn save_profile(mut profile: Profile) -> Result<(), String> {
+fn save_profile(app: tauri::AppHandle, mut profile: Profile) -> Result<(), String> {
     let mut state = storage::load_state()?;
     let is_new = !state.profiles.iter().any(|p| p.id == profile.id);
     let has_active = state.profiles.iter().any(|p| p.is_active);
@@ -33,6 +35,7 @@ fn save_profile(mut profile: Profile) -> Result<(), String> {
     }
 
     if let Some(existing) = state.profiles.iter_mut().find(|p| p.id == profile.id) {
+        delete_removed_platform_tokens(existing, &profile)?;
         *existing = profile;
     } else {
         state.profiles.push(profile);
@@ -45,20 +48,54 @@ fn save_profile(mut profile: Profile) -> Result<(), String> {
             git::set_global_identity(name, email)?;
         }
     }
+    refresh_tray(&app);
     Ok(())
 }
 
+fn delete_removed_platform_tokens(existing: &Profile, next: &Profile) -> Result<(), String> {
+    for platform in ["github", "gitlab", "bitbucket"] {
+        if has_platform(existing, platform) && !has_platform(next, platform) {
+            secrets::delete_token(&existing.id, platform)?;
+        }
+    }
+    Ok(())
+}
+
+fn has_platform(profile: &Profile, platform: &str) -> bool {
+    match platform {
+        "github" => profile.github.is_some(),
+        "gitlab" => profile.gitlab.is_some(),
+        "bitbucket" => profile.bitbucket.is_some(),
+        _ => false,
+    }
+}
+
 #[tauri::command]
-fn delete_profile(id: String) -> Result<(), String> {
+fn delete_profile(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let state = storage::load_state()?;
-    let has_github_remaining = state.profiles.iter().any(|p| p.id != id && p.github.is_some());
-    let has_gitlab_remaining = state.profiles.iter().any(|p| p.id != id && p.gitlab.is_some());
-    let has_bitbucket_remaining = state.profiles.iter().any(|p| p.id != id && p.bitbucket.is_some());
+    let has_github_remaining = state
+        .profiles
+        .iter()
+        .any(|p| p.id != id && p.github.is_some());
+    let has_gitlab_remaining = state
+        .profiles
+        .iter()
+        .any(|p| p.id != id && p.gitlab.is_some());
+    let has_bitbucket_remaining = state
+        .profiles
+        .iter()
+        .any(|p| p.id != id && p.bitbucket.is_some());
 
     let mut hosts_to_clean: Vec<&str> = Vec::new();
-    if !has_github_remaining { hosts_to_clean.push("github.com"); }
-    if !has_gitlab_remaining { hosts_to_clean.push("gitlab.com"); }
-    if !has_bitbucket_remaining { hosts_to_clean.push("bitbucket.org"); }
+    if !has_github_remaining {
+        hosts_to_clean.push("github.com");
+    }
+    if !has_gitlab_remaining {
+        hosts_to_clean.push("gitlab.com");
+    }
+    if !has_bitbucket_remaining {
+        hosts_to_clean.push("bitbucket.org");
+    }
     if !hosts_to_clean.is_empty() {
         ssh::clean_known_hosts(&hosts_to_clean).ok();
     }
@@ -66,11 +103,13 @@ fn delete_profile(id: String) -> Result<(), String> {
     let mut state = state;
     state.profiles.retain(|p| p.id != id);
     storage::save_state(&state)?;
-    ssh::update_ssh_config(&state.profiles)
+    secrets::delete_profile_tokens(&id)?;
+    ssh::update_ssh_config(&state.profiles)?;
+    refresh_tray(&app);
+    Ok(())
 }
 
-#[tauri::command]
-fn activate_profile(id: String) -> Result<(), String> {
+fn activate_profile_core(id: &str) -> Result<(), String> {
     let mut state = storage::load_state()?;
     for p in &mut state.profiles {
         p.is_active = p.id == id;
@@ -83,6 +122,13 @@ fn activate_profile(id: String) -> Result<(), String> {
         }
     }
     ssh::update_ssh_config(&state.profiles)
+}
+
+#[tauri::command]
+fn activate_profile(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    activate_profile_core(&id)?;
+    refresh_tray(&app);
+    Ok(())
 }
 
 // ---- SSH Keys ----
@@ -113,9 +159,10 @@ fn delete_ssh_keys(paths: Vec<String>) -> Result<(), String> {
 #[tauri::command]
 async fn remove_ssh_key_from_platform(
     platform: String,
-    token: String,
+    profile_id: String,
     public_key_path: String,
 ) -> Result<(), String> {
+    let token = secrets::get_token(&profile_id, &platform)?;
     let pub_key = ssh::read_public_key(&public_key_path)?;
     platform::delete_ssh_key_from_platform(&platform, &token, &pub_key).await
 }
@@ -153,10 +200,11 @@ fn hostname_slug_for_key() -> String {
 #[tauri::command]
 async fn generate_and_upload_key(
     platform: String,
-    token: String,
+    profile_id: String,
     username: String,
     email: String,
 ) -> Result<SshKeyPair, String> {
+    let token = secrets::get_token(&profile_id, &platform)?;
     let slug = username.to_lowercase().replace(' ', "-");
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -176,18 +224,36 @@ async fn generate_and_upload_key(
 // ---- Platform Verification ----
 
 #[tauri::command]
-async fn verify_platform_token(platform: String, token: String) -> Result<PlatformUser, String> {
-    platform::verify_token(&platform, &token).await
+async fn connect_bitbucket(
+    profile_id: String,
+    email: String,
+    api_token: String,
+) -> Result<PlatformUser, String> {
+    let token = format!("{}:{}", email.trim(), api_token.trim());
+    let user = platform::verify_token("bitbucket", &token).await?;
+    secrets::set_token(&profile_id, "bitbucket", &token)?;
+    Ok(user)
 }
 
 #[tauri::command]
 async fn upload_ssh_key_to_platform(
     platform: String,
-    token: String,
+    profile_id: String,
     title: String,
     key_content: String,
 ) -> Result<(), String> {
+    let token = secrets::get_token(&profile_id, &platform)?;
     platform::upload_ssh_key(&platform, &token, &title, &key_content).await
+}
+
+#[tauri::command]
+fn delete_platform_token(profile_id: String, platform: String) -> Result<(), String> {
+    secrets::delete_token(&profile_id, &platform)
+}
+
+#[tauri::command]
+fn delete_profile_tokens(profile_id: String) -> Result<(), String> {
+    secrets::delete_profile_tokens(&profile_id)
 }
 
 // ---- OAuth: GitHub Device Flow ----
@@ -201,8 +267,14 @@ async fn github_oauth_start(client_id: String) -> Result<DeviceCodeResponse, Str
 async fn github_oauth_poll(
     client_id: String,
     device_code: String,
-) -> Result<Option<String>, String> {
-    oauth::github_device_poll(&client_id, &device_code).await
+    profile_id: String,
+) -> Result<Option<PlatformUser>, String> {
+    let Some(token) = oauth::github_device_poll(&client_id, &device_code).await? else {
+        return Ok(None);
+    };
+    let user = platform::verify_token("github", &token).await?;
+    secrets::set_token(&profile_id, "github", &token)?;
+    Ok(Some(user))
 }
 
 // ---- OAuth: GitLab PKCE ----
@@ -234,7 +306,11 @@ fn gitlab_oauth_abort() {
 }
 
 #[tauri::command]
-async fn gitlab_oauth_connect(app: tauri::AppHandle, client_id: String) -> Result<String, String> {
+async fn gitlab_oauth_connect(
+    app: tauri::AppHandle,
+    client_id: String,
+    profile_id: String,
+) -> Result<PlatformUser, String> {
     let cancel = Arc::new(AtomicBool::new(false));
     register_gitlab_oauth_cancel(cancel.clone());
     struct ClearGitlabOauthSlot;
@@ -248,8 +324,12 @@ async fn gitlab_oauth_connect(app: tauri::AppHandle, client_id: String) -> Resul
     let (verifier, challenge) = oauth::generate_pkce();
 
     let port = oauth::GITLAB_CALLBACK_PORT;
-    let listener = std::net::TcpListener::bind(format!("127.0.0.1:{}", port))
-        .map_err(|e| format!("Cannot bind to port {} (is the app already running?): {}", port, e))?;
+    let listener = std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).map_err(|e| {
+        format!(
+            "Cannot bind to port {} (is the app already running?): {}",
+            port, e
+        )
+    })?;
     let redirect_uri = format!("http://localhost:{}/callback", port);
 
     let auth_url = oauth::build_gitlab_auth_url(&client_id, &redirect_uri, &challenge);
@@ -259,13 +339,15 @@ async fn gitlab_oauth_connect(app: tauri::AppHandle, client_id: String) -> Resul
     open::that(&auth_url).map_err(|e| format!("Failed to open browser: {}", e))?;
 
     let cancel_for_wait = cancel.clone();
-    let code = tokio::task::spawn_blocking(move || {
-        oauth::wait_for_callback(listener, cancel_for_wait)
-    })
-    .await
-    .map_err(|e| e.to_string())??;
+    let code =
+        tokio::task::spawn_blocking(move || oauth::wait_for_callback(listener, cancel_for_wait))
+            .await
+            .map_err(|e| e.to_string())??;
 
-    oauth::gitlab_exchange_code(&client_id, &code, &redirect_uri, &verifier).await
+    let token = oauth::gitlab_exchange_code(&client_id, &code, &redirect_uri, &verifier).await?;
+    let user = platform::verify_token("gitlab", &token).await?;
+    secrets::set_token(&profile_id, "gitlab", &token)?;
+    Ok(user)
 }
 
 // ---- Settings ----
@@ -314,22 +396,121 @@ fn get_git_identity() -> Result<GitIdentity, String> {
 
 // ---- Tray ----
 
-// Handles to the tray menu items, kept in managed state so the frontend can
-// relabel them when the interface language changes (the menu is built once at
-// startup; translations live in the webview, not in Rust).
-struct TrayMenuItems {
-    show: tauri::menu::MenuItem<tauri::Wry>,
-    quit: tauri::menu::MenuItem<tauri::Wry>,
+// Localized labels for the tray menu. The menu is rebuilt from scratch on every
+// change (Tauri cannot patch individual items) and the translations live in the
+// webview, so the frontend pushes the active language's strings here via
+// `set_tray_labels`; `refresh_tray` reads them when assembling the menu.
+#[derive(Clone)]
+struct TrayLabels {
+    show: String,
+    quit: String,
+    active_prefix: String,
+    no_active: String,
+}
+
+impl Default for TrayLabels {
+    fn default() -> Self {
+        Self {
+            show: "Show Window".to_string(),
+            quit: "Close Git Account Manager".to_string(),
+            active_prefix: "Active:".to_string(),
+            no_active: "No active profile".to_string(),
+        }
+    }
+}
+
+const TRAY_ID: &str = "main";
+
+/// Builds the full tray menu: a disabled header showing the active identity, one
+/// clickable entry per profile (a check mark marks the active one; id
+/// `activate:<profile-id>`), then Show and Quit.
+fn build_tray_menu(
+    app: &tauri::AppHandle,
+    profiles: &[Profile],
+    labels: &TrayLabels,
+) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+
+    let menu = Menu::new(app)?;
+
+    let active = profiles.iter().find(|p| p.is_active);
+    let header_text = match active {
+        Some(p) => match p.active_identity() {
+            Some((name, email)) => format!("{} {} <{}>", labels.active_prefix, name, email),
+            None => format!("{} {}", labels.active_prefix, p.name),
+        },
+        None => labels.no_active.clone(),
+    };
+    let header = MenuItem::with_id(app, "tray_header", header_text, false, None::<&str>)?;
+    menu.append(&header)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+
+    for p in profiles {
+        let label = if p.is_active {
+            format!("\u{2713} {}", p.name)
+        } else {
+            format!("   {}", p.name)
+        };
+        let item = MenuItem::with_id(app, format!("activate:{}", p.id), label, true, None::<&str>)?;
+        menu.append(&item)?;
+    }
+    if !profiles.is_empty() {
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
+
+    let show = MenuItem::with_id(app, "show", &labels.show, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", &labels.quit, true, None::<&str>)?;
+    menu.append(&show)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&quit)?;
+
+    Ok(menu)
+}
+
+fn tray_tooltip(profiles: &[Profile]) -> String {
+    match profiles.iter().find(|p| p.is_active) {
+        Some(p) => format!("Git Account Manager \u{2014} {}", p.name),
+        None => "Git Account Manager".to_string(),
+    }
+}
+
+/// Rebuilds the tray menu and tooltip from current state. Idempotent; call after
+/// any change to profiles or to the active identity.
+fn refresh_tray(app: &tauri::AppHandle) {
+    let profiles = storage::load_state()
+        .map(|s| s.profiles)
+        .unwrap_or_default();
+    let labels = app
+        .state::<std::sync::Mutex<TrayLabels>>()
+        .lock()
+        .map(|l| l.clone())
+        .unwrap_or_default();
+
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        if let Ok(menu) = build_tray_menu(app, &profiles, &labels) {
+            let _ = tray.set_menu(Some(menu));
+        }
+        let _ = tray.set_tooltip(Some(tray_tooltip(&profiles)));
+    }
 }
 
 #[tauri::command]
 fn set_tray_labels(
+    app: tauri::AppHandle,
     show: String,
     quit: String,
-    items: tauri::State<'_, TrayMenuItems>,
+    active_prefix: String,
+    no_active: String,
+    labels: tauri::State<'_, std::sync::Mutex<TrayLabels>>,
 ) -> Result<(), String> {
-    items.show.set_text(show).map_err(|e| e.to_string())?;
-    items.quit.set_text(quit).map_err(|e| e.to_string())?;
+    {
+        let mut l = labels.lock().map_err(|e| e.to_string())?;
+        l.show = show;
+        l.quit = quit;
+        l.active_prefix = active_prefix;
+        l.no_active = no_active;
+    }
+    refresh_tray(&app);
     Ok(())
 }
 
@@ -378,27 +559,23 @@ pub fn run() {
                 }
             }
 
-            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
             use tauri::tray::TrayIconBuilder;
 
-            let show = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-            let sep = PredefinedMenuItem::separator(app)?;
-            let quit =
-                MenuItem::with_id(app, "quit", "Close Git Account Manager", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &sep, &quit])?;
+            app.manage(std::sync::Mutex::new(TrayLabels::default()));
 
-            // Keep handles so `set_tray_labels` can localize the menu at runtime.
-            app.manage(TrayMenuItems {
-                show: show.clone(),
-                quit: quit.clone(),
-            });
+            let initial_profiles = storage::load_state()
+                .map(|s| s.profiles)
+                .unwrap_or_default();
+            let initial_menu =
+                build_tray_menu(app.handle(), &initial_profiles, &TrayLabels::default())?;
+            let initial_tooltip = tray_tooltip(&initial_profiles);
 
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id(TRAY_ID)
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
                     "../icons/32x32.png"
                 ))?)
-                .menu(&menu)
-                .tooltip("Git Account Manager")
+                .menu(&initial_menu)
+                .tooltip(initial_tooltip)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "quit" => {
@@ -410,7 +587,15 @@ pub fn run() {
                             let _ = w.set_focus();
                         }
                     }
-                    _ => {}
+                    "tray_header" => {}
+                    other => {
+                        if let Some(profile_id) = other.strip_prefix("activate:") {
+                            if activate_profile_core(profile_id).is_ok() {
+                                refresh_tray(app);
+                                let _ = app.emit("profiles-changed", ());
+                            }
+                        }
+                    }
                 })
                 .on_tray_icon_event(|tray, event| {
                     use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
@@ -448,8 +633,10 @@ pub fn run() {
             delete_ssh_keys,
             remove_ssh_key_from_platform,
             generate_and_upload_key,
-            verify_platform_token,
+            connect_bitbucket,
             upload_ssh_key_to_platform,
+            delete_platform_token,
+            delete_profile_tokens,
             github_oauth_start,
             github_oauth_poll,
             gitlab_oauth_connect,

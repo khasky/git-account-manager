@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Profile } from "./types";
+import { Profile, GitIdentity } from "./types";
 import { useTheme } from "./ThemeContext";
 import { useI18n, fmt } from "./i18n";
 import ProfileCard from "./components/ProfileCard";
@@ -63,6 +64,7 @@ function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [view, setView] = useState<View>("list");
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+  const [importPrefill, setImportPrefill] = useState<GitIdentity | null>(null);
   const [loading, setLoading] = useState(true);
   const [toastMsg, setToastMsg] = useState("");
   const { preference, setPreference } = useTheme();
@@ -99,8 +101,21 @@ function App() {
     invoke("set_tray_labels", {
       show: m.tray.show,
       quit: m.tray.quit,
+      activePrefix: m.tray.activePrefix,
+      noActive: m.tray.noActiveProfile,
     }).catch((e) => console.error("Failed to localize tray menu:", e));
-  }, [m.tray.show, m.tray.quit]);
+  }, [m.tray.show, m.tray.quit, m.tray.activePrefix, m.tray.noActiveProfile]);
+
+  // The tray menu can switch the active profile from outside the window; reload
+  // the list when the backend signals a change so the UI stays in sync.
+  useEffect(() => {
+    const unlisten = listen("profiles-changed", () => {
+      loadProfiles();
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [loadProfiles]);
 
   function showToast(msg: string) {
     setToastMsg(msg);
@@ -108,12 +123,25 @@ function App() {
   }
 
   function handleAdd() {
+    setImportPrefill(null);
     setEditingProfile(null);
     setView("form");
   }
 
   function handleEdit(profile: Profile) {
+    setImportPrefill(null);
     setEditingProfile(profile);
+    setView("form");
+  }
+
+  async function handleImportFromGit() {
+    try {
+      const id = await invoke<GitIdentity>("get_git_identity");
+      setImportPrefill(id);
+    } catch {
+      setImportPrefill({ name: "", email: "" });
+    }
+    setEditingProfile(null);
     setView("form");
   }
 
@@ -140,30 +168,30 @@ function App() {
         const keyPaths: string[] = [];
         if (profile.github) {
           keyPaths.push(profile.github.ssh_private_key_path);
-          if (profile.github.token && profile.github.ssh_public_key_path) {
+          if (profile.github.ssh_public_key_path) {
             await invoke("remove_ssh_key_from_platform", {
               platform: "github",
-              token: profile.github.token,
+              profileId: profile.id,
               publicKeyPath: profile.github.ssh_public_key_path,
             }).catch(() => {});
           }
         }
         if (profile.gitlab) {
           keyPaths.push(profile.gitlab.ssh_private_key_path);
-          if (profile.gitlab.token && profile.gitlab.ssh_public_key_path) {
+          if (profile.gitlab.ssh_public_key_path) {
             await invoke("remove_ssh_key_from_platform", {
               platform: "gitlab",
-              token: profile.gitlab.token,
+              profileId: profile.id,
               publicKeyPath: profile.gitlab.ssh_public_key_path,
             }).catch(() => {});
           }
         }
         if (profile.bitbucket) {
           keyPaths.push(profile.bitbucket.ssh_private_key_path);
-          if (profile.bitbucket.token && profile.bitbucket.ssh_public_key_path) {
+          if (profile.bitbucket.ssh_public_key_path) {
             await invoke("remove_ssh_key_from_platform", {
               platform: "bitbucket",
-              token: profile.bitbucket.token,
+              profileId: profile.id,
               publicKeyPath: profile.bitbucket.ssh_public_key_path,
             }).catch(() => {});
           }
@@ -233,6 +261,7 @@ function App() {
       <div className="flex h-screen flex-col bg-surface text-fg">
         <ProfileForm
           profile={editingProfile}
+          prefill={importPrefill}
           onSave={handleSave}
           onCancel={() => setView("list")}
           onSettings={() => setView("settings")}
@@ -373,6 +402,12 @@ function App() {
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
             >
               {m.app.createProfile}
+            </button>
+            <button
+              onClick={handleImportFromGit}
+              className="mt-3 text-sm text-link hover:text-link-hover hover:underline"
+            >
+              {m.form.importFromGit}
             </button>
           </div>
         ) : (

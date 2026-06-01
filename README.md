@@ -73,8 +73,12 @@ Download the latest release for your OS from the [Releases](https://github.com/k
 
 ## Security Notes
 
-- Tokens are currently stored in **plain text** in the app's JSON state file.
-- For enhanced security today, prefer **SSH keys** over HTTPS/PAT and keep the storage file private.
+- OAuth and API tokens are stored in the OS credential store: **Windows Credential Manager**, **macOS Keychain**, or a Linux **Secret Service** provider.
+- The JSON state file stores profile metadata and SSH key paths, but not tokens.
+- Windows credentials are persistent for the current Windows user.
+- macOS may ask for Keychain access again after reinstalling the app or changing the app signature.
+- On Linux, a desktop keyring service such as GNOME Keyring, KWallet, or another compatible Secret Service provider must be available for token-backed actions. Headless or minimal Linux environments may require additional keyring setup.
+- A normal reinstall or upgrade should keep connected accounts working for the same OS user as long as both the app data file and OS credential store entries remain. Moving only `profiles.json` to another machine does not move tokens; reconnect accounts in that case.
 
 ## Development
 
@@ -348,7 +352,6 @@ After you click **Connect with GitLab**, the browser completes authorization and
 ## Roadmap
 
 - **HTTPS / PAT support** — work with HTTPS remotes via a built-in git **credential helper** (not just SSH).
-- **OS keychain** — move tokens out of the plaintext JSON into Windows Credential Manager / macOS Keychain / libsecret.
 - **Per-folder identity** — bind a directory to a profile via `includeIf "gitdir:…"`.
 - **CLI** — `gam set <profile>` for terminals, CI, and dotfiles.
 

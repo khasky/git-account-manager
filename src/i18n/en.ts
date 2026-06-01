@@ -35,6 +35,8 @@ export const en = {
   tray: {
     show: `Show Window`,
     quit: `Close Git Account Manager`,
+    activePrefix: `Active:`,
+    noActiveProfile: `No active profile`,
   },
   theme: {
     light: `Light`,
@@ -99,6 +101,7 @@ export const en = {
     profileName: `Profile Name`,
     profileNamePlaceholder: `e.g. Personal, Work`,
     connectWith: `Connect with {platform}`,
+    importFromGit: `Import from git config`,
     enterCode: `Enter this code on GitHub:`,
     waitingAuth: `Waiting for authorization...`,
     waitingBrowser: `Waiting for browser authorization...`,

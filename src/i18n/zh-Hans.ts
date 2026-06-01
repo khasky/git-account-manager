@@ -29,6 +29,8 @@ export const zhHans: Messages = {
   tray: {
     show: `显示窗口`,
     quit: `关闭 Git Account Manager`,
+    activePrefix: `当前:`,
+    noActiveProfile: `没有活动的配置文件`,
   },
   theme: {
     light: `浅色`,
@@ -93,6 +95,7 @@ export const zhHans: Messages = {
     profileName: `配置文件名称`,
     profileNamePlaceholder: `例如：个人、工作`,
     connectWith: `连接到 {platform}`,
+    importFromGit: `从 git config 导入`,
     enterCode: `在 GitHub 上输入此代码：`,
     waitingAuth: `等待授权...`,
     waitingBrowser: `等待浏览器授权...`,

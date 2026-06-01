@@ -7,7 +7,7 @@ pub struct PlatformAccount {
     pub git_email: String,
     pub ssh_private_key_path: String,
     pub ssh_public_key_path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub token: Option<String>,
 }
 

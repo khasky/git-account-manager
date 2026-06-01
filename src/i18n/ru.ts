@@ -29,6 +29,8 @@ export const ru: Messages = {
   tray: {
     show: `Показать окно`,
     quit: `Закрыть Git Account Manager`,
+    activePrefix: `Активный:`,
+    noActiveProfile: `Нет активного профиля`,
   },
   theme: {
     light: `Светлая`,
@@ -93,6 +95,7 @@ export const ru: Messages = {
     profileName: `Название профиля`,
     profileNamePlaceholder: `напр. Личный, Рабочий`,
     connectWith: `Подключиться к {platform}`,
+    importFromGit: `Импорт из git config`,
     enterCode: `Введите этот код на GitHub:`,
     waitingAuth: `Ожидание авторизации...`,
     waitingBrowser: `Ожидание авторизации в браузере...`,

@@ -29,6 +29,8 @@ export const ptBR: Messages = {
   tray: {
     show: `Mostrar janela`,
     quit: `Fechar o Git Account Manager`,
+    activePrefix: `Ativo:`,
+    noActiveProfile: `Nenhum perfil ativo`,
   },
   theme: {
     light: `Claro`,
@@ -93,6 +95,7 @@ export const ptBR: Messages = {
     profileName: `Nome do perfil`,
     profileNamePlaceholder: `ex.: Pessoal, Trabalho`,
     connectWith: `Conectar com {platform}`,
+    importFromGit: `Importar do git config`,
     enterCode: `Digite este código no GitHub:`,
     waitingAuth: `Aguardando autorização...`,
     waitingBrowser: `Aguardando autorização no navegador...`,

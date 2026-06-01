@@ -29,6 +29,8 @@ export const fr: Messages = {
   tray: {
     show: `Afficher la fenêtre`,
     quit: `Fermer Git Account Manager`,
+    activePrefix: `Actif :`,
+    noActiveProfile: `Aucun profil actif`,
   },
   theme: {
     light: `Clair`,
@@ -93,6 +95,7 @@ export const fr: Messages = {
     profileName: `Nom du profil`,
     profileNamePlaceholder: `ex. Personnel, Travail`,
     connectWith: `Se connecter à {platform}`,
+    importFromGit: `Importer depuis git config`,
     enterCode: `Saisissez ce code sur GitHub :`,
     waitingAuth: `En attente d'autorisation...`,
     waitingBrowser: `En attente de l'autorisation du navigateur...`,

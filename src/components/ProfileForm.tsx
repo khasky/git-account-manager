@@ -9,6 +9,7 @@ import {
   SshKeyPair,
   OAuthSettings,
   DeviceCodeResponse,
+  GitIdentity,
 } from "../types";
 import ConfirmDialog, { DialogAction } from "./ConfirmDialog";
 import { copySshPublicKey } from "../copySshPublicKey";
@@ -33,16 +34,18 @@ const CopyIcon = () => (
 
 interface Props {
   profile: Profile | null;
+  prefill?: GitIdentity | null;
   onSave: (profile: Profile) => void;
   onCancel: () => void;
   onSettings: () => void;
   onDelete: (id: string, deleteKeys: boolean) => void;
 }
 
+type PlatformName = "github" | "gitlab" | "bitbucket";
+
 interface PlatformState {
   connected: boolean;
   connecting: boolean;
-  token: string;
   username: string;
   gitName: string;
   gitEmail: string;
@@ -61,7 +64,6 @@ function emptyPlatform(): PlatformState {
   return {
     connected: false,
     connecting: false,
-    token: "",
     username: "",
     gitName: "",
     gitEmail: "",
@@ -82,7 +84,6 @@ function platformFromAccount(acc?: PlatformAccount): PlatformState {
   return {
     connected: true,
     connecting: false,
-    token: acc.token || "",
     username: acc.username,
     gitName: acc.git_name,
     gitEmail: acc.git_email,
@@ -100,6 +101,7 @@ function platformFromAccount(acc?: PlatformAccount): PlatformState {
 
 export default function ProfileForm({
   profile,
+  prefill,
   onSave,
   onCancel,
   onSettings,
@@ -107,8 +109,15 @@ export default function ProfileForm({
 }: Props) {
   const isEdit = profile !== null;
   const { m } = useI18n();
+  const [profileId] = useState(() => profile?.id || crypto.randomUUID());
+  const initialPlatformsRef = useRef<Record<PlatformName, boolean>>({
+    github: Boolean(profile?.github),
+    gitlab: Boolean(profile?.gitlab),
+    bitbucket: Boolean(profile?.bitbucket),
+  });
 
-  const [name, setName] = useState(profile?.name || "");
+  const [name, setName] = useState(profile?.name || prefill?.name || "");
+  const [importedEmail, setImportedEmail] = useState(prefill?.email || "");
   const [defaultPlatform, setDefaultPlatform] = useState(
     profile?.default_platform || "github",
   );
@@ -128,10 +137,9 @@ export default function ProfileForm({
   const [sshKeys, setSshKeys] = useState<SshKeyInfo[]>([]);
   const [saving, setSaving] = useState(false);
   const [disconnectTarget, setDisconnectTarget] = useState<{
-    platform: "github" | "gitlab" | "bitbucket";
+    platform: PlatformName;
     keyPath: string;
     pubKeyPath: string;
-    token: string;
   } | null>(null);
   const [error, setError] = useState("");
   const [settings, setSettings] = useState<OAuthSettings | null>(null);
@@ -204,6 +212,28 @@ export default function ProfileForm({
     updateGl({ connecting: false, error: "" });
   }
 
+  function cleanupUnsavedTokens() {
+    if (!isEdit) {
+      void invoke("delete_profile_tokens", { profileId }).catch(() => {});
+      return;
+    }
+
+    const initial = initialPlatformsRef.current;
+    const connected: Record<PlatformName, boolean> = {
+      github: gh.connected,
+      gitlab: gl.connected,
+      bitbucket: bb.connected,
+    };
+
+    (Object.keys(connected) as PlatformName[]).forEach((platform) => {
+      if (!initial[platform] && connected[platform]) {
+        void invoke("delete_platform_token", { profileId, platform }).catch(
+          () => {},
+        );
+      }
+    });
+  }
+
   function handleProfileCancel() {
     if (gl.connecting) {
       glCancelledRef.current = true;
@@ -218,6 +248,7 @@ export default function ProfileForm({
     if (gh.connecting || gh.deviceCode) {
       cancelGitHubAuth();
     }
+    cleanupUnsavedTokens();
     onCancel();
   }
 
@@ -262,6 +293,16 @@ export default function ProfileForm({
   const platformLabel = (p: string) =>
     p === "github" ? "GitHub" : p === "gitlab" ? "GitLab" : "Bitbucket";
 
+  async function handleImportFromGit() {
+    try {
+      const id = await invoke<GitIdentity>("get_git_identity");
+      if (id.name && !name.trim()) setName(id.name);
+      if (id.email) setImportedEmail(id.email);
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function connectGitHub() {
     if (!settings?.github_client_id) {
       updateGh({ error: "settings_required" });
@@ -304,11 +345,12 @@ export default function ProfileForm({
       ghPollRef.current = setInterval(
         async () => {
           try {
-            const token = await invoke<string | null>("github_oauth_poll", {
+            const user = await invoke<PlatformUser | null>("github_oauth_poll", {
               clientId: settings.github_client_id,
               deviceCode: device.device_code,
+              profileId,
             });
-            if (token) {
+            if (user) {
               if (ghPollRef.current) {
                 clearInterval(ghPollRef.current);
                 ghPollRef.current = null;
@@ -322,20 +364,15 @@ export default function ProfileForm({
                 ghCountdownRef.current = null;
               }
               setGhCountdown(0);
-              const user = await invoke<PlatformUser>("verify_platform_token", {
-                platform: "github",
-                token,
-              });
               const noreply = user.noreply_email || "";
               const pubEmail = user.email || "";
               updateGh({
                 connecting: false,
                 connected: true,
                 deviceCode: null,
-                token,
                 username: user.username,
                 gitName: user.name || user.username,
-                gitEmail: noreply || pubEmail,
+                gitEmail: noreply || pubEmail || importedEmail,
                 publicEmail: pubEmail,
                 noreplyEmail: noreply,
               });
@@ -378,8 +415,9 @@ export default function ProfileForm({
     }, 1000);
 
     try {
-      const token = await invoke<string>("gitlab_oauth_connect", {
+      const user = await invoke<PlatformUser>("gitlab_oauth_connect", {
         clientId: settings.gitlab_client_id,
+        profileId,
       });
       if (glCountdownRef.current) {
         clearInterval(glCountdownRef.current);
@@ -387,20 +425,14 @@ export default function ProfileForm({
       }
       setGlCountdown(0);
       if (glCancelledRef.current) return;
-      const user = await invoke<PlatformUser>("verify_platform_token", {
-        platform: "gitlab",
-        token,
-      });
-      if (glCancelledRef.current) return;
       const noreply = user.noreply_email || "";
       const pubEmail = user.email || "";
       updateGl({
         connecting: false,
         connected: true,
-        token,
         username: user.username,
         gitName: user.name || user.username,
-        gitEmail: noreply || pubEmail,
+        gitEmail: noreply || pubEmail || importedEmail,
         publicEmail: pubEmail,
         noreplyEmail: noreply,
       });
@@ -422,20 +454,18 @@ export default function ProfileForm({
     }
     updateBb({ connecting: true, error: "" });
     try {
-      // Bitbucket REST uses HTTP Basic auth; the token field stores "email:token".
-      const combined = `${bbEmail.trim()}:${bbToken.trim()}`;
-      const user = await invoke<PlatformUser>("verify_platform_token", {
-        platform: "bitbucket",
-        token: combined,
+      const user = await invoke<PlatformUser>("connect_bitbucket", {
+        profileId,
+        email: bbEmail.trim(),
+        apiToken: bbToken.trim(),
       });
       const pubEmail = user.email || "";
       updateBb({
         connecting: false,
         connected: true,
-        token: combined,
         username: user.username,
         gitName: user.name || user.username,
-        gitEmail: pubEmail,
+        gitEmail: pubEmail || importedEmail,
         publicEmail: pubEmail,
         noreplyEmail: "",
       });
@@ -450,15 +480,11 @@ export default function ProfileForm({
     section: PlatformState,
     update: (p: Partial<PlatformState>) => void,
   ) {
-    if (!section.token) {
-      update({ error: m.form.errConnectFirst });
-      return;
-    }
     update({ error: "" });
     try {
       const pair = await invoke<SshKeyPair>("generate_and_upload_key", {
         platform,
-        token: section.token,
+        profileId,
         username: section.username,
         email: section.gitEmail || "git@account-switcher",
       });
@@ -490,7 +516,7 @@ export default function ProfileForm({
     section: PlatformState,
     update: (p: Partial<PlatformState>) => void,
   ) {
-    if (!section.token || !section.sshPublicKeyPath) return;
+    if (!section.sshPublicKeyPath) return;
     update({ error: "" });
     try {
       const keyContent = await invoke<string>("read_public_key", {
@@ -498,7 +524,7 @@ export default function ProfileForm({
       });
       await invoke("upload_ssh_key_to_platform", {
         platform,
-        token: section.token,
+        profileId,
         title: `git-account-manager: ${name}`,
         keyContent,
       });
@@ -528,12 +554,11 @@ export default function ProfileForm({
         git_email: s.gitEmail,
         ssh_private_key_path: s.sshPrivateKeyPath,
         ssh_public_key_path: s.sshPublicKeyPath,
-        token: s.token || undefined,
       };
     };
 
     const p: Profile = {
-      id: profile?.id || crypto.randomUUID(),
+      id: profileId,
       name: name.trim(),
       default_platform: defaultPlatform,
       github: buildAccount(gh),
@@ -715,7 +740,7 @@ export default function ProfileForm({
               <label className="mb-1 block text-xs text-fg-4">
                 {m.form.gitEmail}
               </label>
-              {section.noreplyEmail || section.publicEmail ? (
+              {section.noreplyEmail || section.publicEmail || importedEmail ? (
                 <div className="space-y-1.5">
                   {section.noreplyEmail && (
                     <button
@@ -748,6 +773,23 @@ export default function ProfileForm({
                           {m.form.publicBadge}
                         </span>
                         <span className="truncate">{section.publicEmail}</span>
+                      </button>
+                    )}
+                  {importedEmail &&
+                    importedEmail !== section.noreplyEmail &&
+                    importedEmail !== section.publicEmail && (
+                      <button
+                        onClick={() => update({ gitEmail: importedEmail })}
+                        className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                          section.gitEmail === importedEmail
+                            ? "border-selected-border bg-selected-bg text-selected-fg"
+                            : "border-bd-s bg-input text-fg-3 hover:border-bd-s"
+                        }`}
+                      >
+                        <span className="shrink-0 rounded bg-subtle px-1 py-0.5 text-[10px] font-medium text-fg-3">
+                          git config
+                        </span>
+                        <span className="truncate">{importedEmail}</span>
                       </button>
                     )}
                   <input
@@ -902,7 +944,6 @@ export default function ProfileForm({
                   platform,
                   keyPath: section.sshPrivateKeyPath,
                   pubKeyPath: section.sshPublicKeyPath,
-                  token: section.token,
                 })
               }
               className="text-xs text-danger-fg hover:underline"
@@ -917,7 +958,7 @@ export default function ProfileForm({
 
   async function handleDisconnect(deleteKeys: boolean) {
     if (!disconnectTarget) return;
-    const { platform, keyPath, pubKeyPath, token } = disconnectTarget;
+    const { platform, keyPath, pubKeyPath } = disconnectTarget;
     const update =
       platform === "github"
         ? updateGh
@@ -926,15 +967,18 @@ export default function ProfileForm({
           : updateBb;
 
     if (deleteKeys && keyPath) {
-      if (token && pubKeyPath) {
+      if (pubKeyPath) {
         await invoke("remove_ssh_key_from_platform", {
           platform,
-          token,
+          profileId,
           publicKeyPath: pubKeyPath,
         }).catch(() => {});
       }
       await invoke("delete_ssh_keys", { paths: [keyPath] }).catch(() => {});
     }
+    await invoke("delete_platform_token", { profileId, platform }).catch(
+      () => {},
+    );
     update(emptyPlatform());
     setDisconnectTarget(null);
 
@@ -1049,6 +1093,16 @@ export default function ProfileForm({
               className="w-full rounded-md border border-bd-s bg-input px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
             />
           </div>
+
+          {!isEdit && (
+            <button
+              type="button"
+              onClick={handleImportFromGit}
+              className="text-xs text-link hover:text-link-hover hover:underline"
+            >
+              {m.form.importFromGit}
+            </button>
+          )}
 
           {renderPlatform("GitHub", "github", gh, updateGh, connectGitHub)}
           {renderPlatform("GitLab", "gitlab", gl, updateGl, connectGitLab)}

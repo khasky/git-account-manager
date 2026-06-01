@@ -4,7 +4,6 @@ export interface PlatformAccount {
   git_email: string;
   ssh_private_key_path: string;
   ssh_public_key_path: string;
-  token?: string;
 }
 
 export interface Profile {
@@ -55,4 +54,9 @@ export interface DeviceCodeResponse {
   verification_uri: string;
   expires_in: number;
   interval: number;
+}
+
+export interface GitIdentity {
+  name: string;
+  email: string;
 }

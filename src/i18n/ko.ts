@@ -29,6 +29,8 @@ export const ko: Messages = {
   tray: {
     show: `창 표시`,
     quit: `Git Account Manager 종료`,
+    activePrefix: `활성:`,
+    noActiveProfile: `활성 프로필 없음`,
   },
   theme: {
     light: `라이트`,
@@ -93,6 +95,7 @@ export const ko: Messages = {
     profileName: `프로필 이름`,
     profileNamePlaceholder: `예: 개인, 업무`,
     connectWith: `{platform}에 연결`,
+    importFromGit: `git config에서 가져오기`,
     enterCode: `GitHub에서 이 코드를 입력하세요:`,
     waitingAuth: `승인을 기다리는 중...`,
     waitingBrowser: `브라우저 승인을 기다리는 중...`,

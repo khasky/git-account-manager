@@ -29,6 +29,8 @@ export const zhHant: Messages = {
   tray: {
     show: `顯示視窗`,
     quit: `關閉 Git Account Manager`,
+    activePrefix: `目前:`,
+    noActiveProfile: `沒有作用中的設定檔`,
   },
   theme: {
     light: `淺色`,
@@ -93,6 +95,7 @@ export const zhHant: Messages = {
     profileName: `設定檔名稱`,
     profileNamePlaceholder: `例如：個人、工作`,
     connectWith: `連接到 {platform}`,
+    importFromGit: `從 git config 匯入`,
     enterCode: `在 GitHub 上輸入此代碼：`,
     waitingAuth: `等待授權...`,
     waitingBrowser: `等待瀏覽器授權...`,
