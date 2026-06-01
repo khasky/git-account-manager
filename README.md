@@ -368,6 +368,27 @@ Contributions are welcome!
 4. Push to the branch: `git push origin feature-branch-name`.
 5. Submit a pull request.
 
+## Reporting a vulnerability
+
+**Please do not open a public issue for security problems.**
+
+Report privately through GitHub's [**Security Advisories**](https://github.com/khasky/git-account-manager/security/advisories/new)
+("Report a vulnerability"). Include:
+
+- what the issue is and where,
+- steps to reproduce,
+- the impact you expect.
+
+You'll get an acknowledgement, and we'll coordinate a fix and disclosure timeline with you.
+
+## Support
+
+If **Git Account Manager** is useful to you, you can support development:
+
+- [GitHub Sponsors](https://github.com/sponsors/khasky)
+- [Patreon](https://www.patreon.com/khasky)
+- [Buy Me a Coffee](https://www.buymeacoffee.com/khasky)
+
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](https://github.com/khasky/git-account-manager/blob/main/LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
