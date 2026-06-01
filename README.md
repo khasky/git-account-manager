@@ -15,7 +15,11 @@
 
 [Features](#features) • [Install](#installation) • [Quick start](#quick-start-guide) • [Develop](#development) • [Troubleshooting](#troubleshooting)
 
-<img src="screenshots/git-account-manager-1.png" width="760" alt="Git Account Manager">
+<picture>
+  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark1.png">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/light1.png">
+  <img src="screenshots/dark1.png" width="760" alt="Git Account Manager">
+</picture>
 
 <sub>Built with <b>Tauri v2</b> (Rust) · <b>React</b> · <b>TypeScript</b> · <b>Tailwind CSS</b></sub>
 
@@ -54,9 +58,17 @@ It's the only tool here that **generates and uploads an SSH key for you from a G
 
 <br>
 
-<img src="screenshots/git-account-manager-2.png" width="760" alt="Profile editor">
+<picture>
+  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark3.png">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/light3.png">
+  <img src="screenshots/dark3.png" width="760" alt="Profile editor">
+</picture>
 
-<img src="screenshots/git-account-manager-3.png" width="760" alt="Settings">
+<picture>
+  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark2.png">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/light2.png">
+  <img src="screenshots/dark2.png" width="760" alt="Settings">
+</picture>
 
 </details>
 
