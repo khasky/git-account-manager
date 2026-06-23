@@ -11,9 +11,9 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/khasky/git-account-manager/build.yml?style=flat-square)](../../actions)
 [![License](https://img.shields.io/github/license/khasky/git-account-manager?style=flat-square)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)
-[![Stars](https://img.shields.io/github/stars/khasky/git-account-manager?style=flat-square&logo=github)](../../stargazers)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-ea4aaa.svg?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/khasky)
 
-[Features](#features) • [Install](#installation) • [Quick start](#quick-start-guide) • [Develop](#development) • [Troubleshooting](#troubleshooting)
+[Features](#features) • [Install](#installation) • [Quick start](#quick-start-guide) • [Development](#development) • [Troubleshooting](#troubleshooting)
 
 <picture>
   <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark1.png">
@@ -42,14 +42,14 @@
 
 It's the only tool here that **generates and uploads an SSH key for you from a GUI** — and the only free, open-source app built specifically for juggling Git identities. The well-known alternatives either live in the terminal (`gh`, GCM) or are paid clients (GitKraken).
 
-| | **Git Account Manager** | [`gh` CLI](https://github.com/cli/cli) | [GitHub Desktop](https://github.com/desktop/desktop) | [GCM](https://github.com/git-ecosystem/git-credential-manager) | [GitKraken](https://www.gitkraken.com/) |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Desktop GUI | ✅ | ❌ CLI | ✅ | ❌ | ✅ |
-| Generate + upload SSH key | ✅ | ⚠️ login only | ❌ | ❌ | ⚠️ |
-| GitHub / GitLab / Bitbucket | ✅ | GitHub | GitHub | ✅ +Azure | ✅ |
-| One-click identity switch | ✅ | CLI | ❌ | auto | ✅ |
-| HTTPS credential helper | 🚧 _planned_ | ✅ | ✅ | ✅ | ✅ |
-| Free & open source (MIT) | ✅ | ✅ | ✅ | ✅ | ❌ _paid_ |
+|                             | **Git Account Manager** | [`gh` CLI](https://github.com/cli/cli) | [GitHub Desktop](https://github.com/desktop/desktop) | [GCM](https://github.com/git-ecosystem/git-credential-manager) | [GitKraken](https://www.gitkraken.com/) |
+| --------------------------- | :---------------------: | :------------------------------------: | :--------------------------------------------------: | :------------------------------------------------------------: | :-------------------------------------: |
+| Desktop GUI                 |           ✅            |                 ❌ CLI                 |                          ✅                          |                               ❌                               |                   ✅                    |
+| Generate + upload SSH key   |           ✅            |             ⚠️ login only              |                          ❌                          |                               ❌                               |                   ⚠️                    |
+| GitHub / GitLab / Bitbucket |           ✅            |                 GitHub                 |                        GitHub                        |                           ✅ +Azure                            |                   ✅                    |
+| One-click identity switch   |           ✅            |                  CLI                   |                          ❌                          |                              auto                              |                   ✅                    |
+| HTTPS credential helper     |      🚧 _planned_       |                   ✅                   |                          ✅                          |                               ✅                               |                   ✅                    |
+| Free & open source (MIT)    |           ✅            |                   ✅                   |                          ✅                          |                               ✅                               |                ❌ _paid_                |
 
 <sub>Measured against the most-used tools in the space — <b><code>gh</code></b> 44k★ · <b>GitHub Desktop</b> 21k★ · <b>GCM</b> 8.9k★ · <b>GitKraken</b> (popular paid client).</sub>
 
@@ -78,11 +78,11 @@ Download the latest release for your OS from the [Releases](https://github.com/k
 
 ### Quick Start Guide
 
-| OS | Steps |
-| --- | --- |
-| **Windows** | Download the `.msi`, run it, follow the installer. |
-| **macOS** | Download the `.dmg`, open it, drag the app to **Applications**. |
-| **Linux** | Download the `.AppImage`, `chmod +x GitAccountManager.AppImage`, then run `./GitAccountManager.AppImage`. |
+| OS          | Steps                                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------- |
+| **Windows** | Download the `.msi`, run it, follow the installer.                                                        |
+| **macOS**   | Download the `.dmg`, open it, drag the app to **Applications**.                                           |
+| **Linux**   | Download the `.AppImage`, `chmod +x GitAccountManager.AppImage`, then run `./GitAccountManager.AppImage`. |
 
 > First Windows launch may show a SmartScreen warning (the installer is not yet code-signed) — see [Troubleshooting](#troubleshooting).
 
@@ -208,12 +208,12 @@ Installers are generated under `src-tauri/target/release/bundle/`.
 
 The Windows build produces an **MSI** (WiX) and an **NSIS** `.exe` installer — **not** an MSIX package. Distributing through the **Microsoft Store** would require MSIX, which is currently not viable: MSIX runs the app inside a container with **filesystem and registry virtualization**, and that breaks several core features even with the `runFullTrust` capability:
 
-| Feature                                      | Why MSIX breaks it                                                                                                                                                                                            |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **TortoiseGit integration**                  | The app writes `HKCU\Software\TortoiseGit\SSH` so the _external_ TortoiseGit process reads it. Inside MSIX, `HKCU` writes are redirected to the package's private registry, so TortoiseGit never sees the value. |
-| **Launch at login (autostart)**              | Autostart is registered via an `HKCU` `Run` key, which MSIX also virtualizes — it would not fire at login. MSIX requires a manifest `StartupTask` extension instead.                                            |
-| **Running `git` / `ssh-keygen`**             | The app shells out to `git`, `ssh-keygen`, and `cmd` on the system `PATH`. Launching external executables from a packaged app behaves differently (container `PATH` / environment) and would need verification. |
-| **Writing `~/.ssh/config` and git config**   | The app rewrites the user's real `~/.ssh/config` and global `.gitconfig`. Packaged-app file virtualization can redirect such writes away from the real user profile.                                            |
+| Feature                                    | Why MSIX breaks it                                                                                                                                                                                               |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TortoiseGit integration**                | The app writes `HKCU\Software\TortoiseGit\SSH` so the _external_ TortoiseGit process reads it. Inside MSIX, `HKCU` writes are redirected to the package's private registry, so TortoiseGit never sees the value. |
+| **Launch at login (autostart)**            | Autostart is registered via an `HKCU` `Run` key, which MSIX also virtualizes — it would not fire at login. MSIX requires a manifest `StartupTask` extension instead.                                             |
+| **Running `git` / `ssh-keygen`**           | The app shells out to `git`, `ssh-keygen`, and `cmd` on the system `PATH`. Launching external executables from a packaged app behaves differently (container `PATH` / environment) and would need verification.  |
+| **Writing `~/.ssh/config` and git config** | The app rewrites the user's real `~/.ssh/config` and global `.gitconfig`. Packaged-app file virtualization can redirect such writes away from the real user profile.                                             |
 
 Until these are adapted (unvirtualized registry writes for TortoiseGit, a `StartupTask`-based autostart, and verified external-process / profile access), the app ships as a standard MSI + NSIS installer rather than MSIX.
 
@@ -251,17 +251,17 @@ Updater artifacts (`latest.json` + per-installer `.sig`) are signed with a [mini
 
 <br>
 
-When you launch the Windows installer (`Git.Account.Manager_<version>_x64_en-US.msi`), Microsoft Defender SmartScreen may show a blue full-screen dialog titled **"Windows protected your PC"**, with the message *"Microsoft Defender SmartScreen prevented an unrecognized app from starting"* and **Publisher: Unknown publisher**.
+When you launch the Windows installer (`Git.Account.Manager_<version>_x64_en-US.msi`), Microsoft Defender SmartScreen may show a blue full-screen dialog titled **"Windows protected your PC"**, with the message _"Microsoft Defender SmartScreen prevented an unrecognized app from starting"_ and **Publisher: Unknown publisher**.
 
 This is **not** a malware detection. SmartScreen is **reputation-based**: it warns about any installer that is **not signed with a paid code-signing certificate** or that has not yet accumulated enough download "reputation" with Microsoft. The Git Account Manager installer is currently **unsigned** — adding a code-signing certificate is a planned step, not an indication that the app is unsafe.
 
 **Why you can trust it**
 
-| Reason | Detail |
-| ------ | ------ |
-| **Open source** | The full source code is public on [GitHub](https://github.com/khasky/git-account-manager) and licensed under **MIT** — anyone can read, audit, or rebuild it. |
-| **Reproducible builds** | Official installers are produced automatically by the [GitHub Actions release workflow](.github/workflows/build.yml) from that public source, not handcrafted on a developer's machine. |
-| **Official source only** | Download installers **only** from the [GitHub Releases](https://github.com/khasky/git-account-manager/releases) page. Never trust a copy from a third-party mirror. |
+| Reason                   | Detail                                                                                                                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Open source**          | The full source code is public on [GitHub](https://github.com/khasky/git-account-manager) and licensed under **MIT** — anyone can read, audit, or rebuild it.                           |
+| **Reproducible builds**  | Official installers are produced automatically by the [GitHub Actions release workflow](.github/workflows/build.yml) from that public source, not handcrafted on a developer's machine. |
+| **Official source only** | Download installers **only** from the [GitHub Releases](https://github.com/khasky/git-account-manager/releases) page. Never trust a copy from a third-party mirror.                     |
 
 **How to continue the installation**
 
@@ -290,9 +290,9 @@ SSH authenticates with **keys**, which never use a credential helper — so the 
 
 **The credential helper only matters for HTTPS remotes** (`https://github.com/...`), which this app does not manage:
 
-| Your Git remotes                                          | If you pick "None"                                                                                                                                                                                  |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **SSH** (`git@github.com:...`) — what this app configures | Works out of the box; nothing else needed.                                                                                                                                                          |
+| Your Git remotes                                          | If you pick "None"                                                                                                                                                                                      |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SSH** (`git@github.com:...`) — what this app configures | Works out of the box; nothing else needed.                                                                                                                                                              |
 | **HTTPS** (`https://github.com/...`)                      | Git prompts for credentials on every push/pull (GitHub requires a **personal access token**, not a password). This is standard Git/HTTPS behavior, unrelated to this app — keeping **GCM** is smoother. |
 
 </details>
@@ -372,13 +372,9 @@ After you click **Connect with GitLab**, the browser completes authorization and
 
 ## Contributing
 
-Contributions are welcome!
+Contributions are welcome! Fork the repo, create a branch, and open a pull request — see **[CONTRIBUTING.md](./CONTRIBUTING.md)** for the workflow.
 
-1. Fork the repository.
-2. Create a new branch: `git checkout -b feature-branch-name`.
-3. Make your changes and commit them: `git commit -m 'Add some feature'`.
-4. Push to the branch: `git push origin feature-branch-name`.
-5. Submit a pull request.
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (e.g. `feat: …`, `fix: …`); a `commit-msg` hook enforces the format.
 
 ## Reporting a vulnerability
 
