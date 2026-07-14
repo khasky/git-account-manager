@@ -1,0 +1,341 @@
+//! Machine-wide guard rails.
+//!
+//! Two things live here. First, turning the global identity from a value into a
+//! fuse: with no global `user.email` and `user.useConfigOnly` set, a repository
+//! that was never bound refuses to commit instead of borrowing the identity of
+//! whichever profile happens to be active. Second, a generated `includeIf`
+//! region in `~/.gitconfig` so a fresh clone under a known root already knows
+//! who it belongs to.
+//!
+//! The region is delimited the same way the SSH config region is, and anything
+//! outside it is preserved byte for byte.
+
+use crate::git;
+use crate::models::{
+    GuardSettings, Platform, Profile, RepoRoot, MANAGED_FOOTER, MANAGED_HEADER, PLATFORMS,
+};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+
+fn gitconfig_path() -> Result<PathBuf, String> {
+    Ok(dirs::home_dir()
+        .ok_or("Cannot find home directory")?
+        .join(".gitconfig"))
+}
+
+fn identities_dir() -> Result<PathBuf, String> {
+    let dir = dirs::data_dir()
+        .ok_or("Cannot find data directory")?
+        .join("git-account-manager")
+        .join("identities");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+fn identity_file(profile: &Profile, platform: Platform) -> Result<PathBuf, String> {
+    Ok(identities_dir()?.join(format!(
+        "{}-{}.gitconfig",
+        profile.slug(),
+        platform.as_str()
+    )))
+}
+
+/// Renders a value the way `git config` will read it back.
+///
+/// Inside a config value a backslash escapes the following character and a
+/// quote opens a quoted run, so a name holding either — `C:\Users`, a nickname
+/// in quotes — written literally produces a file git parses into something
+/// else, or refuses outright. Quoting the whole value and escaping those two is
+/// what git's own writer does. A newline cannot appear in a value at all: it
+/// would end the line and turn the remainder into a second key, so it goes.
+fn config_value(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + 2);
+    out.push('"');
+    for c in raw.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' | '\r' => {}
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn posix(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuardStatus {
+    pub global_name: String,
+    pub global_email: String,
+    pub use_config_only: bool,
+    pub includes_managed: bool,
+    pub gitconfig_path: String,
+    pub ok: bool,
+}
+
+pub fn status(settings: &GuardSettings) -> GuardStatus {
+    let identity = git::get_global_identity().unwrap_or(git::GitIdentity {
+        name: String::new(),
+        email: String::new(),
+    });
+    let use_config_only = git::get_global_config("user.useConfigOnly")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let path = gitconfig_path().unwrap_or_default();
+    let includes_managed = fs::read_to_string(&path)
+        .map(|c| c.contains(MANAGED_HEADER))
+        .unwrap_or(false);
+
+    let identity_ok =
+        !settings.unset_global_identity || (identity.email.is_empty() && use_config_only);
+    let includes_ok = !settings.manage_gitconfig_includes || includes_managed;
+
+    GuardStatus {
+        global_name: identity.name,
+        global_email: identity.email,
+        use_config_only,
+        includes_managed,
+        gitconfig_path: posix(&path),
+        ok: identity_ok && includes_ok,
+    }
+}
+
+/// Brings the machine in line with the settings.
+///
+/// Only enforces what is switched on. A switched-off option is left alone
+/// rather than actively undone, so the app never reverts a setting the user made
+/// by hand; releasing the fuse is an explicit step (`relax_global_identity`).
+pub fn apply(
+    settings: &GuardSettings,
+    profiles: &[Profile],
+    roots: &[RepoRoot],
+) -> Result<(), String> {
+    if settings.unset_global_identity {
+        git::unset_global_identity()?;
+        git::set_use_config_only(true)?;
+    }
+
+    if settings.manage_gitconfig_includes {
+        write_includes(profiles, roots)
+    } else {
+        write_region("")
+    }
+}
+
+/// Stops enforcing the fuse. The identity itself is not restored: the app cannot
+/// know which one was there before, and inventing one is how this whole class of
+/// mistake starts.
+pub fn relax_global_identity() -> Result<(), String> {
+    git::set_use_config_only(false)
+}
+
+fn write_includes(profiles: &[Profile], roots: &[RepoRoot]) -> Result<(), String> {
+    let mut body = String::new();
+
+    for profile in profiles {
+        for platform in PLATFORMS {
+            let Some(account) = profile.account(platform) else {
+                continue;
+            };
+            let file = identity_file(profile, platform)?;
+            fs::write(
+                &file,
+                format!(
+                    "# Generated by git-account-manager. Edits are overwritten.\n[user]\n\tname = {}\n\temail = {}\n",
+                    config_value(&account.git_name),
+                    config_value(&account.git_email)
+                ),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Folder-scoped: understood by libgit2, so TortoiseGit sees it too.
+    for root in roots {
+        let Some(profile) = profiles.iter().find(|p| p.id == root.profile_id) else {
+            continue;
+        };
+        if profile.account(root.platform).is_none() {
+            continue;
+        }
+        let dir = root.path.replace('\\', "/");
+        let dir = dir.trim_end_matches('/');
+        body.push_str(&format!(
+            "[includeIf \"gitdir/i:{}/\"]\n\tpath = {}\n",
+            dir,
+            posix(&identity_file(profile, root.platform)?)
+        ));
+    }
+
+    // Remote-scoped: only modern Git CLI understands `hasconfig`, but it follows
+    // the repository wherever it is cloned, which a folder rule cannot.
+    for profile in profiles {
+        for platform in PLATFORMS {
+            let Some(account) = profile.account(platform) else {
+                continue;
+            };
+            let host = platform.canonical_host();
+            let path = posix(&identity_file(profile, platform)?);
+            for pattern in [
+                format!("git@{}:{}/**", host, account.username),
+                format!("https://{}/{}/**", host, account.username),
+                // `**` only crosses `/` when it follows one, so the namespace
+                // needs its own `*` — `git@host:**` would never match.
+                format!("git@{}:*/**", crate::repos::host_alias(platform, profile)),
+            ] {
+                body.push_str(&format!(
+                    "[includeIf \"hasconfig:remote.*.url:{}\"]\n\tpath = {}\n",
+                    pattern, path
+                ));
+            }
+        }
+    }
+
+    write_region(&body)
+}
+
+/// Replaces the managed region in `~/.gitconfig`, appending it at the end so a
+/// generated `[user]` include always wins over one written earlier in the file.
+fn write_region(body: &str) -> Result<(), String> {
+    let path = gitconfig_path()?;
+    let existing = fs::read_to_string(&path).unwrap_or_default();
+
+    // Nothing to write and nothing of ours to remove: leave the file untouched
+    // rather than rewriting it on every profile switch.
+    if body.trim().is_empty() && !existing.contains(MANAGED_HEADER) {
+        return Ok(());
+    }
+
+    let mut result = strip_region(&existing).trim_end().to_string();
+
+    if !body.trim().is_empty() {
+        if !result.is_empty() {
+            result.push_str("\n\n");
+        }
+        result.push_str(MANAGED_HEADER);
+        result.push_str("\n\n");
+        result.push_str(body.trim_end());
+        result.push('\n');
+        result.push_str(MANAGED_FOOTER);
+    }
+
+    if !result.is_empty() {
+        result.push('\n');
+    }
+
+    if result == existing {
+        return Ok(());
+    }
+
+    // One backup, taken the first time the app rewrites the file.
+    if !existing.is_empty() {
+        let backup = path.with_file_name(".gitconfig.gam-backup");
+        if !backup.exists() {
+            fs::write(&backup, &existing).map_err(|e| e.to_string())?;
+        }
+    }
+
+    fs::write(&path, result).map_err(|e| e.to_string())
+}
+
+fn strip_region(config: &str) -> String {
+    let mut result = config.to_string();
+    while let (Some(start), Some(end)) = (result.find(MANAGED_HEADER), result.find(MANAGED_FOOTER))
+    {
+        if start > end {
+            break;
+        }
+        let after = result[end + MANAGED_FOOTER.len()..]
+            .find('\n')
+            .map(|n| end + MANAGED_FOOTER.len() + n + 1)
+            .unwrap_or(result.len());
+        result = format!("{}{}", &result[..start], &result[after..]);
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_only_the_managed_region() {
+        let config = format!(
+            "[user]\n\tname = a\n\n{}\n\n[includeIf \"x\"]\n\tpath = y\n{}\n[core]\n\tx = 1\n",
+            MANAGED_HEADER, MANAGED_FOOTER
+        );
+        let stripped = strip_region(&config);
+        assert!(stripped.contains("[user]"));
+        assert!(stripped.contains("[core]"));
+        assert!(!stripped.contains("includeIf"));
+        assert!(!stripped.contains(MANAGED_HEADER));
+    }
+
+    #[test]
+    fn stripping_is_idempotent_without_a_region() {
+        let config = "[user]\n\tname = a\n";
+        assert_eq!(strip_region(config), config);
+    }
+
+    /// The generated identity file is written by hand and read by git, so the
+    /// only check that means anything is git's own parser reading back exactly
+    /// what went in. A name carrying a backslash or a quote is ordinary —
+    /// a Windows path pasted into a display name, a nickname in quotes — and
+    /// writing it unescaped produced a value git read differently, or a file it
+    /// refused, which silently left the repository on the wrong identity.
+    #[test]
+    fn a_generated_identity_survives_gits_own_parser() {
+        let dir = std::env::temp_dir().join(format!("gam-cfgval-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let awkward = [
+            // Escaping alone is what these need: unquoted, git swallowed the
+            // quote characters and read back "Ann The Dev Smith".
+            r#"Ann "The Dev" Smith"#,
+            r"C:\Users\ann",
+            r#"trailing backslash \"#,
+            // These need the surrounding quotes: git trims whitespace around an
+            // unquoted value, and a `#` starts a comment.
+            "  padded  ",
+            "Ann # 2",
+            "plain name",
+            "Работа",
+        ];
+
+        for (i, name) in awkward.iter().enumerate() {
+            let file = dir.join(format!("{}.gitconfig", i));
+            fs::write(&file, format!("[user]\n\tname = {}\n", config_value(name))).unwrap();
+
+            let out = std::process::Command::new("git")
+                .args(["config", "-f"])
+                .arg(&file)
+                .args(["--get", "user.name"])
+                .output()
+                .expect("git must be on PATH");
+            assert!(
+                out.status.success(),
+                "git refused the file written for {:?}: {}",
+                name,
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert_eq!(
+                String::from_utf8_lossy(&out.stdout).trim_end_matches(['\n', '\r']),
+                *name,
+                "git read back something other than what was written for {:?}",
+                name
+            );
+        }
+
+        // A newline would end the line and turn the rest into another key, so it
+        // is dropped rather than written and misparsed.
+        assert_eq!(config_value("a\nb"), "\"ab\"");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
