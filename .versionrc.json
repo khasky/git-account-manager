@@ -1,0 +1,36 @@
+{
+  "tagPrefix": "v",
+  "header": "# Changelog\n\nAll notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).\n",
+  "writerOpts": {
+    "mainTemplate": "{{> header}}\n\n{{#if noteGroups}}\n{{#each noteGroups}}\n\n### {{title}}\n\n{{#each notes}}\n* {{#if commit.scope}}**{{commit.scope}}:** {{/if}}{{text}}\n{{/each}}\n{{/each}}\n{{/if}}\n{{#each commitGroups}}\n\n{{#if title}}\n### {{title}}\n\n{{/if}}\n{{#each commits}}\n{{> commit root=@root}}\n{{/each}}\n\n{{/each}}\n"
+  },
+  "packageFiles": [{ "filename": "package.json", "type": "json" }],
+  "bumpFiles": [
+    { "filename": "package.json", "type": "json" },
+    { "filename": "src-tauri/tauri.conf.json", "type": "json" },
+    {
+      "filename": "src-tauri/Cargo.toml",
+      "updater": "scripts/cargo-toml-updater.cjs"
+    },
+    {
+      "filename": "src-tauri/Cargo.lock",
+      "updater": "scripts/cargo-lock-updater.cjs"
+    }
+  ],
+  "types": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "refactor", "section": "Refactoring" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "docs", "hidden": true },
+    { "type": "style", "hidden": true },
+    { "type": "test", "hidden": true },
+    { "type": "build", "hidden": true },
+    { "type": "ci", "hidden": true },
+    { "type": "chore", "hidden": true }
+  ],
+  "scripts": {
+    "prechangelog": "node scripts/clear-changelog-seed.mjs"
+  }
+}
