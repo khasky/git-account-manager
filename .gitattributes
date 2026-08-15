@@ -1,0 +1,16 @@
+# Files committed with CRLF before this rule existed made a formatter that
+# writes LF produce whole-file diffs on them and nothing else. Normalizing in
+# the index makes the checkout's line endings the platform's business and keeps
+# the diff about the code. The backlog is renormalized; a new CRLF file only
+# gets in past this if it is added with the rule bypassed.
+* text=auto eol=lf
+
+# Shell scripts run on the Linux CI runners. A CRLF checked in from a Windows
+# clone makes them fail there with `$'\r': command not found`.
+*.sh text eol=lf
+
+# Binary: never normalized, never diffed as text.
+*.png binary
+*.webp binary
+*.ico binary
+*.icns binary
