@@ -1,8 +1,10 @@
 mod git;
+mod guard;
 mod models;
 mod oauth;
 mod openssh_integration;
 mod platform;
+mod repos;
 mod secrets;
 mod ssh;
 mod storage;
@@ -15,7 +17,10 @@ use tauri::Manager;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use git::GitIdentity;
-use models::{DeviceCodeResponse, OAuthSettings, PlatformUser, Profile, SshKeyInfo, SshKeyPair};
+use models::{
+    AppState, DeviceCodeResponse, GuardSettings, OAuthSettings, PlatformUser, Profile, RepoBinding,
+    RepoRoot, SshKeyInfo, SshKeyPair,
+};
 
 // ---- Profile CRUD ----
 
@@ -41,15 +46,26 @@ fn save_profile(app: tauri::AppHandle, mut profile: Profile) -> Result<(), Strin
         state.profiles.push(profile);
     }
     storage::save_state(&state)?;
-    ssh::update_ssh_config(&state.profiles)?;
-
-    if let Some(active) = state.profiles.iter().find(|p| p.is_active) {
-        if let Some((name, email)) = active.active_identity() {
-            git::set_global_identity(name, email)?;
-        }
-    }
+    sync_machine(&state)?;
     refresh_tray(&app);
     Ok(())
+}
+
+/// Brings `~/.ssh/config`, the global identity and the generated `~/.gitconfig`
+/// region in line with the stored state. With the global-identity fuse enabled
+/// no machine-wide identity is written at all — repositories carry their own.
+fn sync_machine(state: &AppState) -> Result<(), String> {
+    ssh::update_ssh_config(&state.profiles, state.guard.own_bare_ssh_hosts)?;
+
+    if !state.guard.unset_global_identity {
+        if let Some(active) = state.profiles.iter().find(|p| p.is_active) {
+            if let Some((name, email)) = active.active_identity() {
+                git::set_global_identity(name, email)?;
+            }
+        }
+    }
+
+    guard::apply(&state.guard, &state.profiles, &state.repo_roots)
 }
 
 fn delete_removed_platform_tokens(existing: &Profile, next: &Profile) -> Result<(), String> {
@@ -102,9 +118,16 @@ fn delete_profile(app: tauri::AppHandle, id: String) -> Result<(), String> {
 
     let mut state = state;
     state.profiles.retain(|p| p.id != id);
+    // A binding whose profile is gone would leave a stale allow-list behind that
+    // blocks every push, so the repository is released before the profile drops.
+    for binding in state.bindings.iter().filter(|b| b.profile_id == id) {
+        repos::clear_binding(&binding.path).ok();
+    }
+    state.bindings.retain(|b| b.profile_id != id);
+    state.repo_roots.retain(|r| r.profile_id != id);
     storage::save_state(&state)?;
     secrets::delete_profile_tokens(&id)?;
-    ssh::update_ssh_config(&state.profiles)?;
+    sync_machine(&state)?;
     refresh_tray(&app);
     Ok(())
 }
@@ -115,13 +138,7 @@ fn activate_profile_core(id: &str) -> Result<(), String> {
         p.is_active = p.id == id;
     }
     storage::save_state(&state)?;
-
-    if let Some(active) = state.profiles.iter().find(|p| p.is_active) {
-        if let Some((name, email)) = active.active_identity() {
-            git::set_global_identity(name, email)?;
-        }
-    }
-    ssh::update_ssh_config(&state.profiles)
+    sync_machine(&state)
 }
 
 #[tauri::command]
@@ -394,6 +411,170 @@ fn get_git_identity() -> Result<GitIdentity, String> {
     git::get_global_identity()
 }
 
+// ---- Repository bindings ----
+
+#[derive(serde::Serialize)]
+struct RepoState {
+    roots: Vec<RepoRoot>,
+    bindings: Vec<RepoBinding>,
+    guard: GuardSettings,
+}
+
+#[derive(serde::Serialize)]
+struct DoctorReport {
+    guard: guard::GuardStatus,
+    repos: Vec<repos::RepoStatus>,
+}
+
+#[tauri::command]
+fn get_repo_state() -> Result<RepoState, String> {
+    let state = storage::load_state()?;
+    Ok(RepoState {
+        roots: state.repo_roots,
+        bindings: state.bindings,
+        guard: state.guard,
+    })
+}
+
+#[tauri::command]
+fn save_repo_roots(roots: Vec<RepoRoot>) -> Result<(), String> {
+    let mut state = storage::load_state()?;
+    state.repo_roots = roots;
+    storage::save_state(&state)?;
+    guard::apply(&state.guard, &state.profiles, &state.repo_roots)
+}
+
+#[tauri::command]
+fn save_guard_settings(settings: GuardSettings) -> Result<(), String> {
+    let mut state = storage::load_state()?;
+    let was_fused = state.guard.unset_global_identity;
+    state.guard = settings;
+    storage::save_state(&state)?;
+    // Releasing the fuse is only correct as an explicit switch-off; `sync_machine`
+    // must never undo it on its own, or a manual `user.useConfigOnly` would be
+    // wiped on the next profile switch.
+    if was_fused && !state.guard.unset_global_identity {
+        guard::relax_global_identity()?;
+    }
+    sync_machine(&state)
+}
+
+#[tauri::command]
+fn scan_repositories() -> Result<Vec<repos::DiscoveredRepo>, String> {
+    let state = storage::load_state()?;
+    Ok(repos::scan(
+        &state.repo_roots,
+        &state.profiles,
+        &state.bindings,
+    ))
+}
+
+fn profile_by_id(state: &AppState, id: &str) -> Result<Profile, String> {
+    state
+        .profiles
+        .iter()
+        .find(|p| p.id == id)
+        .cloned()
+        .ok_or_else(|| format!("Unknown profile: {}", id))
+}
+
+#[tauri::command]
+fn bind_repository(binding: RepoBinding) -> Result<repos::BindResult, String> {
+    let mut state = storage::load_state()?;
+    let profile = profile_by_id(&state, &binding.profile_id)?;
+    let result = repos::apply_binding(&binding, &profile)?;
+
+    match state.bindings.iter_mut().find(|b| b.path == binding.path) {
+        Some(existing) => *existing = binding,
+        None => state.bindings.push(binding),
+    }
+    storage::save_state(&state)?;
+    Ok(result)
+}
+
+#[tauri::command]
+fn unbind_repository(path: String) -> Result<(), String> {
+    let mut state = storage::load_state()?;
+    repos::clear_binding(&path)?;
+    state.bindings.retain(|b| b.path != path);
+    storage::save_state(&state)
+}
+
+#[tauri::command]
+fn fix_repository(path: String) -> Result<repos::BindResult, String> {
+    let state = storage::load_state()?;
+    let binding = state
+        .bindings
+        .iter()
+        .find(|b| b.path == path)
+        .cloned()
+        .ok_or_else(|| format!("No binding for {}", path))?;
+    let profile = profile_by_id(&state, &binding.profile_id)?;
+    repos::apply_binding(&binding, &profile)
+}
+
+/// Widens one repository's allow-list. Used to accept an address the history
+/// check flagged — a bot, a co-author — without weakening any other repository.
+#[tauri::command]
+fn allow_email_in_repository(path: String, email: String) -> Result<repos::BindResult, String> {
+    let mut state = storage::load_state()?;
+    let binding = state
+        .bindings
+        .iter_mut()
+        .find(|b| b.path == path)
+        .ok_or_else(|| format!("No binding for {}", path))?;
+    let email = email.trim().to_string();
+    if email.is_empty() {
+        return Err("Email is empty".to_string());
+    }
+    if !binding.extra_allowed_emails.contains(&email) {
+        binding.extra_allowed_emails.push(email);
+    }
+    let binding = binding.clone();
+    let profile = profile_by_id(&state, &binding.profile_id)?;
+    let result = repos::apply_binding(&binding, &profile)?;
+    storage::save_state(&state)?;
+    Ok(result)
+}
+
+#[tauri::command]
+fn doctor() -> Result<DoctorReport, String> {
+    let state = storage::load_state()?;
+    let repos = state
+        .bindings
+        .iter()
+        .filter_map(|b| {
+            state
+                .profiles
+                .iter()
+                .find(|p| p.id == b.profile_id)
+                .map(|p| repos::inspect(b, p))
+        })
+        .collect();
+    Ok(DoctorReport {
+        guard: guard::status(&state.guard),
+        repos,
+    })
+}
+
+#[tauri::command]
+async fn probe_ssh_alias(host: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || ssh::probe_host(&host))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn verify_repo_access(
+    profile_id: String,
+    platform: String,
+    owner: String,
+    repo: String,
+) -> Result<platform::RepoAccess, String> {
+    let token = secrets::get_token(&profile_id, &platform)?;
+    platform::check_repo_access(&platform, &token, &owner, &repo).await
+}
+
 // ---- Tray ----
 
 // Localized labels for the tray menu. The menu is rebuilt from scratch on every
@@ -646,6 +827,17 @@ pub fn run() {
             openssh_integration_probe,
             get_git_identity,
             set_tray_labels,
+            get_repo_state,
+            save_repo_roots,
+            save_guard_settings,
+            scan_repositories,
+            bind_repository,
+            unbind_repository,
+            fix_repository,
+            allow_email_in_repository,
+            doctor,
+            probe_ssh_alias,
+            verify_repo_access,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

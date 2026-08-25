@@ -8,9 +8,10 @@ import { useI18n, fmt } from "./i18n";
 import ProfileCard from "./components/ProfileCard";
 import ProfileForm from "./components/ProfileForm";
 import SettingsPage from "./components/SettingsPage";
+import RepositoriesPage from "./components/RepositoriesPage";
 import UpdateBanner from "./components/UpdateBanner";
 
-type View = "list" | "form" | "settings";
+type View = "list" | "form" | "settings" | "repos";
 
 const SunIcon = () => (
   <svg
@@ -279,6 +280,14 @@ function App() {
     );
   }
 
+  if (view === "repos") {
+    return (
+      <div className="flex h-screen flex-col bg-surface text-fg">
+        <RepositoriesPage onBack={() => setView("list")} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen flex-col bg-surface text-fg">
       <UpdateBanner />
@@ -329,6 +338,25 @@ function App() {
               </div>
             )}
           </div>
+          <button
+            onClick={() => setView("repos")}
+            className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
+            title={m.app.repositories}
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
+              />
+            </svg>
+          </button>
           <button
             onClick={() => setView("settings")}
             className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"

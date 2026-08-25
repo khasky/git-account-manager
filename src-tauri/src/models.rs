@@ -27,6 +27,20 @@ pub struct Profile {
 }
 
 impl Profile {
+    pub fn account(&self, platform: &str) -> Option<&PlatformAccount> {
+        match platform {
+            "github" => self.github.as_ref(),
+            "gitlab" => self.gitlab.as_ref(),
+            "bitbucket" => self.bitbucket.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The profile name as it appears in SSH host aliases (`github-<slug>`).
+    pub fn slug(&self) -> String {
+        self.name.to_lowercase().replace(' ', "-")
+    }
+
     pub fn active_identity(&self) -> Option<(&str, &str)> {
         let platform = self.default_platform.as_deref();
         match platform {
@@ -40,6 +54,68 @@ impl Profile {
                 .or(self.bitbucket.as_ref()),
         }
         .map(|a| (a.git_name.as_str(), a.git_email.as_str()))
+    }
+}
+
+/// A folder that holds repositories belonging to one profile. Drives both the
+/// scan suggestions and the generated `includeIf "gitdir:"` blocks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoRoot {
+    pub path: String,
+    pub profile_id: String,
+    pub platform: String,
+}
+
+/// One repository pinned to a profile. The identity is written to the
+/// repository's own config, which is the only place every Git client — CLI,
+/// libgit2/TortoiseGit, IDEs — agrees on.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoBinding {
+    pub path: String,
+    pub profile_id: String,
+    pub platform: String,
+    /// Rewrite `origin` to the profile's `<platform>-<slug>` SSH alias so the
+    /// key no longer depends on which profile is active.
+    #[serde(default)]
+    pub pin_remote_alias: bool,
+    /// Install the pre-push identity guard into this repository's hooks path.
+    #[serde(default)]
+    pub install_hook: bool,
+    /// Extra emails the pre-push guard accepts here (bots, co-authors).
+    #[serde(default)]
+    pub extra_allowed_emails: Vec<String>,
+}
+
+/// Machine-wide guard rails. All default to off so an existing install keeps
+/// its current behaviour until the user opts in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuardSettings {
+    /// Remove global `user.name`/`user.email` and set `user.useConfigOnly`, so a
+    /// repository without its own identity fails loudly instead of borrowing
+    /// whichever profile happens to be active.
+    #[serde(default)]
+    pub unset_global_identity: bool,
+    /// Maintain a generated `includeIf` region in `~/.gitconfig` so fresh clones
+    /// under a known root start with the right identity.
+    #[serde(default)]
+    pub manage_gitconfig_includes: bool,
+    /// Let the active profile own the bare `github.com` / `gitlab.com` /
+    /// `bitbucket.org` SSH hosts. Turn off once repositories use aliases.
+    #[serde(default = "default_true")]
+    pub own_bare_ssh_hosts: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for GuardSettings {
+    fn default() -> Self {
+        Self {
+            unset_global_identity: false,
+            manage_gitconfig_includes: false,
+            own_bare_ssh_hosts: true,
+        }
     }
 }
 
@@ -76,6 +152,12 @@ pub struct AppState {
     pub profiles: Vec<Profile>,
     #[serde(default)]
     pub oauth: OAuthSettings,
+    #[serde(default)]
+    pub repo_roots: Vec<RepoRoot>,
+    #[serde(default)]
+    pub bindings: Vec<RepoBinding>,
+    #[serde(default)]
+    pub guard: GuardSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

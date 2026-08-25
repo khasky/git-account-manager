@@ -60,3 +60,95 @@ export interface GitIdentity {
   name: string;
   email: string;
 }
+
+export type PlatformId = "github" | "gitlab" | "bitbucket";
+
+/** A folder whose repositories belong to one profile. */
+export interface RepoRoot {
+  path: string;
+  profile_id: string;
+  platform: string;
+}
+
+/** One repository pinned to a profile. */
+export interface RepoBinding {
+  path: string;
+  profile_id: string;
+  platform: string;
+  pin_remote_alias: boolean;
+  install_hook: boolean;
+  extra_allowed_emails: string[];
+}
+
+export interface GuardSettings {
+  unset_global_identity: boolean;
+  manage_gitconfig_includes: boolean;
+  own_bare_ssh_hosts: boolean;
+}
+
+export interface RepoState {
+  roots: RepoRoot[];
+  bindings: RepoBinding[];
+  guard: GuardSettings;
+}
+
+/** `reason` records how the profile was inferred, never a silent guess. */
+export interface DiscoveredRepo {
+  path: string;
+  name: string;
+  remote_url: string;
+  host: string;
+  owner: string;
+  repo: string;
+  suggested_profile_id: string | null;
+  suggested_platform: string | null;
+  reason: "alias" | "owner" | "ambiguous" | "unknown";
+  candidate_profile_ids: string[];
+  bound: boolean;
+}
+
+export interface BindResult {
+  identity: string;
+  remote_url: string | null;
+  hook: "installed" | "kept-existing" | "unavailable" | "off";
+}
+
+export interface RepoCheck {
+  id: "exists" | "identity" | "local" | "remote" | "history" | "hooks";
+  ok: boolean;
+  detail: string;
+}
+
+export interface RepoStatus {
+  path: string;
+  name: string;
+  profile_id: string;
+  profile_name: string;
+  platform: string;
+  expected_email: string;
+  effective_email: string;
+  remote_url: string;
+  offending_emails: string[];
+  checks: RepoCheck[];
+  ok: boolean;
+}
+
+export interface GuardStatus {
+  global_name: string;
+  global_email: string;
+  use_config_only: boolean;
+  includes_managed: boolean;
+  gitconfig_path: string;
+  ok: boolean;
+}
+
+export interface DoctorReport {
+  guard: GuardStatus;
+  repos: RepoStatus[];
+}
+
+export interface RepoAccess {
+  found: boolean;
+  can_push: boolean;
+  full_name: string;
+}

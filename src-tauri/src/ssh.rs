@@ -119,10 +119,60 @@ pub fn read_public_key(pub_key_path: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Asks a host who it thinks we are. GitHub and GitLab answer `Hi <user>!` and
+/// then close the connection with a non-zero exit, so the greeting — not the
+/// exit code — is the result. This is what proves a host alias really reaches
+/// the account it is named after.
+pub fn probe_host(host: &str) -> Result<String, String> {
+    let target = format!("git@{}", host);
+    let mut cmd = Command::new("ssh");
+    cmd.args([
+        "-T",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        &target,
+    ]);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to run ssh: {}", e))?;
+
+    let mut text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim();
+    if !stderr.is_empty() {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(stderr);
+    }
+
+    if text.is_empty() {
+        return Err(format!("No response from {}", host));
+    }
+    Ok(text)
+}
+
 const MANAGED_HEADER: &str = "# === begin git-account-manager ===";
 const MANAGED_FOOTER: &str = "# === end git-account-manager ===";
 
-pub fn update_ssh_config(profiles: &[Profile]) -> Result<(), String> {
+/// Writes the managed region of `~/.ssh/config`.
+///
+/// With `own_bare_hosts` the active profile also claims the bare `github.com` /
+/// `gitlab.com` / `bitbucket.org` hosts, which is convenient but means every
+/// repository without an alias follows whichever profile is active. Turn it off
+/// once repositories are pinned to `<platform>-<slug>` aliases: the key then
+/// depends on the repository, not on the app's current state.
+pub fn update_ssh_config(profiles: &[Profile], own_bare_hosts: bool) -> Result<(), String> {
     let dir = ssh_dir()?;
     let config_path = dir.join("config");
     let existing = fs::read_to_string(&config_path).unwrap_or_default();
@@ -133,7 +183,7 @@ pub fn update_ssh_config(profiles: &[Profile]) -> Result<(), String> {
 
     let active = profiles.iter().find(|p| p.is_active);
 
-    if let Some(profile) = active {
+    if let (true, Some(profile)) = (own_bare_hosts, active) {
         if let Some(gh) = &profile.github {
             entries.push(host_entry("github.com", "github.com", &gh.ssh_private_key_path));
         }
@@ -146,7 +196,7 @@ pub fn update_ssh_config(profiles: &[Profile]) -> Result<(), String> {
     }
 
     for profile in profiles {
-        let slug = profile.name.to_lowercase().replace(' ', "-");
+        let slug = profile.slug();
         if let Some(gh) = &profile.github {
             entries.push(host_entry(&format!("github-{}", slug), "github.com", &gh.ssh_private_key_path));
         }

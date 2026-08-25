@@ -6,7 +6,12 @@ import {
   disable as disableAutostart,
   isEnabled as isAutostartEnabled,
 } from "@tauri-apps/plugin-autostart";
-import { OAuthSettings, OpenSshIntegrationProbe } from "../types";
+import {
+  GuardSettings,
+  OAuthSettings,
+  OpenSshIntegrationProbe,
+  RepoState,
+} from "../types";
 import { useTheme } from "../ThemeContext";
 import { useI18n, fmt, rich, LANGUAGES, type LangCode } from "../i18n";
 
@@ -83,6 +88,7 @@ export default function SettingsPage({ onBack }: Props) {
     null,
   );
   const [autostart, setAutostart] = useState(false);
+  const [guard, setGuard] = useState<GuardSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -102,6 +108,9 @@ export default function SettingsPage({ onBack }: Props) {
       .catch(() => setOpenSshProbe({ available: false, sshExe: null }));
     isAutostartEnabled()
       .then(setAutostart)
+      .catch(() => {});
+    invoke<RepoState>("get_repo_state")
+      .then((s) => setGuard(s.guard))
       .catch(() => {});
   }, []);
 
@@ -124,6 +133,21 @@ export default function SettingsPage({ onBack }: Props) {
       }
     } catch {
       /* ignore */
+    }
+  }
+
+  // The guard rails touch the machine's Git config, so each one applies the
+  // moment it is toggled rather than waiting for Save — the same as autostart.
+  async function toggleGuard(key: keyof GuardSettings) {
+    if (!guard) return;
+    const next = { ...guard, [key]: !guard[key] };
+    setGuard(next);
+    try {
+      await invoke("save_guard_settings", { settings: next });
+      setSaveError("");
+    } catch (e) {
+      setGuard(guard);
+      setSaveError(formatInvokeError(e, m.settings.saveError));
     }
   }
 
@@ -244,6 +268,62 @@ export default function SettingsPage({ onBack }: Props) {
             </select>
           </div>
         </div>
+
+        {/* Identity guard */}
+        {guard ? (
+          <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
+            <h3 className="font-medium text-fg-2">{m.settings.guard.title}</h3>
+            <p className="text-xs leading-relaxed text-fg-4">
+              {m.settings.guard.intro}
+            </p>
+
+            {(
+              [
+                {
+                  key: "unset_global_identity" as const,
+                  label: m.settings.guard.unsetGlobal,
+                  hint: m.settings.guard.unsetGlobalHint,
+                },
+                {
+                  key: "manage_gitconfig_includes" as const,
+                  label: m.settings.guard.manageIncludes,
+                  hint: m.settings.guard.manageIncludesHint,
+                },
+                {
+                  key: "own_bare_ssh_hosts" as const,
+                  label: m.settings.guard.ownBareHosts,
+                  hint: m.settings.guard.ownBareHostsHint,
+                },
+              ]
+            ).map((row) => (
+              <div
+                key={row.key}
+                className="flex items-center justify-between gap-4"
+              >
+                <div>
+                  <p className="text-sm text-fg-3">{row.label}</p>
+                  <p className="text-xs text-fg-5">
+                    {rich(row.hint, { codeClass: "text-fg-4" })}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleGuard(row.key)}
+                  aria-pressed={guard[row.key]}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                    guard[row.key] ? "bg-emerald-600" : "bg-toggle-off"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                      guard[row.key] ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         {/* TortoiseGit + Git: OpenSSH (Windows) */}
         {openSshProbe?.available ? (

@@ -10,6 +10,7 @@
 [![Downloads](https://img.shields.io/github/downloads/khasky/git-account-manager/total?style=flat-square)](https://github.com/khasky/git-account-manager/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/khasky/git-account-manager/build.yml?style=flat-square)](../../actions)
 [![License](https://img.shields.io/github/license/khasky/git-account-manager?style=flat-square)](LICENSE)
+[![Emojery](https://api.emojery.app/badge/github/khasky/git-account-manager.svg?style=flat-square)](https://emojery.app/react?t=github/khasky/git-account-manager)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)
 [![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-ea4aaa.svg?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/khasky)
 
@@ -29,6 +30,7 @@
 
 - **Profiles** — Create, edit, and delete named accounts. Each profile can link **GitHub**, **GitLab**, and **Bitbucket** — any one or several at once.
 - **One-click activation** — Activating a profile updates **global** `git config user.name` / `user.email` and rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** / **bitbucket.org** uses that profile's key.
+- **Repository-scoped identity** — Bind a repository to a profile and the identity is written into that repository, where every Git client reads it. Add an optional **pre-push guard**, an SSH-alias remote, and a **Doctor** that re-checks each binding. See [Repository-scoped identity](#repository-scoped-identity).
 - **Default identity** — When several platforms are connected, choose which account supplies the active **git identity** (name/email).
 - **Import from Git** — Start a new profile from the current global Git identity so existing `user.name` / `user.email` settings are not lost.
 - **OAuth sign-in** — **GitHub** via device code flow, **GitLab.com** via browser authorization + PKCE, **Bitbucket** via an Atlassian API token. Client / Application IDs are configurable in Settings (with built-in defaults).
@@ -71,6 +73,44 @@ It's the only tool here that **generates and uploads an SSH key for you from a G
 </picture>
 
 </details>
+
+## Repository-scoped identity
+
+A machine has no owner; a repository does. An identity kept in the global Git config follows whichever profile is active, so a commit made at the wrong moment silently carries the wrong address — and the commit object keeps it forever. The **Repositories** tab moves the identity to where it belongs.
+
+### Binding a repository
+
+Add one or more **watched folders**, each naming the profile its repositories belong to, then press **Scan**. Every repository found is matched against your profiles by evidence, never by guesswork:
+
+| Evidence                                                    | What it proves                                     |
+| ----------------------------------------------------------- | -------------------------------------------------- |
+| The remote uses a `<platform>-<profile>` SSH alias           | Already pinned to that profile                     |
+| The remote namespace matches exactly one account's username  | Personal repository of that account                |
+| **Check access** — asks the platform API with each token     | Organisations and forks, where the namespace cannot answer |
+| **Test SSH alias** — `ssh -T` returns the account greeting   | The alias really reaches the account it is named after |
+
+When the evidence is ambiguous the app asks instead of choosing. Binding then writes:
+
+- `user.name` / `user.email` into the repository's **own** config — the one place the Git CLI, libgit2 (which is what TortoiseGit commits through) and the IDEs all agree on;
+- `gam.allowedEmail`, the addresses this repository accepts;
+- optionally a `pre-push` hook that refuses a push carrying any other address;
+- optionally an `origin` rewritten to the profile's SSH alias, so the key follows the repository instead of the active profile.
+
+The hook is installed into whatever hooks directory the repository actually uses, `core.hooksPath` included. A `pre-push` belonging to another tool is never overwritten — the Doctor reports it instead.
+
+### Doctor
+
+Re-reads every bound repository from disk and reports six checks per repository: the folder exists, the effective identity matches, the identity is set **locally** rather than inherited, the remote matches the profile, the recent history carries no foreign address, and the pre-push guard is in place. Nothing is changed until you press **Fix**.
+
+The history check is the one that catches a mistake that already happened, on the day it happened rather than months later.
+
+### Guard rails (Settings)
+
+| Option                                    | What it does                                                                                                                                                            |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Drop the global Git identity**          | Removes global `user.name` / `user.email` and sets `user.useConfigOnly`. An unbound repository then fails with *Author identity unknown* instead of borrowing the active profile's address. |
+| **Maintain includeIf rules**              | Generates a delimited region in `~/.gitconfig` with `gitdir` rules (understood by libgit2, so TortoiseGit sees them) and `hasconfig:remote.*.url` rules (Git CLI 2.36+, and they follow the repository wherever it is cloned). Everything outside the region is preserved and the file is backed up once. |
+| **Active profile owns the bare SSH hosts** | On by default. While on, any repository without an SSH alias uses the active profile's key. Turn it off once repositories are pinned to aliases.                          |
 
 ## Installation
 

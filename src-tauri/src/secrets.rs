@@ -264,6 +264,9 @@ mod tests {
                 is_active: true,
             }],
             oauth: Default::default(),
+            repo_roots: Vec::new(),
+            bindings: Vec::new(),
+            guard: Default::default(),
         }
     }
 
