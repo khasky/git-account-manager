@@ -21,6 +21,12 @@ docs: document the SSH config layout
 
 Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `style`, `test`, `build`, `ci`, `chore`, `revert`. `feat` and `fix` drive the version bump (minor / patch) and appear in `CHANGELOG.md`; the rest don't bump or show up there. Scope is optional and free-form (usually the area touched). Mark an incompatible change with a `!` after the type/scope (`feat!: …`) or a `BREAKING CHANGE:` footer.
 
+## Checks on a pull request
+
+A pull request runs the `smoke` job on Linux and Windows: `pnpm build:web` (typecheck plus frontend build) and `cargo test --all-targets`. Both platforms are built because a fair amount of the Rust side sits behind `#[cfg(windows)]` or `#[cfg(unix)]`. Reproduce it locally with those two commands.
+
+Installers are not built for a pull request — bundling needs the signing secrets, which a fork never receives. They are produced when a maintainer pushes a `v*` tag.
+
 ## Releasing (maintainers)
 
 Run `pnpm release` ([`commit-and-tag-version`](https://github.com/absolute-version/commit-and-tag-version)). It derives the next version from the Conventional Commits since the last `v*` tag, bumps it in **all four** version files in lockstep — `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock` (the last two via the custom updaters in `scripts/`) — updates `CHANGELOG.md`, then creates the release commit and the `v*` tag.

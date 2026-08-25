@@ -12,8 +12,70 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  # Everyday feedback: typecheck, unit tests and a compile of the Rust side on
+  # the two platforms that carry `#[cfg]` branches. No bundling, no signing key,
+  # so it also passes on pull requests from forks, which never receive secrets.
+  smoke:
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-22.04, windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          # Debug artifacts, unlike the release ones the build job caches.
+          key: smoke
+
+      - name: Typecheck and build frontend
+        run: pnpm build:web
+
+      - name: Test and compile Rust
+        run: cargo test --all-targets --manifest-path src-tauri/Cargo.toml
+
+  # The full four-platform bundle. Only a `v*` tag needs installers, and only a
+  # tag has the signing secrets; running this per commit spent ~40 runner-minutes
+  # to rebuild artifacts nobody downloaded. Use workflow_dispatch to exercise it
+  # before tagging whenever the bundler config or icons changed — that path is
+  # not covered by `smoke`.
   build:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: write
     strategy:
@@ -94,8 +156,8 @@ jobs:
           releaseDraft: false
           prerelease: false
 
-      # Branch/PR builds don't publish a release, so keep the installers as CI
-      # artifacts for manual download. Tag builds upload to the release instead.
+      # A manual run publishes no release, so keep the installers as CI artifacts
+      # for download. Tag builds upload to the release instead.
       - name: Upload artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
