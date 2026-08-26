@@ -1,0 +1,59 @@
+version: 2
+
+updates:
+  # Cooldown: a compromised publish is normally yanked inside a week, so nothing
+  # lands here sooner.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    # Routine noise arrives as two PRs; majors stay separate so they get read.
+    groups:
+      # `@tauri-apps/api` is a production dependency and `@tauri-apps/cli` a
+      # development one, so the type-based groups below would split the halves of
+      # one release across two pull requests. Pattern groups win over those, so
+      # naming the scope here keeps the npm side moving together. It cannot reach
+      # the `tauri` crate - a different ecosystem, a different update - which is
+      # why `check:tauri` gates the pair on every push.
+      tauri:
+        patterns: ["@tauri-apps/*"]
+        update-types: [minor, patch]
+      prod-minor-patch:
+        dependency-type: production
+        update-types: [minor, patch]
+      dev-minor-patch:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: "/src-tauri"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
