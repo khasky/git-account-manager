@@ -503,12 +503,32 @@ pub fn apply_binding(binding: &RepoBinding, profile: &Profile) -> Result<BindRes
 /// Writes the guard into whichever hooks directory this repository actually
 /// uses. A `pre-push` that belongs to another tool is left alone — silently
 /// replacing husky's hook would trade one broken guarantee for another.
+/// Where this repository's `pre-push` guard belongs.
+///
+/// husky points `core.hooksPath` at `.husky/_`, and every file in there is one of
+/// husky's own runners: each looks for a same-named file in the parent directory
+/// and executes it. Writing into `_` would fight husky over that file, while the
+/// parent is exactly the slot husky exists to call — so the guard installs there
+/// and both hooks run, ours and whatever the project set husky up for.
+fn pre_push_path(dir: &str) -> Option<PathBuf> {
+    let hooks_dir = git::repo_hooks_dir(dir)?;
+    let is_husky_runner_dir = hooks_dir.file_name().is_some_and(|name| name == "_")
+        && (hooks_dir.join("h").exists() || hooks_dir.join("husky.sh").exists());
+    let target = if is_husky_runner_dir {
+        hooks_dir.parent()?.to_path_buf()
+    } else {
+        hooks_dir
+    };
+    Some(target.join("pre-push"))
+}
+
 fn install_hook(dir: &str) -> Result<String, String> {
-    let Some(hooks_dir) = git::repo_hooks_dir(dir) else {
+    let Some(path) = pre_push_path(dir) else {
         return Ok("unavailable".to_string());
     };
-    std::fs::create_dir_all(&hooks_dir).map_err(|e| e.to_string())?;
-    let path = hooks_dir.join("pre-push");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
 
     if path.exists() {
         let existing = std::fs::read_to_string(&path).unwrap_or_default();
@@ -611,6 +631,10 @@ pub struct RepoCheck {
     pub id: String,
     pub ok: bool,
     pub detail: String,
+    /// Where to look, when knowing that is the difference between a report and
+    /// an instruction. Empty when the detail already says everything.
+    #[serde(default)]
+    pub hint: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -633,6 +657,7 @@ fn check(id: &str, ok: bool, detail: String) -> RepoCheck {
         id: id.to_string(),
         ok,
         detail,
+        hint: String::new(),
     }
 }
 
@@ -693,12 +718,14 @@ pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
         .collect();
     checks.push(check("history", offending.is_empty(), offending.join(", ")));
 
-    let hook_detail = hook_state(&dir);
-    checks.push(check(
+    let (hook_detail, hook_path) = hook_state(&dir);
+    let mut hooks_check = check(
         "hooks",
         !binding.install_hook || hook_detail == "installed",
         hook_detail,
-    ));
+    );
+    hooks_check.hint = hook_path;
+    checks.push(hooks_check);
 
     let ok = checks.iter().all(|c| c.ok);
     RepoStatus {
@@ -716,22 +743,25 @@ pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
     }
 }
 
-fn hook_state(dir: &str) -> String {
-    let Some(hooks_dir) = git::repo_hooks_dir(dir) else {
-        return "unavailable".to_string();
+/// The state of the guard plus the file it was read from, so a report can name
+/// what to open instead of leaving the user to work out where hooks live here.
+fn hook_state(dir: &str) -> (String, String) {
+    let Some(path) = pre_push_path(dir) else {
+        return ("unavailable".to_string(), String::new());
     };
-    let path = hooks_dir.join("pre-push");
+    let shown = path.to_string_lossy().replace('\\', "/");
     if !path.exists() {
-        return "missing".to_string();
+        return ("missing".to_string(), shown);
     }
-    if std::fs::read_to_string(&path)
+    let state = if std::fs::read_to_string(&path)
         .unwrap_or_default()
         .contains(HOOK_MARKER)
     {
-        "installed".to_string()
+        "installed"
     } else {
-        "kept-existing".to_string()
-    }
+        "kept-existing"
+    };
+    (state.to_string(), shown)
 }
 
 #[cfg(test)]
@@ -1191,6 +1221,39 @@ mod tests {
             run(&refs).status.success(),
             "no allow-list means no opinion"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// husky owns every file in `.husky/_` and each one runs its namesake from
+    /// the parent. Installing into `_` would fight husky for the file and report
+    /// a conflict that is not one; the parent slot lets both hooks run.
+    #[test]
+    fn the_guard_installs_into_huskys_hook_slot_rather_than_its_runners() {
+        let dir = std::env::temp_dir().join(format!("gam-husky-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.to_string_lossy().replace('\\', "/");
+
+        Command::new("git").args(["init", "-q", &path]).output().unwrap();
+        let runners = dir.join(".husky").join("_");
+        std::fs::create_dir_all(&runners).unwrap();
+        std::fs::write(runners.join("h"), "#!/usr/bin/env sh\n").unwrap();
+        // husky's own runner, which must survive.
+        std::fs::write(runners.join("pre-push"), "#!/usr/bin/env sh\n. \"$(dirname \"$0\")/h\"\n")
+            .unwrap();
+        git(&path, &["config", "core.hooksPath", ".husky/_"]);
+
+        assert_eq!(install_hook(&path).unwrap(), "installed");
+
+        let ours = dir.join(".husky").join("pre-push");
+        assert!(ours.exists(), "guard must land in the slot husky calls");
+        assert!(std::fs::read_to_string(&ours).unwrap().contains(HOOK_MARKER));
+        assert!(
+            !std::fs::read_to_string(runners.join("pre-push")).unwrap().contains(HOOK_MARKER),
+            "husky's runner must be left alone"
+        );
+        assert_eq!(hook_state(&path).0, "installed");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
