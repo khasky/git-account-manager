@@ -93,13 +93,22 @@ impl Profile {
     }
 }
 
-/// A folder that holds repositories belonging to one profile. Drives both the
-/// scan suggestions and the generated `includeIf "gitdir:"` blocks.
+/// A folder that holds repositories belonging to one profile. Drives the scan
+/// suggestions, the generated `includeIf "gitdir:"` blocks, and the switches
+/// every repository inside it starts with.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoRoot {
     pub path: String,
     pub profile_id: String,
     pub platform: String,
+    /// Default for the repositories in this folder. Installing the guard is the
+    /// point of adding a folder, so it starts on.
+    #[serde(default = "default_true")]
+    pub install_hook: bool,
+    /// Default for the repositories in this folder. Rewriting a remote is
+    /// visible from outside the app, so it starts off.
+    #[serde(default)]
+    pub pin_remote_alias: bool,
 }
 
 /// One repository pinned to a profile. The identity is written to the
@@ -120,6 +129,11 @@ pub struct RepoBinding {
     /// Extra emails the pre-push guard accepts here (bots, co-authors).
     #[serde(default)]
     pub extra_allowed_emails: Vec<String>,
+    /// Set once the user changes this repository's switches away from its
+    /// folder's defaults. A later change to those defaults then leaves it alone,
+    /// so a deliberate exception is not undone by an unrelated edit.
+    #[serde(default)]
+    pub overrides_root: bool,
 }
 
 /// Machine-wide guard rails. All default to off so an existing install keeps

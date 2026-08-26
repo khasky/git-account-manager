@@ -1,4 +1,4 @@
-use crate::{models::AppState, secrets};
+use crate::{models::AppState, repos, secrets};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -32,6 +32,7 @@ pub fn load_state() -> Result<AppState, String> {
 
     match serde_json::from_str::<AppState>(&content) {
         Ok(mut state) => {
+            repos::mark_pre_existing_exceptions(&state.repo_roots, &mut state.bindings);
             if secrets::migrate_plaintext_tokens(&mut state)? {
                 save_state(&state)?;
             }

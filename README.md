@@ -24,7 +24,7 @@ A desktop Git account manager for identity switching across popular code hosting
 
 - **Profiles** — Create, edit, and delete named accounts. Each profile can link **GitHub**, **GitLab**, and **Bitbucket** — any one or several at once.
 - **One-click activation** — Activating a profile updates **global** `git config user.name` / `user.email` and rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** / **bitbucket.org** uses that profile's key.
-- **Repository-scoped identity** — Bind a repository to a profile and the identity is written into that repository, where every Git client reads it. Add an optional **pre-push guard**, an SSH-alias remote, and a **Doctor** that re-checks each binding. See [Repository-scoped identity](#repository-scoped-identity).
+- **Repository-scoped identity** — Give a profile its folders and the identity is written into every repository inside them, where every Git client reads it. Add an optional **pre-push guard**, an SSH-alias remote, and a **Doctor** that re-checks each binding. See [Repository-scoped identity](#repository-scoped-identity).
 - **Default identity** — When several platforms are connected, choose which account supplies the active **git identity** (name/email).
 - **Import from Git** — Start a new profile from the current global Git identity so existing `user.name` / `user.email` settings are not lost.
 - **OAuth sign-in** — **GitHub** via device code flow, **GitLab.com** via browser authorization + PKCE, **Bitbucket** via an Atlassian API token. Client / Application IDs are configurable in Settings (with built-in defaults).
@@ -70,11 +70,15 @@ It's the only tool here that **generates and uploads an SSH key for you from a G
 
 ## Repository-scoped identity
 
-A machine has no owner; a repository does. An identity kept in the global Git config follows whichever profile is active, so a commit made at the wrong moment silently carries the wrong address — and the commit object keeps it forever. The **Repositories** tab moves the identity to where it belongs.
+A machine has no owner; a repository does. An identity kept in the global Git config follows whichever profile is active, so a commit made at the wrong moment silently carries the wrong address — and the commit object keeps it forever. Folders belong to an account, so that is where they are configured.
 
 ### Binding a repository
 
-Add one or more **watched folders**, each naming the profile its repositories belong to, then press **Scan**. Every repository found is matched against your profiles by evidence, never by guesswork:
+Open a profile and add its **folders** under *Folders and repositories*. Each folder carries the switches its repositories start with — the pre-push guard, and whether `origin` is rewritten to the SSH alias — and a single repository can be set apart from them; that exception then survives later edits of the folder's defaults.
+
+Nothing is written while you edit. Adding a folder scans it and shows what was found; **Save** applies the whole set at once and reports what it did, so *Cancel* leaves every repository untouched — which is also what lets a profile be given its folders before it exists on disk.
+
+Every repository found is matched against your profiles by evidence, never by guesswork:
 
 | Evidence                                                    | What it proves                                     |
 | ----------------------------------------------------------- | -------------------------------------------------- |
@@ -85,7 +89,7 @@ Add one or more **watched folders**, each naming the profile its repositories be
 
 **Check access** deliberately skips `~/.ssh/config` (`ssh -F none`) so the answer describes the profile's own key. Asking the platform API instead would answer a different question and answer it wrongly: an OAuth token without the `repo` scope — which this app never requests, because that scope grants write access to every repository you can see — reports every private repository as missing.
 
-When the evidence is ambiguous the app asks instead of choosing. Binding then writes:
+A repository the first two rows settle is selected for you. Anything else — an organisation, a fork, someone else's clone that happens to sit in the folder — is marked and waits for a decision rather than being stamped with this identity. Binding writes:
 
 - `user.name` / `user.email` into the repository's **own** config — the one place the Git CLI, libgit2 (which is what TortoiseGit commits through) and the IDEs all agree on;
 - `gam.allowedEmail`, the addresses this repository accepts;
@@ -97,6 +101,8 @@ The hook is installed into whatever hooks directory the repository actually uses
 ### Doctor
 
 Re-reads every bound repository from disk and reports six checks per repository: the folder exists, the effective identity matches, the identity is set **locally** rather than inherited, the remote matches the profile, the recent history carries no foreign address, and the pre-push guard is in place. Nothing is changed until you press **Fix**.
+
+A profile whose repositories drifted carries a count on its card in the list, so a problem surfaces without opening anything; the checks themselves live in that profile.
 
 The history check is the one that catches a mistake that already happened, on the day it happened rather than months later.
 

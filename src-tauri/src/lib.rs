@@ -378,11 +378,17 @@ fn get_repo_state() -> Result<RepoState, String> {
 }
 
 #[tauri::command]
-fn save_repo_roots(roots: Vec<RepoRoot>) -> Result<(), String> {
+fn apply_profile_repos(plan: repos::RepoPlan) -> Result<repos::ApplyReport, String> {
     let mut state = storage::load_state()?;
-    state.repo_roots = roots;
+    let report = repos::apply_plan(
+        &state.profiles,
+        &mut state.repo_roots,
+        &mut state.bindings,
+        plan,
+    )?;
     storage::save_state(&state)?;
-    guard::apply(&state.guard, &state.profiles, &state.repo_roots)
+    guard::apply(&state.guard, &state.profiles, &state.repo_roots)?;
+    Ok(report)
 }
 
 #[tauri::command]
@@ -400,14 +406,24 @@ fn save_guard_settings(settings: GuardSettings) -> Result<(), String> {
     sync_machine(&state)
 }
 
+/// Scans one profile's folders while the profile is still being edited, so the
+/// form's copy of it overrides what is on disk: a new profile is not in the
+/// state at all, and an edited one may have just gained the account the evidence
+/// ladder needs to recognise its own namespace.
 #[tauri::command]
-fn scan_repositories() -> Result<Vec<repos::DiscoveredRepo>, String> {
+fn scan_profile_repositories(
+    profile: Profile,
+    roots: Vec<RepoRoot>,
+) -> Result<Vec<repos::DiscoveredRepo>, String> {
     let state = storage::load_state()?;
-    Ok(repos::scan(
-        &state.repo_roots,
-        &state.profiles,
-        &state.bindings,
-    ))
+    let mut profiles: Vec<Profile> = state
+        .profiles
+        .iter()
+        .filter(|p| p.id != profile.id)
+        .cloned()
+        .collect();
+    profiles.push(profile);
+    Ok(repos::scan(&roots, &profiles, &state.bindings))
 }
 
 fn profile_by_id(state: &AppState, id: &str) -> Result<Profile, String> {
@@ -417,28 +433,6 @@ fn profile_by_id(state: &AppState, id: &str) -> Result<Profile, String> {
         .find(|p| p.id == id)
         .cloned()
         .ok_or_else(|| format!("Unknown profile: {}", id))
-}
-
-#[tauri::command]
-fn bind_repository(binding: RepoBinding) -> Result<repos::BindResult, String> {
-    let mut state = storage::load_state()?;
-    let profile = profile_by_id(&state, &binding.profile_id)?;
-    let result = repos::apply_binding(&binding, &profile)?;
-
-    match state.bindings.iter_mut().find(|b| b.path == binding.path) {
-        Some(existing) => *existing = binding,
-        None => state.bindings.push(binding),
-    }
-    storage::save_state(&state)?;
-    Ok(result)
-}
-
-#[tauri::command]
-fn unbind_repository(path: String) -> Result<(), String> {
-    let mut state = storage::load_state()?;
-    repos::clear_binding(&path)?;
-    state.bindings.retain(|b| b.path != path);
-    storage::save_state(&state)
 }
 
 #[tauri::command]
@@ -772,11 +766,9 @@ pub fn run() {
             get_git_identity,
             set_tray_labels,
             get_repo_state,
-            save_repo_roots,
             save_guard_settings,
-            scan_repositories,
-            bind_repository,
-            unbind_repository,
+            scan_profile_repositories,
+            apply_profile_repos,
             fix_repository,
             allow_email_in_repository,
             doctor,

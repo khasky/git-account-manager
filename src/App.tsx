@@ -2,14 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Profile, GitIdentity, PlatformId } from "./types";
+import { Profile, DoctorReport, GitIdentity, PlatformId } from "./types";
 import { PLATFORMS, PLATFORM_LABEL } from "./platforms";
 import { useTheme } from "./ThemeContext";
 import { useI18n, fmt } from "./i18n";
 import ProfileCard from "./components/ProfileCard";
 import ProfileForm from "./components/ProfileForm";
 import SettingsPage from "./components/SettingsPage";
-import RepositoriesPage from "./components/RepositoriesPage";
 import UpdateBanner from "./components/UpdateBanner";
 import {
   GitHubIcon,
@@ -18,7 +17,7 @@ import {
   SunIcon,
 } from "./components/icons";
 
-type View = "list" | "form" | "settings" | "repos";
+type View = "list" | "form" | "settings";
 
 const TOAST_MS = 3000;
 
@@ -28,6 +27,7 @@ function App() {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [importPrefill, setImportPrefill] = useState<GitIdentity | null>(null);
   const [loading, setLoading] = useState(true);
+  const [problems, setProblems] = useState<Record<string, number>>({});
   const [toastMsg, setToastMsg] = useState("");
   const { preference, setPreference } = useTheme();
   const { m } = useI18n();
@@ -48,6 +48,15 @@ function App() {
     try {
       const data = await invoke<Profile[]>("get_profiles");
       setProfiles(data);
+      // The per-profile card shows how many of its repositories drifted, so the
+      // report is fetched here rather than only inside the form a user might
+      // never open.
+      const report = await invoke<DoctorReport>("doctor");
+      const counts: Record<string, number> = {};
+      for (const repo of report.repos) {
+        if (!repo.ok) counts[repo.profile_id] = (counts[repo.profile_id] ?? 0) + 1;
+      }
+      setProblems(counts);
     } catch (e) {
       console.error("Failed to load profiles:", e);
     } finally {
@@ -228,14 +237,6 @@ function App() {
     );
   }
 
-  if (view === "repos") {
-    return (
-      <div className="flex h-screen flex-col bg-surface text-fg">
-        <RepositoriesPage onBack={() => setView("list")} />
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-screen flex-col bg-surface text-fg">
       <UpdateBanner />
@@ -284,25 +285,6 @@ function App() {
               </div>
             )}
           </div>
-          <button
-            onClick={() => setView("repos")}
-            className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
-            title={m.app.repositories}
-          >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
-              />
-            </svg>
-          </button>
           <button
             onClick={() => setView("settings")}
             className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
@@ -390,6 +372,7 @@ function App() {
               <ProfileCard
                 key={p.id}
                 profile={p}
+                problemCount={problems[p.id] ?? 0}
                 onActivate={handleActivate}
                 onEdit={handleEdit}
                 onDelete={handleDelete}

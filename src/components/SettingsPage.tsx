@@ -7,7 +7,9 @@ import {
   isEnabled as isAutostartEnabled,
 } from "@tauri-apps/plugin-autostart";
 import {
+  DoctorReport,
   GuardSettings,
+  GuardStatus,
   OAuthSettings,
   OpenSshIntegrationProbe,
   RepoState,
@@ -45,6 +47,9 @@ export default function SettingsPage({ onBack }: Props) {
   );
   const [autostart, setAutostart] = useState(false);
   const [guard, setGuard] = useState<GuardSettings | null>(null);
+  // What the guard rails actually did to this machine, read back rather than
+  // assumed from the switches.
+  const [guardStatus, setGuardStatus] = useState<GuardStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -67,6 +72,9 @@ export default function SettingsPage({ onBack }: Props) {
       .catch(() => {});
     invoke<RepoState>("get_repo_state")
       .then((s) => setGuard(s.guard))
+      .catch(() => {});
+    invoke<DoctorReport>("doctor")
+      .then((r) => setGuardStatus(r.guard))
       .catch(() => {});
   }, []);
 
@@ -255,6 +263,29 @@ export default function SettingsPage({ onBack }: Props) {
                 />
               </div>
             ))}
+
+            {guardStatus && (
+              <dl className="space-y-1 border-t border-bd pt-3 text-xs">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-fg-4">{m.repos.globalIdentity}</dt>
+                  <dd className="text-right text-fg-3">
+                    {guardStatus.global_email || m.repos.globalNone}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-fg-4">{m.repos.useConfigOnly}</dt>
+                  <dd className="text-fg-3">
+                    {guardStatus.use_config_only ? m.repos.on : m.repos.off}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-fg-4">{m.repos.includesRegion}</dt>
+                  <dd className="text-fg-3">
+                    {guardStatus.includes_managed ? m.repos.on : m.repos.off}
+                  </dd>
+                </div>
+              </dl>
+            )}
           </div>
         ) : null}
 

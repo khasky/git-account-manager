@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+  ApplyReport,
   Profile,
   PlatformAccount,
   PlatformUser,
@@ -9,10 +10,17 @@ import {
   SshKeyPair,
   OAuthSettings,
   DeviceCodeResponse,
+  DiscoveredRepo,
+  DoctorReport,
   GitIdentity,
   PlatformId,
+  RepoBinding,
+  RepoRoot,
+  RepoState,
+  RepoStatus,
 } from "../types";
 import ConfirmDialog, { DialogAction } from "./ConfirmDialog";
+import ProfileRepos from "./ProfileRepos";
 import { CopyIcon } from "./icons";
 import { PLATFORMS, PLATFORM_LABEL, profileUrl } from "../platforms";
 import { copySshPublicKey } from "../copySshPublicKey";
@@ -131,6 +139,29 @@ export default function ProfileForm({
   const [settings, setSettings] = useState<OAuthSettings | null>(null);
   const [copiedPublicPath, setCopiedPublicPath] = useState<string | null>(null);
   const copyHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Folders and bindings are held as a draft and written only by Save, so
+  // Cancel leaves no repository touched — and so a profile that does not exist
+  // on disk yet can still have its folders configured before it is created.
+  const [roots, setRoots] = useState<RepoRoot[]>([]);
+  const [repos, setRepos] = useState<DiscoveredRepo[]>([]);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [storedBindings, setStoredBindings] = useState<RepoBinding[]>([]);
+  const [statuses, setStatuses] = useState<RepoStatus[]>([]);
+
+  const loadRepoState = useCallback(async () => {
+    const [state, report] = await Promise.all([
+      invoke<RepoState>("get_repo_state"),
+      invoke<DoctorReport>("doctor"),
+    ]);
+    setRoots(state.roots.filter((r) => r.profile_id === profileId));
+    setStoredBindings(state.bindings.filter((b) => b.profile_id === profileId));
+    setStatuses(report.repos.filter((r) => r.profile_id === profileId));
+  }, [profileId]);
+
+  useEffect(() => {
+    loadRepoState().catch(() => {});
+  }, [loadRepoState]);
 
   const ghPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ghTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -478,6 +509,32 @@ export default function ProfileForm({
     }
   }
 
+  function buildAccount(s: PlatformState): PlatformAccount | undefined {
+    if (!s.connected || !s.sshPrivateKeyPath) return undefined;
+    return {
+      username: s.username,
+      git_name: s.gitName,
+      git_email: s.gitEmail,
+      ssh_private_key_path: s.sshPrivateKeyPath,
+      ssh_public_key_path: s.sshPublicKeyPath,
+    };
+  }
+
+  /** The profile as it stands in the form. The repository scan needs this rather
+   *  than the saved copy: an account connected a moment ago is what tells the
+   *  evidence ladder which namespaces belong to this profile. */
+  function draftProfile(): Profile {
+    return {
+      id: profileId,
+      name: name.trim(),
+      default_platform: defaultPlatform,
+      github: buildAccount(gh),
+      gitlab: buildAccount(gl),
+      bitbucket: buildAccount(bb),
+      is_active: profile?.is_active || false,
+    };
+  }
+
   async function handleSave() {
     if (!name.trim()) {
       setError(m.form.errProfileName);
@@ -490,35 +547,68 @@ export default function ProfileForm({
     setSaving(true);
     setError("");
 
-    const buildAccount = (s: PlatformState): PlatformAccount | undefined => {
-      if (!s.connected || !s.sshPrivateKeyPath) return undefined;
-      return {
-        username: s.username,
-        git_name: s.gitName,
-        git_email: s.gitEmail,
-        ssh_private_key_path: s.sshPrivateKeyPath,
-        ssh_public_key_path: s.sshPublicKeyPath,
-      };
-    };
-
-    const p: Profile = {
-      id: profileId,
-      name: name.trim(),
-      default_platform: defaultPlatform,
-      github: buildAccount(gh),
-      gitlab: buildAccount(gl),
-      bitbucket: buildAccount(bb),
-      is_active: profile?.is_active || false,
-    };
+    const p = draftProfile();
 
     try {
       await invoke("save_profile", { profile: p });
+      const report = await invoke<ApplyReport>("apply_profile_repos", {
+        plan: buildRepoPlan(p),
+      });
+      if (report.failed.length > 0) {
+        setError(
+          `${fmt(m.repos.applyPartial, {
+            bound: report.bound,
+            failed: report.failed.length,
+          })}\n${report.failed.map((f) => `${f.path}: ${f.error}`).join("\n")}`,
+        );
+        setSaving(false);
+        return;
+      }
       onSave(p);
     } catch (e) {
       setError(String(e));
     } finally {
       setSaving(false);
     }
+  }
+
+  /** Turns the draft into the exact set of writes the backend should perform.
+   *
+   *  A stored binding is released only when the user unselected a repository the
+   *  scan actually saw, or when its folder left this profile. A repository that
+   *  was never scanned — an unplugged drive, a folder the user did not open —
+   *  keeps its binding rather than losing its guard to an absence of evidence. */
+  function buildRepoPlan(saved: Profile) {
+    const bindings = repos
+      .filter((r) => selected[r.path])
+      .map((r) => {
+        const previous = storedBindings.find((b) => b.path === r.path);
+        const root = roots.find((x) => x.path === r.root_path);
+        return {
+          path: r.path,
+          profile_id: saved.id,
+          platform: r.suggested_platform ?? root?.platform ?? "github",
+          install_hook: r.install_hook,
+          pin_remote_alias: r.pin_remote_alias,
+          extra_allowed_emails: previous?.extra_allowed_emails ?? [],
+          overrides_root: r.overrides_root,
+        };
+      });
+
+    const scanned = new Set(repos.map((r) => r.path));
+    const keep = new Set(bindings.map((b) => b.path));
+    const released = storedBindings
+      .filter(
+        (b) =>
+          (scanned.has(b.path) && !keep.has(b.path)) ||
+          !roots.some(
+            (root) =>
+              b.path === root.path || b.path.startsWith(`${root.path}/`),
+          ),
+      )
+      .map((b) => b.path);
+
+    return { profile_id: saved.id, roots, bindings, released };
   }
 
   function renderError(err: string, platform: PlatformId) {
@@ -1084,8 +1174,23 @@ export default function ProfileForm({
             </div>
           )}
 
+          {connectedPlatforms.length > 0 && (
+            <ProfileRepos
+              profile={draftProfile()}
+              platforms={connectedPlatforms}
+              roots={roots}
+              setRoots={setRoots}
+              repos={repos}
+              setRepos={setRepos}
+              selected={selected}
+              setSelected={setSelected}
+              statuses={statuses}
+              onFixed={() => loadRepoState().catch(() => {})}
+            />
+          )}
+
           {error && (
-            <div className="rounded-md bg-danger-bg p-3 text-sm text-danger-fg">
+            <div className="rounded-md bg-danger-bg p-3 text-sm whitespace-pre-wrap text-danger-fg">
               {error}
             </div>
           )}

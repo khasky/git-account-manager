@@ -68,6 +68,9 @@ export interface RepoRoot {
   path: string;
   profile_id: string;
   platform: string;
+  /** Defaults every repository in this folder starts with. */
+  install_hook: boolean;
+  pin_remote_alias: boolean;
 }
 
 /** One repository pinned to a profile. */
@@ -78,6 +81,8 @@ export interface RepoBinding {
   pin_remote_alias: boolean;
   install_hook: boolean;
   extra_allowed_emails: string[];
+  /** Deliberately set apart from its folder's defaults. */
+  overrides_root: boolean;
 }
 
 export interface GuardSettings {
@@ -96,6 +101,7 @@ export interface RepoState {
 export interface DiscoveredRepo {
   path: string;
   name: string;
+  root_path: string;
   remote_url: string;
   host: string;
   owner: string;
@@ -105,6 +111,24 @@ export interface DiscoveredRepo {
   reason: "alias" | "owner" | "ambiguous" | "unknown";
   candidate_profile_ids: string[];
   bound: boolean;
+  /** Folder defaults already applied by the backend. */
+  install_hook: boolean;
+  pin_remote_alias: boolean;
+  overrides_root: boolean;
+}
+
+/** Everything the profile form collected, applied when the profile is saved. */
+export interface RepoPlan {
+  profile_id: string;
+  roots: RepoRoot[];
+  bindings: RepoBinding[];
+  released: string[];
+}
+
+export interface ApplyReport {
+  bound: number;
+  released: number;
+  failed: { path: string; error: string }[];
 }
 
 export interface BindResult {

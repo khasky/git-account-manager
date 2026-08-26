@@ -8,6 +8,8 @@ import { useI18n, fmt } from "../i18n";
 
 interface Props {
   profile: Profile;
+  /** Repositories of this profile the doctor found drifted. */
+  problemCount: number;
   onActivate: (id: string) => void;
   onEdit: (profile: Profile) => void;
   onDelete: (id: string, deleteKeys: boolean) => void;
@@ -96,6 +98,7 @@ function collectKeys(profile: Profile): string[] {
 
 export default function ProfileCard({
   profile,
+  problemCount,
   onActivate,
   onEdit,
   onDelete,
@@ -165,6 +168,15 @@ export default function ProfileCard({
               </span>
             )}
           </div>
+          {problemCount > 0 && (
+            <button
+              onClick={() => onEdit(profile)}
+              title={m.card.problemsTitle}
+              className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-500/25 dark:text-amber-400"
+            >
+              {fmt(m.card.problems, { count: problemCount })}
+            </button>
+          )}
         </div>
 
         {connected.length > 0 && (

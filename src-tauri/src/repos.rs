@@ -140,6 +140,9 @@ pub fn alias_url(platform: &str, profile: &Profile, remote: &RemoteRef) -> Strin
 pub struct DiscoveredRepo {
     pub path: String,
     pub name: String,
+    /// The watched folder this was found under, so the caller can read that
+    /// folder's default switches without re-deriving which root contains it.
+    pub root_path: String,
     pub remote_url: String,
     pub host: String,
     pub owner: String,
@@ -151,6 +154,22 @@ pub struct DiscoveredRepo {
     pub reason: String,
     pub candidate_profile_ids: Vec<String>,
     pub bound: bool,
+    /// Switches resolved here rather than in the caller, so the folder-default
+    /// rule has one implementation. See `effective_switches`.
+    pub install_hook: bool,
+    pub pin_remote_alias: bool,
+    pub overrides_root: bool,
+}
+
+/// The switches a repository starts with. A folder's defaults reach everything
+/// inside it, except a repository the user deliberately set apart — that
+/// exception survives a later edit of the folder's defaults, which is the whole
+/// reason the flag is stored rather than inferred from a value comparison.
+pub fn effective_switches(root: &RepoRoot, existing: Option<&RepoBinding>) -> (bool, bool) {
+    match existing {
+        Some(binding) if binding.overrides_root => (binding.install_hook, binding.pin_remote_alias),
+        _ => (root.install_hook, root.pin_remote_alias),
+    }
 }
 
 fn walk(dir: &Path, depth: usize, max_depth: usize, out: &mut Vec<PathBuf>) {
@@ -202,14 +221,20 @@ pub fn scan(
                 continue;
             }
             let (profile_id, platform, reason, candidates) = suggest(&remote, profiles, Some(root));
+            let existing = bindings.iter().find(|b| b.path == dir);
+            let (install_hook, pin_remote_alias) = effective_switches(root, existing);
             let name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| dir.clone());
             found.push(DiscoveredRepo {
-                bound: bindings.iter().any(|b| b.path == dir),
+                bound: existing.is_some(),
+                overrides_root: existing.is_some_and(|b| b.overrides_root),
+                install_hook,
+                pin_remote_alias,
                 path: dir,
                 name,
+                root_path: root.path.clone(),
                 remote_url: url,
                 host: remote.host,
                 owner: remote.owner,
@@ -340,6 +365,107 @@ pub fn allowed_emails(binding: &RepoBinding, profile: &Profile) -> Vec<String> {
         }
     }
     list
+}
+
+/// Everything the profile form collected about one profile's folders.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RepoPlan {
+    pub profile_id: String,
+    pub roots: Vec<RepoRoot>,
+    pub bindings: Vec<RepoBinding>,
+    /// Repositories the form dropped — a removed folder, or an explicit unbind.
+    pub released: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ApplyReport {
+    pub bound: usize,
+    pub released: usize,
+    pub failed: Vec<ApplyFailure>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ApplyFailure {
+    pub path: String,
+    pub error: String,
+}
+
+/// True when `path` is the folder itself or lives under it.
+fn is_inside(root: &str, path: &str) -> bool {
+    path == root || path.starts_with(&format!("{}/", root))
+}
+
+/// A binding written before folders carried defaults has no `overrides_root`, so
+/// a switch the user turned off on one repository would quietly come back the
+/// first time its folder's defaults reached it. Values that already diverge are
+/// the record of that decision — mark them, and the folder leaves them alone.
+pub fn mark_pre_existing_exceptions(roots: &[RepoRoot], bindings: &mut [RepoBinding]) {
+    for binding in bindings.iter_mut() {
+        if binding.overrides_root {
+            continue;
+        }
+        let Some(root) = roots.iter().find(|r| is_inside(&r.path, &binding.path)) else {
+            continue;
+        };
+        if binding.install_hook != root.install_hook
+            || binding.pin_remote_alias != root.pin_remote_alias
+        {
+            binding.overrides_root = true;
+        }
+    }
+}
+
+/// Writes a profile's folders and bindings into `state` and onto disk.
+///
+/// One repository that refuses does not cancel the rest: a missing directory or
+/// a read-only config is a fact about that repository, and stopping there would
+/// leave the batch half-applied with nothing said about which half.
+pub fn apply_plan(
+    profiles: &[Profile],
+    roots: &mut Vec<RepoRoot>,
+    bindings: &mut Vec<RepoBinding>,
+    plan: RepoPlan,
+) -> Result<ApplyReport, String> {
+    let profile = profiles
+        .iter()
+        .find(|p| p.id == plan.profile_id)
+        .ok_or_else(|| format!("Unknown profile: {}", plan.profile_id))?;
+
+    // Only this profile's folders are replaced; another profile's stay put.
+    roots.retain(|r| r.profile_id != plan.profile_id);
+    roots.extend(plan.roots);
+
+    // Release before binding: a repository handed to another profile has to lose
+    // the previous allow-list first, or a stale one would outlive the change.
+    let released = plan.released.len();
+    for path in &plan.released {
+        clear_binding(path).ok();
+        bindings.retain(|b| &b.path != path);
+    }
+
+    let mut bound = 0;
+    let mut failed = Vec::new();
+    for binding in plan.bindings {
+        match apply_binding(&binding, profile) {
+            Ok(_) => {
+                match bindings.iter_mut().find(|b| b.path == binding.path) {
+                    Some(existing) => *existing = binding,
+                    None => bindings.push(binding),
+                }
+                bound += 1;
+            }
+            Err(error) => failed.push(ApplyFailure {
+                path: binding.path,
+                error,
+            }),
+        }
+    }
+
+    Ok(ApplyReport {
+        bound,
+        released,
+        failed,
+    })
 }
 
 pub fn apply_binding(binding: &RepoBinding, profile: &Profile) -> Result<BindResult, String> {
@@ -666,6 +792,48 @@ mod tests {
         }
     }
 
+    fn root_at(path: &str) -> RepoRoot {
+        RepoRoot {
+            path: path.to_string(),
+            profile_id: "p1".to_string(),
+            platform: "github".to_string(),
+            install_hook: true,
+            pin_remote_alias: false,
+        }
+    }
+
+    fn binding_at(path: &str, install_hook: bool, pin_alias: bool, overrides: bool) -> RepoBinding {
+        RepoBinding {
+            path: path.to_string(),
+            profile_id: "p1".to_string(),
+            platform: "github".to_string(),
+            pin_remote_alias: pin_alias,
+            install_hook,
+            extra_allowed_emails: vec![],
+            overrides_root: overrides,
+        }
+    }
+
+    /// Editing a folder's defaults must reach the repositories that follow it and
+    /// must not touch the one the user deliberately set apart.
+    #[test]
+    fn folder_defaults_reach_everything_except_a_deliberate_exception() {
+        let mut root = root_at("/tmp/roots");
+
+        assert_eq!(effective_switches(&root, None), (true, false));
+
+        let inherits = binding_at("/tmp/roots/a", false, true, false);
+        assert_eq!(effective_switches(&root, Some(&inherits)), (true, false));
+
+        let exception = binding_at("/tmp/roots/b", false, true, true);
+        assert_eq!(effective_switches(&root, Some(&exception)), (false, true));
+
+        root.install_hook = false;
+        root.pin_remote_alias = true;
+        assert_eq!(effective_switches(&root, Some(&inherits)), (false, true));
+        assert_eq!(effective_switches(&root, Some(&exception)), (false, true));
+    }
+
     fn git(dir: &str, args: &[&str]) {
         let ok = Command::new("git")
             .arg("-C")
@@ -693,11 +861,7 @@ mod tests {
     #[test]
     fn evidence_ladder_never_guesses() {
         let profiles = vec![profile()];
-        let root = RepoRoot {
-            path: "/tmp/roots".to_string(),
-            profile_id: "p1".to_string(),
-            platform: "github".to_string(),
-        };
+        let root = root_at("/tmp/roots");
 
         let alias = parse_remote_url("git@github-personal:octo/demo.git").unwrap();
         let (id, platform, reason, _) = suggest(&alias, &profiles, Some(&root));
@@ -745,17 +909,129 @@ mod tests {
             git(&p, &["remote", "add", "origin", url]);
         }
 
-        let roots = vec![RepoRoot {
-            path: dir.to_string_lossy().replace('\\', "/"),
-            profile_id: "p1".to_string(),
-            platform: "github".to_string(),
-        }];
+        let roots = vec![root_at(&dir.to_string_lossy().replace('\\', "/"))];
         let found = scan(&roots, &[profile()], &[]);
         let names: Vec<&str> = found.iter().map(|r| r.repo.as_str()).collect();
         assert!(names.contains(&"outer"), "found: {:?}", names);
         assert!(names.contains(&"inner"), "found: {:?}", names);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The write path Save takes. A repository that cannot be written must not
+    /// cancel the ones that can, and what it did has to be reported honestly.
+    #[test]
+    fn saving_applies_the_batch_releases_the_rest_and_reports_failures() {
+        let dir = std::env::temp_dir().join(format!("gam-plan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let mut paths = Vec::new();
+        for name in ["keep", "drop"] {
+            let repo = dir.join(name);
+            std::fs::create_dir_all(&repo).unwrap();
+            let p = repo.to_string_lossy().replace('\\', "/");
+            Command::new("git").args(["init", "-q", &p]).output().unwrap();
+            git(&p, &["remote", "add", "origin",
+                &format!("git@github.com:octo/{}.git", name)]);
+            paths.push(p);
+        }
+        let (keep, drop) = (paths[0].clone(), paths[1].clone());
+        let missing = dir.to_string_lossy().replace('\\', "/") + "/not-a-repository";
+
+        // `drop` is already bound, so releasing it has something to clear.
+        let profiles = vec![profile()];
+        let mut roots = vec![root_at(&dir.to_string_lossy().replace('\\', "/"))];
+        let mut bindings = vec![binding_at(&drop, true, false, false)];
+        apply_binding(&bindings[0], &profiles[0]).unwrap();
+        assert!(git::repo_config_get(&drop, "gam.allowedEmail").is_some());
+
+        let planned_roots = roots.clone();
+        let report = apply_plan(
+            &profiles,
+            &mut roots,
+            &mut bindings,
+            RepoPlan {
+                profile_id: "p1".to_string(),
+                roots: planned_roots,
+                bindings: vec![
+                    binding_at(&keep, true, false, false),
+                    binding_at(&missing, true, false, false),
+                ],
+                released: vec![drop.clone()],
+            },
+        )
+        .unwrap();
+
+        assert_eq!((report.bound, report.released), (1, 1));
+        assert_eq!(report.failed.len(), 1, "{:?}", report.failed);
+        assert_eq!(report.failed[0].path, missing);
+
+        // The good one is written and stored, the released one is cleared, and
+        // the failure left nothing behind.
+        assert_eq!(
+            git::repo_config_get(&keep, "user.email").as_deref(),
+            Some("1+octo@users.noreply.github.com")
+        );
+        assert!(git::repo_config_get(&drop, "gam.allowedEmail").is_none());
+        let stored: Vec<&str> = bindings.iter().map(|b| b.path.as_str()).collect();
+        assert_eq!(stored, vec![keep.as_str()]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The form builds this object in TypeScript, so nothing but a round trip
+    /// proves the field names still line up. A rename on either side turns Save
+    /// into an error dialog with no other warning.
+    #[test]
+    fn the_plan_the_form_sends_still_deserializes() {
+        let sent = r#"{
+          "profile_id": "p1",
+          "roots": [{
+            "path": "D:/repos/github/khasky",
+            "profile_id": "p1",
+            "platform": "github",
+            "install_hook": true,
+            "pin_remote_alias": false
+          }],
+          "bindings": [{
+            "path": "D:/repos/github/khasky/demo",
+            "profile_id": "p1",
+            "platform": "github",
+            "install_hook": true,
+            "pin_remote_alias": false,
+            "extra_allowed_emails": [],
+            "overrides_root": false
+          }],
+          "released": ["D:/repos/github/khasky/gone"]
+        }"#;
+
+        let plan: RepoPlan = serde_json::from_str(sent).expect("form payload must parse");
+        assert_eq!(plan.profile_id, "p1");
+        assert!(plan.roots[0].install_hook);
+        assert!(!plan.bindings[0].overrides_root);
+        assert_eq!(plan.released, vec!["D:/repos/github/khasky/gone".to_string()]);
+    }
+
+    /// A switch turned off before folders had defaults is a decision, not a
+    /// value waiting to be overwritten.
+    #[test]
+    fn an_old_binding_that_diverges_becomes_an_exception() {
+        let root = root_at("/tmp/roots"); // install_hook: true, pin: false
+        let mut bindings = vec![
+            binding_at("/tmp/roots/off", false, false, false),
+            binding_at("/tmp/roots/same", true, false, false),
+            binding_at("/tmp/elsewhere/other", false, true, false),
+        ];
+
+        mark_pre_existing_exceptions(std::slice::from_ref(&root), &mut bindings);
+
+        assert!(bindings[0].overrides_root, "diverging binding must be kept");
+        assert!(!bindings[1].overrides_root, "matching binding must follow the folder");
+        assert!(!bindings[2].overrides_root, "binding outside the folder is not ours");
+
+        // The folder's own defaults still reach the one that matched.
+        assert_eq!(effective_switches(&root, Some(&bindings[0])), (false, false));
+        assert_eq!(effective_switches(&root, Some(&bindings[1])), (true, false));
     }
 
     /// The whole path a user takes: a repository with a remote gets bound, and
@@ -784,6 +1060,7 @@ mod tests {
             pin_remote_alias: true,
             install_hook: true,
             extra_allowed_emails: vec!["bot@example.com".to_string()],
+            overrides_root: false,
         };
 
         let result = apply_binding(&binding, &profile).unwrap();
