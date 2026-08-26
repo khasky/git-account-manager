@@ -143,18 +143,21 @@ export default function ProfileForm({
   const loadRepoState = useCallback(async () => {
     setReposLoading(true);
     try {
-      const [state, report] = await Promise.all([
-        api.getRepoState(),
-        api.doctor(),
-      ]);
+      const state = await api.getRepoState();
       setRoots(state.roots.filter((r) => r.profile_id === profileId));
       setStoredBindings(
         state.bindings.filter((b) => b.profile_id === profileId),
       );
-      setStatuses(report.repos.filter((r) => r.profile_id === profileId));
     } finally {
       setReposLoading(false);
     }
+
+    // Reading the folders costs a file read; the doctor reads every bound
+    // repository from disk and takes orders of magnitude longer. Awaiting both
+    // together held the folders back for as long as the slower one, so the
+    // report is fetched afterwards and fills its own list when it lands.
+    const report = await api.doctor();
+    setStatuses(report.repos.filter((r) => r.profile_id === profileId));
   }, [profileId]);
 
   useEffect(() => {
