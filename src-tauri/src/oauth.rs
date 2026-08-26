@@ -1,6 +1,6 @@
+use crate::http::client;
 use crate::models::DeviceCodeResponse;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use reqwest::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 pub async fn github_device_start(client_id: &str) -> Result<DeviceCodeResponse, String> {
-    let client = Client::new();
+    let client = client();
     let resp = client
         .post("https://github.com/login/device/code")
         .header("Accept", "application/json")
@@ -41,7 +41,7 @@ pub async fn github_device_poll(
     client_id: &str,
     device_code: &str,
 ) -> Result<Option<String>, String> {
-    let client = Client::new();
+    let client = client();
     let resp = client
         .post("https://github.com/login/oauth/access_token")
         .header("Accept", "application/json")
@@ -299,7 +299,7 @@ pub async fn gitlab_exchange_code(
         access_token: String,
     }
 
-    let client = Client::new();
+    let client = client();
     let resp = client
         .post("https://gitlab.com/oauth/token")
         .form(&[
