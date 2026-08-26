@@ -1,33 +1,83 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
+/** Kept clear of the window edges so a tip near one is not sliced in half. */
+const MARGIN = 8;
+const MAX_WIDTH = 256;
+
+interface Position {
+  left: number;
+  top: number;
+  width: number;
+}
 
 /** An `i` that explains the control next to it.
  *
  *  Opens on hover for a mouse and on click for everything else — a tooltip that
  *  only answers to hover is unreachable by keyboard and by touch, which is the
- *  audience most likely to need the explanation. */
+ *  audience most likely to need the explanation.
+ *
+ *  Positioned against the viewport rather than the button's own box: the panels
+ *  it lives in scroll and clip, so an absolutely placed tip was cut off by its
+ *  own container as well as by the window edge. */
 export default function InfoTip({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<Position | null>(null);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const tipRef = useRef<HTMLSpanElement>(null);
+
+  // Measured before paint, so the tip never appears at one place and jumps.
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current || !tipRef.current) {
+      setPos(null);
+      return;
+    }
+    const anchor = buttonRef.current.getBoundingClientRect();
+    const width = Math.min(MAX_WIDTH, window.innerWidth - MARGIN * 2);
+    const height = tipRef.current.offsetHeight;
+
+    const centred = anchor.left + anchor.width / 2 - width / 2;
+    const left = Math.min(
+      Math.max(centred, MARGIN),
+      window.innerWidth - width - MARGIN,
+    );
+
+    // Above by default; below when there is no room, which is the case for a
+    // control near the top of the window.
+    const above = anchor.top - height - 6;
+    const top = above >= MARGIN ? above : anchor.bottom + 6;
+
+    setPos({ left, top, width });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
+    // Scrolling moves the anchor out from under a viewport-fixed tip.
+    function close() {
+      setOpen(false);
+    }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
     };
   }, [open]);
 
   return (
-    <span ref={ref} className="relative inline-flex align-middle">
+    <span ref={wrapRef} className="inline-flex align-middle">
       <button
+        ref={buttonRef}
         type="button"
         aria-label={text}
         aria-expanded={open}
@@ -42,8 +92,15 @@ export default function InfoTip({ text }: { text: string }) {
       </button>
       {open && (
         <span
+          ref={tipRef}
           role="tooltip"
-          className="absolute bottom-full left-1/2 z-50 mb-1.5 w-64 -translate-x-1/2 rounded-md border border-bd bg-dialog px-2.5 py-2 text-[11px] leading-relaxed font-normal text-fg-3 shadow-lg"
+          style={{
+            left: pos?.left ?? 0,
+            top: pos?.top ?? 0,
+            width: pos?.width ?? MAX_WIDTH,
+            visibility: pos ? "visible" : "hidden",
+          }}
+          className="fixed z-50 rounded-md border border-bd bg-dialog px-2.5 py-2 text-[11px] leading-relaxed font-normal text-fg-3 shadow-lg"
         >
           {text}
         </span>
