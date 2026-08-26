@@ -28,7 +28,7 @@ dirs = "6"
 keyring-core = "1"
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
-base64 = "0.22"
+base64 = "0.23"
 open = "5"
 urlencoding = "2"
 tokio = { version = "1", features = ["rt"] }
