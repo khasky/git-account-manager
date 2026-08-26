@@ -1,30 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import {
-  ApplyReport,
-  Profile,
-  PlatformAccount,
-  PlatformUser,
-  SshKeyInfo,
-  SshKeyPair,
-  OAuthSettings,
-  DeviceCodeResponse,
+import { useCallback, useEffect, useRef, useState } from "react";
+import * as api from "../api";
+import { copySshPublicKey } from "../copySshPublicKey";
+import { fmt, rich, useI18n } from "../i18n";
+import { PLATFORM_LABEL, PLATFORMS } from "../platforms";
+import { buildRepoPlan } from "../repoPlan";
+import type {
   DiscoveredRepo,
-  DoctorReport,
   GitIdentity,
+  OAuthSettings,
+  PlatformAccount,
   PlatformId,
+  Profile,
   RepoBinding,
   RepoRoot,
-  RepoState,
   RepoStatus,
+  SshKeyInfo,
 } from "../types";
-import ConfirmDialog, { DialogAction } from "./ConfirmDialog";
+import ConfirmDialog, { type DialogAction } from "./ConfirmDialog";
+import { CloseIcon } from "./icons";
+import PlatformSection, {
+  emptyPlatform,
+  type PlatformState,
+} from "./PlatformSection";
 import ProfileRepos from "./ProfileRepos";
-import { CopyIcon } from "./icons";
-import { PLATFORMS, PLATFORM_LABEL, profileUrl } from "../platforms";
-import { copySshPublicKey } from "../copySshPublicKey";
-import { useI18n, fmt, rich } from "../i18n";
 
 interface Props {
   profile: Profile | null;
@@ -37,60 +36,32 @@ interface Props {
 
 const COPY_HINT_MS = 2000;
 
-interface PlatformState {
-  connected: boolean;
-  connecting: boolean;
-  username: string;
-  gitName: string;
-  gitEmail: string;
-  publicEmail: string;
-  noreplyEmail: string;
-  sshPrivateKeyPath: string;
-  sshPublicKeyPath: string;
-  sshSource: "existing" | "generate";
-  selectedKey: string;
-  error: string;
-  keyUploaded: boolean;
-  deviceCode: DeviceCodeResponse | null;
-}
+/** How long the GitLab browser flow waits before giving up, matching the
+ *  backend's own callback timeout. */
+const GITLAB_TIMEOUT_S = 120;
 
-function emptyPlatform(): PlatformState {
-  return {
-    connected: false,
-    connecting: false,
-    username: "",
-    gitName: "",
-    gitEmail: "",
-    publicEmail: "",
-    noreplyEmail: "",
-    sshPrivateKeyPath: "",
-    sshPublicKeyPath: "",
-    sshSource: "generate",
-    selectedKey: "",
-    error: "",
-    keyUploaded: false,
-    deviceCode: null,
-  };
-}
+/** GitHub's device flow does not tell us how long it will take; this is its
+ *  documented default, used only until the real value arrives. */
+const GITHUB_FALLBACK_EXPIRY_S = 900;
 
 function platformFromAccount(acc?: PlatformAccount): PlatformState {
   if (!acc) return emptyPlatform();
   return {
+    ...emptyPlatform(),
     connected: true,
-    connecting: false,
     username: acc.username,
     gitName: acc.git_name,
     gitEmail: acc.git_email,
-    publicEmail: "",
-    noreplyEmail: "",
     sshPrivateKeyPath: acc.ssh_private_key_path,
     sshPublicKeyPath: acc.ssh_public_key_path,
     sshSource: "existing",
     selectedKey: acc.ssh_private_key_path,
-    error: "",
     keyUploaded: true,
-    deviceCode: null,
   };
+}
+
+function noCountdowns(): Record<PlatformId, number> {
+  return { github: 0, gitlab: 0, bitbucket: 0 };
 }
 
 export default function ProfileForm({
@@ -112,18 +83,31 @@ export default function ProfileForm({
 
   const [name, setName] = useState(profile?.name || prefill?.name || "");
   const [importedEmail, setImportedEmail] = useState(prefill?.email || "");
-  const [defaultPlatform, setDefaultPlatform] = useState(
-    profile?.default_platform || "github",
+  const [defaultPlatform, setDefaultPlatform] = useState<PlatformId>(
+    profile?.default_platform ?? "github",
   );
-  const [gh, setGh] = useState<PlatformState>(
-    platformFromAccount(profile?.github),
+
+  // One record rather than three parallel `gh`/`gl`/`bb` states with three
+  // setters: every handler used to exist in triplicate, and a change to one
+  // that was not mirrored into the other two was invisible.
+  const [sections, setSections] = useState<Record<PlatformId, PlatformState>>(
+    () => ({
+      github: platformFromAccount(profile?.github),
+      gitlab: platformFromAccount(profile?.gitlab),
+      bitbucket: platformFromAccount(profile?.bitbucket),
+    }),
   );
-  const [gl, setGl] = useState<PlatformState>(
-    platformFromAccount(profile?.gitlab),
+
+  const update = useCallback(
+    (platform: PlatformId, patch: Partial<PlatformState>) => {
+      setSections((prev) => ({
+        ...prev,
+        [platform]: { ...prev[platform], ...patch },
+      }));
+    },
+    [],
   );
-  const [bb, setBb] = useState<PlatformState>(
-    platformFromAccount(profile?.bitbucket),
-  );
+
   // Bitbucket connects via a pasted Atlassian API token (email + token),
   // not OAuth — these hold the two inputs until "Connect" combines them.
   const [bbEmail, setBbEmail] = useState("");
@@ -139,6 +123,8 @@ export default function ProfileForm({
   const [settings, setSettings] = useState<OAuthSettings | null>(null);
   const [copiedPublicPath, setCopiedPublicPath] = useState<string | null>(null);
   const copyHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [countdown, setCountdown] =
+    useState<Record<PlatformId, number>>(noCountdowns);
 
   // Folders and bindings are held as a draft and written only by Save, so
   // Cancel leaves no repository touched — and so a profile that does not exist
@@ -151,8 +137,8 @@ export default function ProfileForm({
 
   const loadRepoState = useCallback(async () => {
     const [state, report] = await Promise.all([
-      invoke<RepoState>("get_repo_state"),
-      invoke<DoctorReport>("doctor"),
+      api.getRepoState(),
+      api.doctor(),
     ]);
     setRoots(state.roots.filter((r) => r.profile_id === profileId));
     setStoredBindings(state.bindings.filter((b) => b.profile_id === profileId));
@@ -165,46 +151,63 @@ export default function ProfileForm({
 
   const ghPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ghTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [ghCountdown, setGhCountdown] = useState(0);
   const ghCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const glCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const glCancelledRef = useRef(false);
+  const glConnectingRef = useRef(false);
+
+  useEffect(() => {
+    glConnectingRef.current = sections.gitlab.connecting;
+  }, [sections.gitlab.connecting]);
+
+  /** Counts one platform's remaining seconds down to zero. */
+  function startCountdown(
+    platform: PlatformId,
+    seconds: number,
+    ref: React.RefObject<ReturnType<typeof setInterval> | null>,
+  ) {
+    setCountdown((prev) => ({ ...prev, [platform]: seconds }));
+    ref.current = setInterval(() => {
+      setCountdown((prev) => ({
+        ...prev,
+        [platform]: prev[platform] <= 1 ? 0 : prev[platform] - 1,
+      }));
+    }, 1000);
+  }
 
   function clearGitHubTimers() {
-    if (ghPollRef.current) {
-      clearInterval(ghPollRef.current);
-      ghPollRef.current = null;
+    for (const ref of [ghPollRef, ghTimeoutRef, ghCountdownRef]) {
+      if (ref.current) {
+        clearInterval(ref.current as ReturnType<typeof setInterval>);
+        ref.current = null;
+      }
     }
-    if (ghTimeoutRef.current) {
-      clearTimeout(ghTimeoutRef.current);
-      ghTimeoutRef.current = null;
-    }
-    if (ghCountdownRef.current) {
-      clearInterval(ghCountdownRef.current);
-      ghCountdownRef.current = null;
-    }
-    setGhCountdown(0);
+    setCountdown((prev) => ({ ...prev, github: 0 }));
   }
 
   function cancelGitHubAuth() {
     clearGitHubTimers();
-    updateGh({ connecting: false, deviceCode: null, error: "" });
+    update("github", {
+      connecting: false,
+      deviceCode: null,
+      error: { kind: "none" },
+    });
   }
-
-  const [glCountdown, setGlCountdown] = useState(0);
-  const glCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const glCancelledRef = useRef(false);
-  const glConnectingRef = useRef(false);
 
   function clearGitLabCountdown() {
     if (glCountdownRef.current) {
       clearInterval(glCountdownRef.current);
       glCountdownRef.current = null;
     }
-    setGlCountdown(0);
+    setCountdown((prev) => ({ ...prev, gitlab: 0 }));
   }
 
-  useEffect(() => {
-    glConnectingRef.current = gl.connecting;
-  }, [gl.connecting]);
+  function cancelGitLabAuth() {
+    glCancelledRef.current = true;
+    void api.gitlabOauthAbort().catch(() => {});
+    clearGitLabCountdown();
+    update("gitlab", { connecting: false, error: { kind: "none" } });
+  }
 
   useEffect(() => {
     return () => {
@@ -222,48 +225,26 @@ export default function ProfileForm({
         copyHintTimerRef.current = null;
       }, COPY_HINT_MS);
     } catch {
-      /* ignore */
+      /* the hint simply does not appear */
     }
-  }
-
-  function abortGitLabOAuthBackend() {
-    void invoke("gitlab_oauth_abort").catch(() => {});
-  }
-
-  function cancelGitLabAuth() {
-    glCancelledRef.current = true;
-    abortGitLabOAuthBackend();
-    clearGitLabCountdown();
-    updateGl({ connecting: false, error: "" });
   }
 
   function cleanupUnsavedTokens() {
     if (!isEdit) {
-      void invoke("delete_profile_tokens", { profileId }).catch(() => {});
+      void api.deleteProfileTokens(profileId).catch(() => {});
       return;
     }
-
     const initial = initialPlatformsRef.current;
-    const connected: Record<PlatformId, boolean> = {
-      github: gh.connected,
-      gitlab: gl.connected,
-      bitbucket: bb.connected,
-    };
-
-    (Object.keys(connected) as PlatformId[]).forEach((platform) => {
-      if (!initial[platform] && connected[platform]) {
-        void invoke("delete_platform_token", { profileId, platform }).catch(
-          () => {},
-        );
+    for (const platform of PLATFORMS) {
+      if (!initial[platform] && sections[platform].connected) {
+        void api.deletePlatformToken({ profileId, platform }).catch(() => {});
       }
-    });
+    }
   }
 
   function handleProfileCancel() {
-    if (gl.connecting) {
-      cancelGitLabAuth();
-    }
-    if (gh.connecting || gh.deviceCode) {
+    if (sections.gitlab.connecting) cancelGitLabAuth();
+    if (sections.github.connecting || sections.github.deviceCode) {
       cancelGitHubAuth();
     }
     cleanupUnsavedTokens();
@@ -284,10 +265,12 @@ export default function ProfileForm({
   }, [disconnectTarget]);
 
   useEffect(() => {
-    invoke<SshKeyInfo[]>("list_ssh_keys")
+    api
+      .listSshKeys()
       .then(setSshKeys)
       .catch(() => {});
-    invoke<OAuthSettings>("get_settings")
+    api
+      .getSettings()
       .then(setSettings)
       .catch(() => {});
     return () => {
@@ -296,216 +279,190 @@ export default function ProfileForm({
       if (ghCountdownRef.current) clearInterval(ghCountdownRef.current);
       if (glCountdownRef.current) clearInterval(glCountdownRef.current);
       if (glConnectingRef.current) {
-        void invoke("gitlab_oauth_abort").catch(() => {});
+        void api.gitlabOauthAbort().catch(() => {});
       }
     };
   }, []);
 
-  const updateGh = (p: Partial<PlatformState>) =>
-    setGh((prev) => ({ ...prev, ...p }));
-  const updateGl = (p: Partial<PlatformState>) =>
-    setGl((prev) => ({ ...prev, ...p }));
-  const updateBb = (p: Partial<PlatformState>) =>
-    setBb((prev) => ({ ...prev, ...p }));
-
   async function handleImportFromGit() {
     try {
-      const id = await invoke<GitIdentity>("get_git_identity");
+      const id = await api.getGitIdentity();
       if (id.name && !name.trim()) setName(id.name);
       if (id.email) setImportedEmail(id.email);
     } catch {
-      /* ignore */
+      /* nothing to prefill */
     }
+  }
+
+  /** The addresses a freshly connected account offers, in the order the form
+   *  should prefer them: the noreply one hides a private address, so it wins. */
+  function connectedPatch(user: {
+    username: string;
+    name?: string;
+    email?: string;
+    noreply_email?: string;
+  }): Partial<PlatformState> {
+    const noreply = user.noreply_email || "";
+    const pubEmail = user.email || "";
+    return {
+      connecting: false,
+      connected: true,
+      deviceCode: null,
+      username: user.username,
+      gitName: user.name || user.username,
+      gitEmail: noreply || pubEmail || importedEmail,
+      publicEmail: pubEmail,
+      noreplyEmail: noreply,
+    };
   }
 
   async function connectGitHub() {
     if (!settings?.github_client_id) {
-      updateGh({ error: "settings_required" });
+      update("github", { error: { kind: "settings" } });
       return;
     }
-    updateGh({ connecting: true, error: "" });
+    update("github", { connecting: true, error: { kind: "none" } });
     try {
-      const device = await invoke<DeviceCodeResponse>("github_oauth_start", {
-        clientId: settings.github_client_id,
-      });
-      updateGh({ deviceCode: device });
+      const device = await api.githubOauthStart(settings.github_client_id);
+      update("github", { deviceCode: device });
       await openUrl(device.verification_uri);
 
-      const expiresIn = device.expires_in || 900;
-      setGhCountdown(expiresIn);
-      ghCountdownRef.current = setInterval(() => {
-        setGhCountdown((prev) => {
-          if (prev <= 1) return 0;
-          return prev - 1;
-        });
-      }, 1000);
+      const expiresIn = device.expires_in || GITHUB_FALLBACK_EXPIRY_S;
+      startCountdown("github", expiresIn, ghCountdownRef);
 
       ghTimeoutRef.current = setTimeout(() => {
         clearGitHubTimers();
-        updateGh({
+        update("github", {
           connecting: false,
           deviceCode: null,
-          error: m.form.authTimedOut,
+          error: { kind: "message", text: m.form.authTimedOut },
         });
       }, expiresIn * 1000);
 
       ghPollRef.current = setInterval(
         async () => {
           try {
-            const user = await invoke<PlatformUser | null>("github_oauth_poll", {
+            const user = await api.githubOauthPoll({
               clientId: settings.github_client_id,
               deviceCode: device.device_code,
               profileId,
             });
             if (user) {
               clearGitHubTimers();
-              const noreply = user.noreply_email || "";
-              const pubEmail = user.email || "";
-              updateGh({
-                connecting: false,
-                connected: true,
-                deviceCode: null,
-                username: user.username,
-                gitName: user.name || user.username,
-                gitEmail: noreply || pubEmail || importedEmail,
-                publicEmail: pubEmail,
-                noreplyEmail: noreply,
-              });
+              update("github", connectedPatch(user));
             }
           } catch (e) {
             clearGitHubTimers();
-            updateGh({ connecting: false, deviceCode: null, error: String(e) });
+            update("github", {
+              connecting: false,
+              deviceCode: null,
+              error: { kind: "message", text: String(e) },
+            });
           }
         },
         (device.interval + 1) * 1000,
       );
     } catch (e) {
-      updateGh({ connecting: false, error: String(e) });
+      update("github", {
+        connecting: false,
+        error: { kind: "message", text: String(e) },
+      });
     }
   }
 
   async function connectGitLab() {
     if (!settings?.gitlab_client_id) {
-      updateGl({ error: "settings_required" });
+      update("gitlab", { error: { kind: "settings" } });
       return;
     }
     glCancelledRef.current = false;
-    updateGl({ connecting: true, error: "" });
-
-    setGlCountdown(120);
-    glCountdownRef.current = setInterval(() => {
-      setGlCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
-    }, 1000);
+    update("gitlab", { connecting: true, error: { kind: "none" } });
+    startCountdown("gitlab", GITLAB_TIMEOUT_S, glCountdownRef);
 
     try {
-      const user = await invoke<PlatformUser>("gitlab_oauth_connect", {
+      const user = await api.gitlabOauthConnect({
         clientId: settings.gitlab_client_id,
         profileId,
       });
       clearGitLabCountdown();
       if (glCancelledRef.current) return;
-      const noreply = user.noreply_email || "";
-      const pubEmail = user.email || "";
-      updateGl({
-        connecting: false,
-        connected: true,
-        username: user.username,
-        gitName: user.name || user.username,
-        gitEmail: noreply || pubEmail || importedEmail,
-        publicEmail: pubEmail,
-        noreplyEmail: noreply,
-      });
+      update("gitlab", connectedPatch(user));
     } catch (e) {
       clearGitLabCountdown();
       if (glCancelledRef.current) return;
-      updateGl({ connecting: false, error: String(e) });
+      update("gitlab", {
+        connecting: false,
+        error: { kind: "message", text: String(e) },
+      });
     }
   }
 
   async function connectBitbucket() {
     if (!bbEmail.trim() || !bbToken.trim()) {
-      updateBb({ error: m.form.bitbucket.errCreds });
+      update("bitbucket", {
+        error: { kind: "message", text: m.form.bitbucket.errCreds },
+      });
       return;
     }
-    updateBb({ connecting: true, error: "" });
+    update("bitbucket", { connecting: true, error: { kind: "none" } });
     try {
-      const user = await invoke<PlatformUser>("connect_bitbucket", {
+      const user = await api.connectBitbucket({
         profileId,
         email: bbEmail.trim(),
         apiToken: bbToken.trim(),
       });
-      const pubEmail = user.email || "";
-      updateBb({
-        connecting: false,
-        connected: true,
-        username: user.username,
-        gitName: user.name || user.username,
-        gitEmail: pubEmail || importedEmail,
-        publicEmail: pubEmail,
-        noreplyEmail: "",
-      });
+      update("bitbucket", { ...connectedPatch(user), noreplyEmail: "" });
       setBbToken("");
     } catch (e) {
-      updateBb({ connecting: false, error: String(e) });
+      update("bitbucket", {
+        connecting: false,
+        error: { kind: "message", text: String(e) },
+      });
     }
   }
 
-  async function generateAndUpload(
-    platform: PlatformId,
-    section: PlatformState,
-    update: (p: Partial<PlatformState>) => void,
-  ) {
-    update({ error: "" });
+  const connectors: Record<PlatformId, () => void> = {
+    github: connectGitHub,
+    gitlab: connectGitLab,
+    bitbucket: connectBitbucket,
+  };
+
+  async function generateAndUpload(platform: PlatformId) {
+    const section = sections[platform];
+    update(platform, { error: { kind: "none" } });
     try {
-      const pair = await invoke<SshKeyPair>("generate_and_upload_key", {
+      const pair = await api.generateAndUploadKey({
         platform,
         profileId,
         username: section.username,
         email: section.gitEmail || "git@git-account-manager",
       });
-      update({
+      update(platform, {
         sshPrivateKeyPath: pair.private_key_path,
         sshPublicKeyPath: pair.public_key_path,
         keyUploaded: true,
       });
-      const keys = await invoke<SshKeyInfo[]>("list_ssh_keys");
-      setSshKeys(keys);
+      setSshKeys(await api.listSshKeys());
     } catch (e) {
-      update({ error: String(e) });
+      update(platform, { error: { kind: "message", text: String(e) } });
     }
   }
 
-  function selectKey(
-    key: SshKeyInfo,
-    update: (p: Partial<PlatformState>) => void,
-  ) {
-    update({
-      selectedKey: key.private_key_path,
-      sshPrivateKeyPath: key.private_key_path,
-      sshPublicKeyPath: key.public_key_path,
-    });
-  }
-
-  async function uploadExistingKey(
-    platform: PlatformId,
-    section: PlatformState,
-    update: (p: Partial<PlatformState>) => void,
-  ) {
+  async function uploadExistingKey(platform: PlatformId) {
+    const section = sections[platform];
     if (!section.sshPublicKeyPath) return;
-    update({ error: "" });
+    update(platform, { error: { kind: "none" } });
     try {
-      const keyContent = await invoke<string>("read_public_key", {
-        path: section.sshPublicKeyPath,
-      });
-      await invoke("upload_ssh_key_to_platform", {
+      const keyContent = await api.readPublicKey(section.sshPublicKeyPath);
+      await api.uploadSshKeyToPlatform({
         platform,
         profileId,
         title: `git-account-manager: ${name}`,
         keyContent,
       });
-      update({ keyUploaded: true });
+      update(platform, { keyUploaded: true });
     } catch (e) {
-      update({ error: String(e) });
+      update(platform, { error: { kind: "message", text: String(e) } });
     }
   }
 
@@ -528,9 +485,9 @@ export default function ProfileForm({
       id: profileId,
       name: name.trim(),
       default_platform: defaultPlatform,
-      github: buildAccount(gh),
-      gitlab: buildAccount(gl),
-      bitbucket: buildAccount(bb),
+      github: buildAccount(sections.github),
+      gitlab: buildAccount(sections.gitlab),
+      bitbucket: buildAccount(sections.bitbucket),
       is_active: profile?.is_active || false,
     };
   }
@@ -540,7 +497,7 @@ export default function ProfileForm({
       setError(m.form.errProfileName);
       return;
     }
-    if (!gh.connected && !gl.connected && !bb.connected) {
+    if (!PLATFORMS.some((p) => sections[p].connected)) {
       setError(m.form.errConnectOne);
       return;
     }
@@ -550,10 +507,16 @@ export default function ProfileForm({
     const p = draftProfile();
 
     try {
-      await invoke("save_profile", { profile: p });
-      const report = await invoke<ApplyReport>("apply_profile_repos", {
-        plan: buildRepoPlan(p),
-      });
+      await api.saveProfile(p);
+      const report = await api.applyProfileRepos(
+        buildRepoPlan({
+          profileId: p.id,
+          roots,
+          repos,
+          selected,
+          storedBindings,
+        }),
+      );
       if (report.failed.length > 0) {
         setError(
           `${fmt(m.repos.applyPartial, {
@@ -572,467 +535,44 @@ export default function ProfileForm({
     }
   }
 
-  /** Turns the draft into the exact set of writes the backend should perform.
-   *
-   *  A stored binding is released only when the user unselected a repository the
-   *  scan actually saw, or when its folder left this profile. A repository that
-   *  was never scanned — an unplugged drive, a folder the user did not open —
-   *  keeps its binding rather than losing its guard to an absence of evidence. */
-  function buildRepoPlan(saved: Profile) {
-    const bindings = repos
-      .filter((r) => selected[r.path])
-      .map((r) => {
-        const previous = storedBindings.find((b) => b.path === r.path);
-        const root = roots.find((x) => x.path === r.root_path);
-        return {
-          path: r.path,
-          profile_id: saved.id,
-          platform: r.suggested_platform ?? root?.platform ?? "github",
-          install_hook: r.install_hook,
-          pin_remote_alias: r.pin_remote_alias,
-          extra_allowed_emails: previous?.extra_allowed_emails ?? [],
-          overrides_root: r.overrides_root,
-        };
-      });
-
-    const scanned = new Set(repos.map((r) => r.path));
-    const keep = new Set(bindings.map((b) => b.path));
-    const released = storedBindings
-      .filter(
-        (b) =>
-          (scanned.has(b.path) && !keep.has(b.path)) ||
-          !roots.some(
-            (root) =>
-              b.path === root.path || b.path.startsWith(`${root.path}/`),
-          ),
-      )
-      .map((b) => b.path);
-
-    return { profile_id: saved.id, roots, bindings, released };
-  }
-
-  function renderError(err: string, platform: PlatformId) {
-    if (err === "settings_required") {
-      return (
-        <p className="text-xs text-danger-fg">
-          {rich(
-            fmt(m.form.errSettingsRequired, {
-              platform: PLATFORM_LABEL[platform],
-            }),
-            { onLink: onSettings },
-          )}
-        </p>
-      );
-    }
-    return <p className="text-xs text-danger-fg">{err}</p>;
-  }
-
-  function renderPlatform(
-    platform: PlatformId,
-    section: PlatformState,
-    update: (p: Partial<PlatformState>) => void,
-    onConnect: () => void,
-  ) {
-    const label = PLATFORM_LABEL[platform];
-    return (
-      <div className="rounded-lg border border-bd bg-raised-40 p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h4 className="font-medium text-fg-2">{label}</h4>
-          {section.connected && (
-            <button
-              onClick={() => openUrl(profileUrl(platform, section.username))}
-              className="text-sm text-link hover:text-link-hover hover:underline"
-            >
-              @{section.username}
-            </button>
-          )}
-        </div>
-
-        {!section.connected ? (
-          platform === "bitbucket" ? (
-            <div className="space-y-2">
-              <p className="text-xs text-fg-5">
-                {rich(m.form.bitbucket.help, {
-                  onLink: () =>
-                    openUrl(
-                      "https://id.atlassian.com/manage-profile/security/api-tokens",
-                    ),
-                })}
-              </p>
-              <input
-                type="text"
-                value={bbEmail}
-                onChange={(e) => setBbEmail(e.target.value)}
-                placeholder={m.form.bitbucket.emailPlaceholder}
-                className="w-full rounded-md border border-bd-s bg-input px-2.5 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
-              />
-              <input
-                type="password"
-                value={bbToken}
-                onChange={(e) => setBbToken(e.target.value)}
-                placeholder={m.form.bitbucket.tokenPlaceholder}
-                className="w-full rounded-md border border-bd-s bg-input px-2.5 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
-              />
-              <p className="text-xs text-fg-5">{m.form.bitbucket.scopesHint}</p>
-              <button
-                onClick={onConnect}
-                disabled={section.connecting}
-                className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-              >
-                {section.connecting
-                  ? m.form.waitingAuth
-                  : fmt(m.form.connectWith, { platform: label })}
-              </button>
-              {section.error && renderError(section.error, platform)}
-            </div>
-          ) : (
-          <div className="space-y-3">
-            {section.deviceCode ? (
-              <div className="space-y-2 rounded-md border border-info-border bg-info-bg p-3">
-                <p className="text-sm text-fg-3">{m.form.enterCode}</p>
-                <p className="font-mono text-2xl font-bold tracking-widest text-link">
-                  {section.deviceCode.user_code}
-                </p>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-fg-4">
-                    {m.form.waitingAuth}
-                    {ghCountdown > 0 && (
-                      <span className="ml-1 text-fg-5">
-                        ({Math.floor(ghCountdown / 60)}:
-                        {String(ghCountdown % 60).padStart(2, "0")})
-                      </span>
-                    )}
-                  </p>
-                  <button
-                    onClick={cancelGitHubAuth}
-                    className="rounded-md bg-subtle px-3 py-1 text-xs text-fg-3 transition-colors hover:bg-hover hover:text-fg"
-                  >
-                    {m.form.cancel}
-                  </button>
-                </div>
-              </div>
-            ) : section.connecting ? (
-              <div className="space-y-2 rounded-md border border-info-border bg-info-bg p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-fg-4">
-                    {m.form.waitingBrowser}
-                    {platform === "gitlab" && glCountdown > 0 && (
-                      <span className="ml-1 text-fg-5">
-                        ({Math.floor(glCountdown / 60)}:
-                        {String(glCountdown % 60).padStart(2, "0")})
-                      </span>
-                    )}
-                  </p>
-                  {platform === "gitlab" && (
-                    <button
-                      onClick={cancelGitLabAuth}
-                      className="rounded-md bg-subtle px-3 py-1 text-xs text-fg-3 transition-colors hover:bg-hover hover:text-fg"
-                    >
-                      {m.form.cancel}
-                    </button>
-                  )}
-                </div>
-                {platform === "gitlab" && (
-                  <p className="text-xs text-fg-5">
-                    {m.form.gitlabClipboardHint}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <button
-                onClick={onConnect}
-                className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
-              >
-                {fmt(m.form.connectWith, { platform: label })}
-              </button>
-            )}
-            {section.error && renderError(section.error, platform)}
-          </div>
-          )
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs text-fg-4">
-                {m.form.gitName}
-              </label>
-              <input
-                type="text"
-                value={section.gitName}
-                onChange={(e) => update({ gitName: e.target.value })}
-                className="w-full rounded-md border border-bd-s bg-input px-2.5 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-fg-4">
-                {m.form.gitEmail}
-              </label>
-              {section.noreplyEmail || section.publicEmail || importedEmail ? (
-                <div className="space-y-1.5">
-                  {section.noreplyEmail && (
-                    <button
-                      onClick={() => update({ gitEmail: section.noreplyEmail })}
-                      className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-                        section.gitEmail === section.noreplyEmail
-                          ? "border-selected-border bg-selected-bg text-selected-fg"
-                          : "border-bd-s bg-input text-fg-3 hover:border-bd-s"
-                      }`}
-                    >
-                      <span className="shrink-0 rounded bg-badge-ok-bg px-1 py-0.5 text-[10px] font-medium text-badge-ok-fg">
-                        {m.form.noreplyBadge}
-                      </span>
-                      <span className="truncate">{section.noreplyEmail}</span>
-                    </button>
-                  )}
-                  {section.publicEmail &&
-                    section.publicEmail !== section.noreplyEmail && (
-                      <button
-                        onClick={() =>
-                          update({ gitEmail: section.publicEmail })
-                        }
-                        className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-                          section.gitEmail === section.publicEmail
-                            ? "border-selected-border bg-selected-bg text-selected-fg"
-                            : "border-bd-s bg-input text-fg-3 hover:border-bd-s"
-                        }`}
-                      >
-                        <span className="shrink-0 rounded bg-subtle px-1 py-0.5 text-[10px] font-medium text-fg-3">
-                          {m.form.publicBadge}
-                        </span>
-                        <span className="truncate">{section.publicEmail}</span>
-                      </button>
-                    )}
-                  {importedEmail &&
-                    importedEmail !== section.noreplyEmail &&
-                    importedEmail !== section.publicEmail && (
-                      <button
-                        onClick={() => update({ gitEmail: importedEmail })}
-                        className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-                          section.gitEmail === importedEmail
-                            ? "border-selected-border bg-selected-bg text-selected-fg"
-                            : "border-bd-s bg-input text-fg-3 hover:border-bd-s"
-                        }`}
-                      >
-                        <span className="shrink-0 rounded bg-subtle px-1 py-0.5 text-[10px] font-medium text-fg-3">
-                          git config
-                        </span>
-                        <span className="truncate">{importedEmail}</span>
-                      </button>
-                    )}
-                  <input
-                    type="text"
-                    value={section.gitEmail}
-                    onChange={(e) => update({ gitEmail: e.target.value })}
-                    placeholder={m.form.customEmailPlaceholder}
-                    className="w-full rounded-md border border-bd-s bg-input px-2.5 py-1.5 text-xs text-fg outline-none focus:border-blue-500"
-                  />
-                </div>
-              ) : (
-                <input
-                  type="text"
-                  value={section.gitEmail}
-                  onChange={(e) => update({ gitEmail: e.target.value })}
-                  className="w-full rounded-md border border-bd-s bg-input px-2.5 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
-                />
-              )}
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs text-fg-4">
-                {m.form.sshKey}
-              </label>
-              {section.sshPrivateKeyPath && section.keyUploaded ? (
-                <div className="flex flex-col gap-2 rounded-md border border-active-border bg-active-bg px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <svg
-                      className="h-4 w-4 shrink-0 text-success-icon"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                    <span className="text-xs text-success-fg">
-                      {fmt(m.form.uploadedTo, {
-                        file:
-                          section.sshPrivateKeyPath.split(/[\\/]/).pop() || "",
-                        platform: label,
-                      })}
-                    </span>
-                  </div>
-                  {section.sshPublicKeyPath ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopyPublicKey(section.sshPublicKeyPath)
-                      }
-                      className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-bd-s bg-input px-2.5 py-1 text-xs font-medium text-fg-2 transition-colors hover:bg-hover"
-                    >
-                      <CopyIcon />
-                      {copiedPublicPath === section.sshPublicKeyPath
-                        ? m.form.copied
-                        : m.form.copyPublicKey}
-                    </button>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => update({ sshSource: "generate" })}
-                      className={`rounded-md px-2 py-1 text-xs ${section.sshSource === "generate" ? "bg-blue-600 text-white" : "bg-subtle text-fg-3"}`}
-                    >
-                      {m.form.generateUpload}
-                    </button>
-                    <button
-                      onClick={() => update({ sshSource: "existing" })}
-                      className={`rounded-md px-2 py-1 text-xs ${section.sshSource === "existing" ? "bg-blue-600 text-white" : "bg-subtle text-fg-3"}`}
-                    >
-                      {m.form.useExisting}
-                    </button>
-                  </div>
-
-                  {section.sshSource === "generate" ? (
-                    <button
-                      onClick={() =>
-                        generateAndUpload(platform, section, update)
-                      }
-                      className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500"
-                    >
-                      {fmt(m.form.generateAddTo, { platform: label })}
-                    </button>
-                  ) : (
-                    <div className="space-y-2">
-                      {sshKeys.length === 0 ? (
-                        <p className="text-xs text-fg-5">{m.form.noSshKeys}</p>
-                      ) : (
-                        <div className="max-h-28 space-y-1 overflow-y-auto">
-                          {sshKeys.map((k) => (
-                            <div
-                              key={k.private_key_path}
-                              className="flex gap-1"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => selectKey(k, update)}
-                                className={`min-w-0 flex-1 rounded-md border px-2 py-1.5 text-left text-xs transition-colors ${
-                                  section.selectedKey === k.private_key_path
-                                    ? "border-selected-border bg-selected-bg text-selected-fg"
-                                    : "border-bd-s bg-input text-fg-3 hover:border-bd-s"
-                                }`}
-                              >
-                                {k.name}
-                              </button>
-                              <button
-                                type="button"
-                                title={m.form.copyPublicKey}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleCopyPublicKey(k.public_key_path);
-                                }}
-                                className={`flex shrink-0 items-center justify-center rounded-md border px-2 py-1.5 transition-colors ${
-                                  copiedPublicPath === k.public_key_path
-                                    ? "border-selected-border bg-selected-bg text-selected-fg"
-                                    : "border-bd-s bg-input text-fg-4 hover:border-bd-s hover:text-fg-2"
-                                }`}
-                              >
-                                <CopyIcon />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {section.sshPrivateKeyPath && !section.keyUploaded && (
-                        <button
-                          onClick={() =>
-                            uploadExistingKey(platform, section, update)
-                          }
-                          className="rounded-md bg-subtle px-3 py-1.5 text-xs text-fg-2 hover:bg-hover"
-                        >
-                          {fmt(m.form.uploadTo, { platform: label })}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {section.error && renderError(section.error, platform)}
-
-            <button
-              onClick={() =>
-                setDisconnectTarget({
-                  platform,
-                  keyPath: section.sshPrivateKeyPath,
-                  pubKeyPath: section.sshPublicKeyPath,
-                })
-              }
-              className="text-xs text-danger-fg hover:underline"
-            >
-              {m.form.disconnect}
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
   async function handleDisconnect(deleteKeys: boolean) {
     if (!disconnectTarget) return;
     const { platform, keyPath, pubKeyPath } = disconnectTarget;
-    const update =
-      platform === "github"
-        ? updateGh
-        : platform === "gitlab"
-          ? updateGl
-          : updateBb;
 
     if (deleteKeys && keyPath) {
       if (pubKeyPath) {
-        await invoke("remove_ssh_key_from_platform", {
-          platform,
-          profileId,
-          publicKeyPath: pubKeyPath,
-        }).catch(() => {});
+        await api
+          .removeSshKeyFromPlatform({
+            platform,
+            profileId,
+            publicKeyPath: pubKeyPath,
+          })
+          .catch(() => {});
       }
-      await invoke("delete_ssh_keys", { paths: [keyPath] }).catch(() => {});
+      await api.deleteSshKeys([keyPath]).catch(() => {});
     }
-    await invoke("delete_platform_token", { profileId, platform }).catch(
-      () => {},
-    );
-    update(emptyPlatform());
+    await api.deletePlatformToken({ profileId, platform }).catch(() => {});
+    update(platform, emptyPlatform());
     setDisconnectTarget(null);
 
-    if (profile) {
-      const otherGh = platform === "github" ? false : gh.connected;
-      const otherGl = platform === "gitlab" ? false : gl.connected;
-      const otherBb = platform === "bitbucket" ? false : bb.connected;
+    if (!profile) return;
 
-      if (!otherGh && !otherGl && !otherBb) {
-        onDelete(profile.id, false);
-        return;
-      }
+    // Disconnecting the last account leaves nothing to identify the profile
+    // with, so the profile itself goes rather than becoming an empty shell.
+    const remaining = PLATFORMS.filter(
+      (p) => p !== platform && sections[p].connected,
+    );
+    if (remaining.length === 0) {
+      onDelete(profile.id, false);
+      return;
+    }
 
-      const updatedGh = platform === "github" ? undefined : profile.github;
-      const updatedGl = platform === "gitlab" ? undefined : profile.gitlab;
-      const updatedBb = platform === "bitbucket" ? undefined : profile.bitbucket;
-      const updated = {
-        ...profile,
-        github: updatedGh,
-        gitlab: updatedGl,
-        bitbucket: updatedBb,
-      };
-      try {
-        await invoke("save_profile", { profile: updated });
-        onSave(updated);
-      } catch {
-        /* keep form open on error */
-      }
+    const updated: Profile = { ...profile, [platform]: undefined };
+    try {
+      await api.saveProfile(updated);
+      onSave(updated);
+    } catch {
+      /* keep the form open so the failure is visible */
     }
   }
 
@@ -1068,16 +608,16 @@ export default function ProfileForm({
     },
   ];
 
-  const sections: Record<PlatformId, PlatformState> = {
-    github: gh,
-    gitlab: gl,
-    bitbucket: bb,
-  };
   const connectedPlatforms = PLATFORMS.filter((p) => sections[p].connected);
   const activePlatform =
     connectedPlatforms.find((p) => p === defaultPlatform) ??
     connectedPlatforms[0];
   const activeSection = activePlatform ? sections[activePlatform] : undefined;
+
+  const cancelAuthFor: Partial<Record<PlatformId, () => void>> = {
+    github: cancelGitHubAuth,
+    gitlab: cancelGitLabAuth,
+  };
 
   return (
     <>
@@ -1087,36 +627,30 @@ export default function ProfileForm({
             {isEdit ? m.form.editTitle : m.form.newTitle}
           </h2>
           <button
+            type="button"
             onClick={handleProfileCancel}
+            title={m.form.cancel}
             className="text-fg-4 hover:text-fg-2"
           >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <CloseIcon />
           </button>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-6">
           <div>
-            <label className="mb-1 block text-sm font-medium text-fg-3">
+            <label
+              htmlFor="profile-name"
+              className="mb-1 block text-sm font-medium text-fg-3"
+            >
               {m.form.profileName}
             </label>
             <input
+              id="profile-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={m.form.profileNamePlaceholder}
-              className="w-full rounded-md border border-bd-s bg-input px-3 py-2 text-sm text-fg outline-none focus:border-blue-500"
+              className="field"
             />
           </div>
 
@@ -1130,15 +664,54 @@ export default function ProfileForm({
             </button>
           )}
 
-          {renderPlatform("github", gh, updateGh, connectGitHub)}
-          {renderPlatform("gitlab", gl, updateGl, connectGitLab)}
-          {renderPlatform("bitbucket", bb, updateBb, connectBitbucket)}
+          {PLATFORMS.map((platform) => (
+            <PlatformSection
+              key={platform}
+              platform={platform}
+              state={sections[platform]}
+              onChange={(patch) => update(platform, patch)}
+              onConnect={connectors[platform]}
+              onCancelAuth={cancelAuthFor[platform]}
+              countdown={countdown[platform]}
+              credentials={
+                platform === "bitbucket"
+                  ? {
+                      email: bbEmail,
+                      token: bbToken,
+                      setEmail: setBbEmail,
+                      setToken: setBbToken,
+                    }
+                  : undefined
+              }
+              sshKeys={sshKeys}
+              importedEmail={importedEmail}
+              copiedPublicPath={copiedPublicPath}
+              onCopyPublicKey={handleCopyPublicKey}
+              onGenerateKey={() => generateAndUpload(platform)}
+              onUploadExistingKey={() => uploadExistingKey(platform)}
+              onSelectKey={(key) =>
+                update(platform, {
+                  selectedKey: key.private_key_path,
+                  sshPrivateKeyPath: key.private_key_path,
+                  sshPublicKeyPath: key.public_key_path,
+                })
+              }
+              onDisconnect={() =>
+                setDisconnectTarget({
+                  platform,
+                  keyPath: sections[platform].sshPrivateKeyPath,
+                  pubKeyPath: sections[platform].sshPublicKeyPath,
+                })
+              }
+              onOpenSettings={onSettings}
+            />
+          ))}
 
           {connectedPlatforms.length >= 2 && (
-            <div className="rounded-lg border border-bd bg-raised-40 p-4">
-              <label className="mb-1 block text-sm font-medium text-fg-3">
+            <div className="panel">
+              <p className="mb-1 block text-sm font-medium text-fg-3">
                 {m.form.defaultIdentity}
-              </label>
+              </p>
               <p className="mb-1 text-xs text-fg-5">
                 {rich(m.form.defaultIdentityHint1, { codeClass: "text-fg-4" })}
               </p>
@@ -1148,6 +721,7 @@ export default function ProfileForm({
               <div className="mb-3 flex flex-wrap gap-3">
                 {connectedPlatforms.map((p) => (
                   <button
+                    type="button"
                     key={p}
                     onClick={() => setDefaultPlatform(p)}
                     className={`rounded-md px-3 py-1.5 text-sm ${
@@ -1198,9 +772,10 @@ export default function ProfileForm({
 
         <div className="flex gap-3 border-t border-bd px-6 py-4">
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+            className="btn-primary"
           >
             {saving
               ? m.form.saving
@@ -1209,8 +784,9 @@ export default function ProfileForm({
                 : m.form.createProfile}
           </button>
           <button
+            type="button"
             onClick={handleProfileCancel}
-            className="rounded-md bg-subtle px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:bg-hover"
+            className="btn-subtle"
           >
             {m.form.cancel}
           </button>

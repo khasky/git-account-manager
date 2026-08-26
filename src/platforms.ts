@@ -1,4 +1,4 @@
-import { PlatformId } from "./types";
+import type { PlatformId } from "./types";
 
 /** The platforms this app knows, in the order every list and menu shows them. */
 export const PLATFORMS: readonly PlatformId[] = [

@@ -7,7 +7,7 @@
 //! what TortoiseGit commits through), and the IDEs.
 
 use crate::git;
-use crate::models::{Profile, RepoBinding, RepoRoot, PLATFORMS};
+use crate::models::{Platform, Profile, RepoBinding, RepoRoot, PLATFORMS};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -98,39 +98,35 @@ pub fn parse_remote_url(url: &str) -> Option<RemoteRef> {
     })
 }
 
-pub fn canonical_host(platform: &str) -> &'static str {
-    match platform {
-        "gitlab" => "gitlab.com",
-        "bitbucket" => "bitbucket.org",
-        _ => "github.com",
-    }
+/// The SSH host alias that pins a remote to one profile's key.
+pub fn host_alias(platform: Platform, profile: &Profile) -> String {
+    format!("{}-{}", platform.as_str(), profile.slug())
 }
 
 /// Resolves a remote host to a platform. An alias host (`github-work`) also
 /// tells us which profile the repository was pinned to.
-pub fn platform_for_host(host: &str, profiles: &[Profile]) -> Option<(String, Option<String>)> {
+pub fn platform_for_host(host: &str, profiles: &[Profile]) -> Option<(Platform, Option<String>)> {
     for platform in PLATFORMS {
-        if host.eq_ignore_ascii_case(canonical_host(platform)) {
-            return Some((platform.to_string(), None));
+        if host.eq_ignore_ascii_case(platform.canonical_host()) {
+            return Some((platform, None));
         }
     }
     for profile in profiles {
         for platform in PLATFORMS {
             if profile.account(platform).is_some()
-                && host.eq_ignore_ascii_case(&format!("{}-{}", platform, profile.slug()))
+                && host.eq_ignore_ascii_case(&host_alias(platform, profile))
             {
-                return Some((platform.to_string(), Some(profile.id.clone())));
+                return Some((platform, Some(profile.id.clone())));
             }
         }
     }
     None
 }
 
-pub fn alias_url(platform: &str, profile: &Profile, remote: &RemoteRef) -> String {
+pub fn alias_url(platform: Platform, profile: &Profile, remote: &RemoteRef) -> String {
     format!(
-        "git@{}-{}:{}/{}.git",
-        platform,
-        profile.slug(),
+        "git@{}:{}/{}.git",
+        host_alias(platform, profile),
         remote.owner,
         remote.repo
     )
@@ -149,7 +145,7 @@ pub struct DiscoveredRepo {
     pub repo: String,
     /// Which profile the evidence points at, and how sure we are.
     pub suggested_profile_id: Option<String>,
-    pub suggested_platform: Option<String>,
+    pub suggested_platform: Option<Platform>,
     /// `alias` | `owner` | `ambiguous` | `unknown` — never guessed silently.
     pub reason: String,
     pub candidate_profile_ids: Vec<String>,
@@ -257,7 +253,7 @@ fn suggest(
     remote: &RemoteRef,
     profiles: &[Profile],
     root: Option<&RepoRoot>,
-) -> (Option<String>, Option<String>, String, Vec<String>) {
+) -> (Option<String>, Option<Platform>, String, Vec<String>) {
     if let Some((platform, Some(profile_id))) = platform_for_host(&remote.host, profiles) {
         return (
             Some(profile_id),
@@ -269,11 +265,11 @@ fn suggest(
 
     let platform = platform_for_host(&remote.host, profiles).map(|(p, _)| p);
 
-    if let Some(platform) = platform.clone() {
+    if let Some(platform) = platform {
         let owners: Vec<&Profile> = profiles
             .iter()
             .filter(|p| {
-                p.account(&platform)
+                p.account(platform)
                     .is_some_and(|a| a.username.eq_ignore_ascii_case(&remote.owner))
             })
             .collect();
@@ -317,7 +313,7 @@ pub struct RepoReach {
 ///
 /// The canonical host is used with `IdentitiesOnly`, so the answer describes the
 /// profile's key rather than whichever key an SSH alias currently resolves to.
-pub fn reach(profile: &Profile, platform: &str, owner: &str, repo: &str) -> RepoReach {
+pub fn reach(profile: &Profile, platform: Platform, owner: &str, repo: &str) -> RepoReach {
     let full_name = format!("{}/{}", owner, repo);
     let deny = |detail: String| RepoReach {
         reachable: false,
@@ -326,13 +322,13 @@ pub fn reach(profile: &Profile, platform: &str, owner: &str, repo: &str) -> Repo
     };
 
     let Some(account) = profile.account(platform) else {
-        return deny(format!("Profile has no {} account", platform));
+        return deny(format!("Profile has no {} account", platform.label()));
     };
     if account.ssh_private_key_path.trim().is_empty() {
-        return deny(format!("Profile has no SSH key for {}", platform));
+        return deny(format!("Profile has no SSH key for {}", platform.label()));
     }
 
-    let url = format!("git@{}:{}/{}.git", canonical_host(platform), owner, repo);
+    let url = format!("git@{}:{}/{}.git", platform.canonical_host(), owner, repo);
     match git::ls_remote_with_key(&url, &account.ssh_private_key_path) {
         Ok(()) => RepoReach {
             reachable: true,
@@ -353,7 +349,7 @@ pub struct BindResult {
 
 pub fn allowed_emails(binding: &RepoBinding, profile: &Profile) -> Vec<String> {
     let mut list: Vec<String> = Vec::new();
-    if let Some(account) = profile.account(&binding.platform) {
+    if let Some(account) = profile.account(binding.platform) {
         if !account.git_email.is_empty() {
             list.push(account.git_email.clone());
         }
@@ -470,8 +466,8 @@ pub fn apply_plan(
 
 pub fn apply_binding(binding: &RepoBinding, profile: &Profile) -> Result<BindResult, String> {
     let account = profile
-        .account(&binding.platform)
-        .ok_or_else(|| format!("Profile has no {} account", binding.platform))?;
+        .account(binding.platform)
+        .ok_or_else(|| format!("Profile has no {} account", binding.platform.label()))?;
 
     git::set_repo_identity(&binding.path, &account.git_name, &account.git_email)?;
 
@@ -482,7 +478,7 @@ pub fn apply_binding(binding: &RepoBinding, profile: &Profile) -> Result<BindRes
     if binding.pin_remote_alias {
         if let Some(url) = git::repo_remote_url(&binding.path, "origin") {
             if let Some(remote) = parse_remote_url(&url) {
-                let next = alias_url(&binding.platform, profile, &remote);
+                let next = alias_url(binding.platform, profile, &remote);
                 if next != url {
                     git::set_repo_remote_url(&binding.path, "origin", &next)?;
                     rewritten = Some(next);
@@ -564,15 +560,17 @@ allowed=$(git config --get-all gam.allowedEmail)
 zero=0000000000000000000000000000000000000000
 status=0
 
-while read -r _local_ref local_sha _remote_ref remote_sha; do
-	[ "$local_sha" = "$zero" ] && continue
-	if [ "$remote_sha" = "$zero" ]; then
-		range="$local_sha --not --remotes"
-	else
-		range="$remote_sha..$local_sha"
-	fi
-	for sha in $(git rev-list $range); do
-		for email in $(git show -s --format='%ae %ce' "$sha"); do
+# One `git log` for a whole range, not one `git show` per commit: pushing a
+# branch of a few hundred commits used to spawn a few hundred processes, and on
+# Windows each one is a visible cost. The loop reads from a here-document
+# rather than a pipe so that `status` set inside it survives — a piped `while`
+# runs in a subshell and its assignments are lost.
+check_range() {
+	commits=$(git log --format='%h %ae %ce' "$@")
+	while read -r short author committer; do
+		[ -z "$short" ] && continue
+		for email in "$author" "$committer"; do
+			[ -z "$email" ] && continue
 			ok=0
 			for candidate in $allowed; do
 				if [ "$email" = "$candidate" ]; then
@@ -581,11 +579,25 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
 				fi
 			done
 			if [ "$ok" -eq 0 ]; then
-				echo "git-account-manager: refusing to push $(git rev-parse --short "$sha") - <$email> is not allowed in this repository" >&2
+				echo "git-account-manager: refusing to push $short - <$email> is not allowed in this repository" >&2
 				status=1
 			fi
+			# An ordinary commit authors and commits under one address; naming
+			# it twice would print the same refusal twice.
+			[ "$author" = "$committer" ] && break
 		done
-	done
+	done <<EOF
+$commits
+EOF
+}
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+	[ "$local_sha" = "$zero" ] && continue
+	if [ "$remote_sha" = "$zero" ]; then
+		check_range "$local_sha" --not --remotes
+	else
+		check_range "$remote_sha..$local_sha"
+	fi
 done
 
 if [ "$status" -ne 0 ]; then
@@ -607,7 +619,7 @@ pub struct RepoStatus {
     pub name: String,
     pub profile_id: String,
     pub profile_name: String,
-    pub platform: String,
+    pub platform: Platform,
     pub expected_email: String,
     pub effective_email: String,
     pub remote_url: String,
@@ -630,7 +642,7 @@ pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| dir.clone());
-    let account = profile.account(&binding.platform);
+    let account = profile.account(binding.platform);
     let expected_email = account.map(|a| a.git_email.clone()).unwrap_or_default();
     let effective = git::repo_identity(&dir);
     let remote_url = git::repo_remote_url(&dir, "origin").unwrap_or_default();
@@ -660,14 +672,14 @@ pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
 
     let remote_ok = match parse_remote_url(&remote_url) {
         Some(parsed) => {
-            let alias = format!("{}-{}", binding.platform, profile.slug());
+            let alias = host_alias(binding.platform, profile);
             if binding.pin_remote_alias {
                 parsed.host.eq_ignore_ascii_case(&alias)
             } else {
                 parsed.host.eq_ignore_ascii_case(&alias)
                     || parsed
                         .host
-                        .eq_ignore_ascii_case(canonical_host(&binding.platform))
+                        .eq_ignore_ascii_case(binding.platform.canonical_host())
             }
         }
         None => false,
@@ -694,7 +706,7 @@ pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
         name,
         profile_id: binding.profile_id.clone(),
         profile_name: profile.name.clone(),
-        platform: binding.platform.clone(),
+        platform: binding.platform,
         expected_email,
         effective_email: effective.email,
         remote_url,
@@ -777,7 +789,7 @@ mod tests {
         Profile {
             id: "p1".to_string(),
             name: "Personal".to_string(),
-            default_platform: Some("github".to_string()),
+            default_platform: Some(Platform::Github),
             github: Some(PlatformAccount {
                 username: "octo".to_string(),
                 git_name: "Octo".to_string(),
@@ -796,7 +808,7 @@ mod tests {
         RepoRoot {
             path: path.to_string(),
             profile_id: "p1".to_string(),
-            platform: "github".to_string(),
+            platform: Platform::Github,
             install_hook: true,
             pin_remote_alias: false,
         }
@@ -806,7 +818,7 @@ mod tests {
         RepoBinding {
             path: path.to_string(),
             profile_id: "p1".to_string(),
-            platform: "github".to_string(),
+            platform: Platform::Github,
             pin_remote_alias: pin_alias,
             install_hook,
             extra_allowed_emails: vec![],
@@ -866,8 +878,8 @@ mod tests {
         let alias = parse_remote_url("git@github-personal:octo/demo.git").unwrap();
         let (id, platform, reason, _) = suggest(&alias, &profiles, Some(&root));
         assert_eq!(
-            (id.as_deref(), platform.as_deref(), reason.as_str()),
-            (Some("p1"), Some("github"), "alias")
+            (id.as_deref(), platform, reason.as_str()),
+            (Some("p1"), Some(Platform::Github), "alias")
         );
 
         let owned = parse_remote_url("git@github.com:octo/demo.git").unwrap();
@@ -930,9 +942,19 @@ mod tests {
             let repo = dir.join(name);
             std::fs::create_dir_all(&repo).unwrap();
             let p = repo.to_string_lossy().replace('\\', "/");
-            Command::new("git").args(["init", "-q", &p]).output().unwrap();
-            git(&p, &["remote", "add", "origin",
-                &format!("git@github.com:octo/{}.git", name)]);
+            Command::new("git")
+                .args(["init", "-q", &p])
+                .output()
+                .unwrap();
+            git(
+                &p,
+                &[
+                    "remote",
+                    "add",
+                    "origin",
+                    &format!("git@github.com:octo/{}.git", name),
+                ],
+            );
             paths.push(p);
         }
         let (keep, drop) = (paths[0].clone(), paths[1].clone());
@@ -1009,7 +1031,10 @@ mod tests {
         assert_eq!(plan.profile_id, "p1");
         assert!(plan.roots[0].install_hook);
         assert!(!plan.bindings[0].overrides_root);
-        assert_eq!(plan.released, vec!["D:/repos/github/khasky/gone".to_string()]);
+        assert_eq!(
+            plan.released,
+            vec!["D:/repos/github/khasky/gone".to_string()]
+        );
     }
 
     /// A switch turned off before folders had defaults is a decision, not a
@@ -1026,12 +1051,148 @@ mod tests {
         mark_pre_existing_exceptions(std::slice::from_ref(&root), &mut bindings);
 
         assert!(bindings[0].overrides_root, "diverging binding must be kept");
-        assert!(!bindings[1].overrides_root, "matching binding must follow the folder");
-        assert!(!bindings[2].overrides_root, "binding outside the folder is not ours");
+        assert!(
+            !bindings[1].overrides_root,
+            "matching binding must follow the folder"
+        );
+        assert!(
+            !bindings[2].overrides_root,
+            "binding outside the folder is not ours"
+        );
 
         // The folder's own defaults still reach the one that matched.
-        assert_eq!(effective_switches(&root, Some(&bindings[0])), (false, false));
+        assert_eq!(
+            effective_switches(&root, Some(&bindings[0])),
+            (false, false)
+        );
         assert_eq!(effective_switches(&root, Some(&bindings[1])), (true, false));
+    }
+
+    /// `sh` is what git runs a hook with. Git for Windows ships one but does not
+    /// always put it on PATH, so the hook's behaviour is proven wherever a shell
+    /// exists and the test says so out loud where one does not — CI's Linux job
+    /// always runs it.
+    fn shell() -> Option<&'static str> {
+        ["sh", "bash", "C:/Program Files/Git/usr/bin/sh.exe"]
+            .into_iter()
+            .find(|candidate| {
+                Command::new(candidate)
+                    .arg("-c")
+                    .arg("exit 0")
+                    .output()
+                    .is_ok()
+            })
+    }
+
+    /// The guard is the last thing between a wrong identity and a public
+    /// repository, so it is checked by running it, not by reading it.
+    #[test]
+    fn the_pre_push_hook_refuses_a_disallowed_address_and_passes_an_allowed_one() {
+        let Some(sh) = shell() else {
+            eprintln!("no POSIX shell on PATH: pre-push hook behaviour not verified here");
+            return;
+        };
+
+        let dir = std::env::temp_dir().join(format!("gam-hook-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.to_string_lossy().replace('\\', "/");
+        Command::new("git")
+            .args(["init", "-q", &path])
+            .output()
+            .unwrap();
+        git(&path, &["config", "user.name", "Octo"]);
+        git(&path, &["config", "user.email", "stranger@example.com"]);
+        git(&path, &["config", "commit.gpgsign", "false"]);
+        git(
+            &path,
+            &["commit", "-q", "--allow-empty", "-m", "wrong identity"],
+        );
+        git(
+            &path,
+            &["config", "--add", "gam.allowedEmail", "octo@example.com"],
+        );
+
+        let head = String::from_utf8(
+            Command::new("git")
+                .args(["-C", &path, "rev-parse", "HEAD"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        let head = head.trim();
+        let zero = "0".repeat(40);
+        let refs = format!("refs/heads/main {} refs/heads/main {}\n", head, zero);
+
+        let hook = format!("{}/.git/hooks/pre-push", path);
+        std::fs::write(&hook, PRE_PUSH_HOOK).unwrap();
+
+        let run = |stdin_text: &str| {
+            use std::io::Write as _;
+            let mut child = Command::new(sh)
+                .arg(&hook)
+                .current_dir(&path)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .expect("hook must start");
+            child
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(stdin_text.as_bytes())
+                .unwrap();
+            child.wait_with_output().unwrap()
+        };
+
+        let refused = run(&refs);
+        let stderr = String::from_utf8_lossy(&refused.stderr).to_string();
+        assert!(
+            !refused.status.success(),
+            "a commit by an unlisted address must not push: {}",
+            stderr
+        );
+        assert!(
+            stderr.contains("stranger@example.com"),
+            "the refusal must name the address: {}",
+            stderr
+        );
+        // Author and committer are the same person here; saying so twice would
+        // be noise, so the message appears once.
+        assert_eq!(
+            stderr.matches("stranger@example.com").count(),
+            1,
+            "one commit, one refusal: {}",
+            stderr
+        );
+
+        // The same push, once the address is allowed.
+        git(
+            &path,
+            &[
+                "config",
+                "--add",
+                "gam.allowedEmail",
+                "stranger@example.com",
+            ],
+        );
+        let accepted = run(&refs);
+        assert!(
+            accepted.status.success(),
+            "an allowed address must push: {}",
+            String::from_utf8_lossy(&accepted.stderr)
+        );
+
+        // A repository with no allow-list is not this app's business.
+        git(&path, &["config", "--unset-all", "gam.allowedEmail"]);
+        assert!(
+            run(&refs).status.success(),
+            "no allow-list means no opinion"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The whole path a user takes: a repository with a remote gets bound, and
@@ -1056,7 +1217,7 @@ mod tests {
         let binding = RepoBinding {
             path: path.clone(),
             profile_id: profile.id.clone(),
-            platform: "github".to_string(),
+            platform: Platform::Github,
             pin_remote_alias: true,
             install_hook: true,
             extra_allowed_emails: vec!["bot@example.com".to_string()],

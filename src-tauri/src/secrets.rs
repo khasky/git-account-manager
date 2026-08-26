@@ -1,13 +1,13 @@
-use crate::models::{AppState, PLATFORMS};
+use crate::models::{AppState, Platform, PLATFORMS};
 use keyring_core::{Entry, Error};
 use std::sync::OnceLock;
 
 const SERVICE: &str = "com.khasky.git-account-manager";
 
 pub trait SecretStore {
-    fn set_token(&self, profile_id: &str, platform: &str, token: &str) -> Result<(), String>;
-    fn get_token(&self, profile_id: &str, platform: &str) -> Result<String, String>;
-    fn delete_token(&self, profile_id: &str, platform: &str) -> Result<(), String>;
+    fn set_token(&self, profile_id: &str, platform: Platform, token: &str) -> Result<(), String>;
+    fn get_token(&self, profile_id: &str, platform: Platform) -> Result<String, String>;
+    fn delete_token(&self, profile_id: &str, platform: Platform) -> Result<(), String>;
 
     fn delete_profile_tokens(&self, profile_id: &str) -> Result<(), String> {
         for platform in PLATFORMS {
@@ -20,27 +20,27 @@ pub trait SecretStore {
 pub struct OsSecretStore;
 
 impl SecretStore for OsSecretStore {
-    fn set_token(&self, profile_id: &str, platform: &str, token: &str) -> Result<(), String> {
+    fn set_token(&self, profile_id: &str, platform: Platform, token: &str) -> Result<(), String> {
         ensure_store()?;
         entry(profile_id, platform)?
             .set_password(token)
             .map_err(|e| store_error("save", e))
     }
 
-    fn get_token(&self, profile_id: &str, platform: &str) -> Result<String, String> {
+    fn get_token(&self, profile_id: &str, platform: Platform) -> Result<String, String> {
         ensure_store()?;
         entry(profile_id, platform)?
             .get_password()
             .map_err(|e| match e {
                 Error::NoEntry => format!(
                     "No stored token for {}. Reconnect the account and try again.",
-                    platform_label(platform)
+                    platform.label()
                 ),
                 other => store_error("read", other),
             })
     }
 
-    fn delete_token(&self, profile_id: &str, platform: &str) -> Result<(), String> {
+    fn delete_token(&self, profile_id: &str, platform: Platform) -> Result<(), String> {
         ensure_store()?;
         match entry(profile_id, platform)?.delete_credential() {
             Ok(()) | Err(Error::NoEntry) => Ok(()),
@@ -49,15 +49,15 @@ impl SecretStore for OsSecretStore {
     }
 }
 
-pub fn set_token(profile_id: &str, platform: &str, token: &str) -> Result<(), String> {
+pub fn set_token(profile_id: &str, platform: Platform, token: &str) -> Result<(), String> {
     OsSecretStore.set_token(profile_id, platform, token)
 }
 
-pub fn get_token(profile_id: &str, platform: &str) -> Result<String, String> {
+pub fn get_token(profile_id: &str, platform: Platform) -> Result<String, String> {
     OsSecretStore.get_token(profile_id, platform)
 }
 
-pub fn delete_token(profile_id: &str, platform: &str) -> Result<(), String> {
+pub fn delete_token(profile_id: &str, platform: Platform) -> Result<(), String> {
     OsSecretStore.delete_token(profile_id, platform)
 }
 
@@ -73,7 +73,7 @@ pub fn migrate_plaintext_tokens_with_store<S: SecretStore>(
     state: &mut AppState,
     store: &S,
 ) -> Result<bool, String> {
-    let mut pending: Vec<(String, &'static str, String)> = Vec::new();
+    let mut pending: Vec<(String, Platform, String)> = Vec::new();
     let mut found_legacy_tokens = false;
 
     for profile in &state.profiles {
@@ -95,7 +95,7 @@ pub fn migrate_plaintext_tokens_with_store<S: SecretStore>(
     }
 
     for (profile_id, platform, token) in &pending {
-        store.set_token(profile_id, platform, token)?;
+        store.set_token(profile_id, *platform, token)?;
     }
 
     for profile in &mut state.profiles {
@@ -149,30 +149,14 @@ fn init_platform_store() -> Result<(), String> {
     Err("OS credential store is not supported on this platform.".to_string())
 }
 
-fn entry(profile_id: &str, platform: &str) -> Result<Entry, String> {
-    validate_platform(platform)?;
+fn entry(profile_id: &str, platform: Platform) -> Result<Entry, String> {
     Entry::new(SERVICE, &account_name(profile_id, platform)).map_err(|e| store_error("open", e))
 }
 
-fn account_name(profile_id: &str, platform: &str) -> String {
-    format!("token:{}:{}", profile_id, platform)
-}
-
-fn validate_platform(platform: &str) -> Result<(), String> {
-    if PLATFORMS.contains(&platform) {
-        Ok(())
-    } else {
-        Err(format!("Unknown platform: {}", platform))
-    }
-}
-
-fn platform_label(platform: &str) -> &'static str {
-    match platform {
-        "github" => "GitHub",
-        "gitlab" => "GitLab",
-        "bitbucket" => "Bitbucket",
-        _ => "platform",
-    }
+/// The key a token is stored under. Built from `Platform::as_str`, so it is the
+/// same string every existing install already has in its credential store.
+fn account_name(profile_id: &str, platform: Platform) -> String {
+    format!("token:{}:{}", profile_id, platform.as_str())
 }
 
 fn store_error(action: &str, err: Error) -> String {
@@ -195,7 +179,12 @@ mod tests {
     }
 
     impl SecretStore for MockStore {
-        fn set_token(&self, profile_id: &str, platform: &str, token: &str) -> Result<(), String> {
+        fn set_token(
+            &self,
+            profile_id: &str,
+            platform: Platform,
+            token: &str,
+        ) -> Result<(), String> {
             if self
                 .fail_after_writes
                 .is_some_and(|limit| self.writes.borrow().len() >= limit)
@@ -210,11 +199,11 @@ mod tests {
             Ok(())
         }
 
-        fn get_token(&self, _profile_id: &str, _platform: &str) -> Result<String, String> {
+        fn get_token(&self, _profile_id: &str, _platform: Platform) -> Result<String, String> {
             unimplemented!()
         }
 
-        fn delete_token(&self, _profile_id: &str, _platform: &str) -> Result<(), String> {
+        fn delete_token(&self, _profile_id: &str, _platform: Platform) -> Result<(), String> {
             Ok(())
         }
     }
@@ -224,7 +213,7 @@ mod tests {
             profiles: vec![Profile {
                 id: "profile-1".to_string(),
                 name: "Work".to_string(),
-                default_platform: Some("github".to_string()),
+                default_platform: Some(Platform::Github),
                 github: Some(PlatformAccount {
                     username: "octo".to_string(),
                     git_name: "Octo".to_string(),

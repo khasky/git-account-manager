@@ -93,6 +93,12 @@ jobs:
 
       # Formatting and lints gate here rather than in a hook: `commit-msg` is the
       # only hook installed, and a fork's clone runs no hook of ours at all.
+      - name: Lint and format frontend
+        run: pnpm lint
+
+      - name: Test frontend
+        run: pnpm test
+
       - name: Check Rust formatting
         run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
 

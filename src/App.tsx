@@ -1,21 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Profile, DoctorReport, GitIdentity, PlatformId } from "./types";
-import { PLATFORMS, PLATFORM_LABEL } from "./platforms";
-import { useTheme } from "./ThemeContext";
-import { useI18n, fmt } from "./i18n";
+import { useCallback, useEffect, useRef, useState } from "react";
+import * as api from "./api";
+import {
+  GearIcon,
+  GitHubIcon,
+  MonitorIcon,
+  MoonIcon,
+  PeopleIcon,
+  PlusIcon,
+  SunIcon,
+} from "./components/icons";
 import ProfileCard from "./components/ProfileCard";
 import ProfileForm from "./components/ProfileForm";
 import SettingsPage from "./components/SettingsPage";
 import UpdateBanner from "./components/UpdateBanner";
-import {
-  GitHubIcon,
-  MonitorIcon,
-  MoonIcon,
-  SunIcon,
-} from "./components/icons";
+import { fmt, useI18n } from "./i18n";
+import { PLATFORM_LABEL, PLATFORMS } from "./platforms";
+import { useTheme } from "./ThemeContext";
+import type { GitIdentity, PlatformId, Profile } from "./types";
 
 type View = "list" | "form" | "settings";
 
@@ -46,15 +49,16 @@ function App() {
 
   const loadProfiles = useCallback(async () => {
     try {
-      const data = await invoke<Profile[]>("get_profiles");
-      setProfiles(data);
+      setProfiles(await api.getProfiles());
       // The per-profile card shows how many of its repositories drifted, so the
       // report is fetched here rather than only inside the form a user might
       // never open.
-      const report = await invoke<DoctorReport>("doctor");
+      const report = await api.doctor();
       const counts: Record<string, number> = {};
       for (const repo of report.repos) {
-        if (!repo.ok) counts[repo.profile_id] = (counts[repo.profile_id] ?? 0) + 1;
+        if (!repo.ok) {
+          counts[repo.profile_id] = (counts[repo.profile_id] ?? 0) + 1;
+        }
       }
       setProblems(counts);
     } catch (e) {
@@ -70,12 +74,14 @@ function App() {
 
   // Localize the system-tray menu to match the selected interface language.
   useEffect(() => {
-    invoke("set_tray_labels", {
-      show: m.tray.show,
-      quit: m.tray.quit,
-      activePrefix: m.tray.activePrefix,
-      noActive: m.tray.noActiveProfile,
-    }).catch((e) => console.error("Failed to localize tray menu:", e));
+    api
+      .setTrayLabels({
+        show: m.tray.show,
+        quit: m.tray.quit,
+        activePrefix: m.tray.activePrefix,
+        noActive: m.tray.noActiveProfile,
+      })
+      .catch((e) => console.error("Failed to localize tray menu:", e));
   }, [m.tray.show, m.tray.quit, m.tray.activePrefix, m.tray.noActiveProfile]);
 
   // The tray menu can switch the active profile from outside the window; reload
@@ -120,8 +126,7 @@ function App() {
 
   async function handleImportFromGit() {
     try {
-      const id = await invoke<GitIdentity>("get_git_identity");
-      setImportPrefill(id);
+      setImportPrefill(await api.getGitIdentity());
     } catch {
       setImportPrefill({ name: "", email: "" });
     }
@@ -130,14 +135,14 @@ function App() {
   }
 
   async function handleActivate(id: string) {
+    // Read the name before reloading: after the reload this closure still holds
+    // the old list, and reading it there only worked by accident.
+    const name = profiles.find((p) => p.id === id)?.name;
     try {
-      await invoke("activate_profile", { id });
+      await api.activateProfile(id);
       await loadProfiles();
-      const p = profiles.find((pr) => pr.id === id);
       showToast(
-        fmt(m.app.toastActivated, {
-          name: p?.name || m.app.toastProfileFallback,
-        }),
+        fmt(m.app.toastActivated, { name: name || m.app.toastProfileFallback }),
       );
     } catch (e) {
       showToast(fmt(m.app.toastError, { error: String(e) }));
@@ -155,18 +160,18 @@ function App() {
           if (!account) continue;
           keyPaths.push(account.ssh_private_key_path);
           if (account.ssh_public_key_path) {
-            await invoke("remove_ssh_key_from_platform", {
-              platform,
-              profileId: profile.id,
-              publicKeyPath: account.ssh_public_key_path,
-            }).catch(() => {});
+            await api
+              .removeSshKeyFromPlatform({
+                platform,
+                profileId: profile.id,
+                publicKeyPath: account.ssh_public_key_path,
+              })
+              .catch(() => {});
           }
         }
-        if (keyPaths.length > 0) {
-          await invoke("delete_ssh_keys", { paths: keyPaths });
-        }
+        if (keyPaths.length > 0) await api.deleteSshKeys(keyPaths);
       }
-      await invoke("delete_profile", { id });
+      await api.deleteProfile(id);
       await loadProfiles();
       setView("list");
       showToast(fmt(m.app.toastDeleted, { name: profile.name }));
@@ -179,21 +184,17 @@ function App() {
     const profile = profiles.find((p) => p.id === id);
     if (!profile) return;
     try {
-      await invoke("save_profile", {
-        profile: { ...profile, default_platform: platform },
-      });
+      await api.saveProfile({ ...profile, default_platform: platform });
       await loadProfiles();
       showToast(
-        fmt(m.app.toastDefaultIdentity, {
-          platform: PLATFORM_LABEL[platform],
-        }),
+        fmt(m.app.toastDefaultIdentity, { platform: PLATFORM_LABEL[platform] }),
       );
     } catch (e) {
       showToast(fmt(m.app.toastError, { error: String(e) }));
     }
   }
 
-  async function handleSave(_profile: Profile) {
+  async function handleSave() {
     await loadProfiles();
     setView("list");
     showToast(m.app.toastProfileSaved);
@@ -214,31 +215,30 @@ function App() {
       <MonitorIcon />
     );
 
+  // Every view sits in the same full-height column; only the contents differ.
+  const shell = (children: React.ReactNode) => (
+    <div className="flex h-screen flex-col bg-surface text-fg">{children}</div>
+  );
+
   if (view === "form") {
-    return (
-      <div className="flex h-screen flex-col bg-surface text-fg">
-        <ProfileForm
-          profile={editingProfile}
-          prefill={importPrefill}
-          onSave={handleSave}
-          onCancel={() => setView("list")}
-          onSettings={() => setView("settings")}
-          onDelete={handleDelete}
-        />
-      </div>
+    return shell(
+      <ProfileForm
+        profile={editingProfile}
+        prefill={importPrefill}
+        onSave={handleSave}
+        onCancel={() => setView("list")}
+        onSettings={() => setView("settings")}
+        onDelete={handleDelete}
+      />,
     );
   }
 
   if (view === "settings") {
-    return (
-      <div className="flex h-screen flex-col bg-surface text-fg">
-        <SettingsPage onBack={() => setView("list")} />
-      </div>
-    );
+    return shell(<SettingsPage onBack={() => setView("list")} />);
   }
 
-  return (
-    <div className="flex h-screen flex-col bg-surface text-fg">
+  return shell(
+    <>
       <UpdateBanner />
       <header className="flex items-center justify-between border-b border-bd px-6 py-4">
         <div>
@@ -247,19 +247,22 @@ function App() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() =>
               openUrl("https://github.com/khasky/git-account-manager")
             }
-            className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
+            className="btn-icon"
             title={m.app.githubRepo}
           >
             <GitHubIcon className="h-5 w-5" />
           </button>
           <div className="relative" ref={themeRef}>
             <button
+              type="button"
               onClick={() => setThemeOpen((v) => !v)}
-              className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
+              className="btn-icon"
               title={m.app.themeTitle}
+              aria-expanded={themeOpen}
             >
               {currentIcon}
             </button>
@@ -267,6 +270,7 @@ function App() {
               <div className="absolute right-0 z-50 mt-1 w-36 rounded-lg border border-bd bg-dialog py-1 shadow-lg">
                 {themeOptions.map((opt) => (
                   <button
+                    type="button"
                     key={opt.value}
                     onClick={() => {
                       setPreference(opt.value);
@@ -286,46 +290,19 @@ function App() {
             )}
           </div>
           <button
+            type="button"
             onClick={() => setView("settings")}
-            className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
+            className="btn-icon"
             title={m.app.oauthSettings}
           >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-              />
-            </svg>
+            <GearIcon />
           </button>
           <button
+            type="button"
             onClick={handleAdd}
-            className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+            className="btn-primary flex items-center gap-1.5"
           >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
+            <PlusIcon />
             {m.app.newProfile}
           </button>
         </div>
@@ -338,28 +315,14 @@ function App() {
           </div>
         ) : profiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
-            <svg
-              className="mb-4 h-16 w-16 text-fg-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
+            <PeopleIcon className="mb-4 h-16 w-16 text-fg-6" />
             <p className="mb-2 text-lg text-fg-4">{m.app.noProfiles}</p>
             <p className="mb-4 text-sm text-fg-5">{m.app.noProfilesHint}</p>
-            <button
-              onClick={handleAdd}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
-            >
+            <button type="button" onClick={handleAdd} className="btn-primary">
               {m.app.createProfile}
             </button>
             <button
+              type="button"
               onClick={handleImportFromGit}
               className="mt-3 text-sm text-link hover:text-link-hover hover:underline"
             >
@@ -384,11 +347,11 @@ function App() {
       </main>
 
       {toastMsg && (
-        <div className="fixed right-4 bottom-4 rounded-lg border border-bd bg-raised px-4 py-2 text-sm text-fg-2 shadow-lg">
+        <output className="fixed right-4 bottom-4 rounded-lg border border-bd bg-raised px-4 py-2 text-sm text-fg-2 shadow-lg">
           {toastMsg}
-        </div>
+        </output>
       )}
-    </div>
+    </>,
   );
 }
 

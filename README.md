@@ -11,9 +11,9 @@ A desktop Git account manager for identity switching across popular code hosting
 [Features](#features) · [Why GAM?](#why-git-account-manager) · [Repository-scoped identity](#repository-scoped-identity) · [Install](#installation) · [Security Notes](#security-notes) · [Development](#development) · [Troubleshooting](#troubleshooting) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Reporting a vulnerability](#reporting-a-vulnerability) · [Support](#support) · [License](#license)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark1.png">
-  <source media="(prefers-color-scheme: light)" srcset="screenshots/light1.png">
-  <img src="screenshots/dark1.png" width="760" alt="Git Account Manager">
+  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark1.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/light1.webp">
+  <img src="screenshots/dark1.webp" width="760" alt="Git Account Manager">
 </picture>
 
 <sub>Built with <b>Tauri v2</b> (Rust) · <b>React</b> · <b>TypeScript</b> · <b>Tailwind CSS</b></sub>
@@ -55,15 +55,15 @@ It's the only tool here that **generates and uploads an SSH key for you from a G
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark3.png">
-  <source media="(prefers-color-scheme: light)" srcset="screenshots/light3.png">
-  <img src="screenshots/dark3.png" width="760" alt="Profile editor">
+  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark3.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/light3.webp">
+  <img src="screenshots/dark3.webp" width="760" alt="Profile editor">
 </picture>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark2.png">
-  <source media="(prefers-color-scheme: light)" srcset="screenshots/light2.png">
-  <img src="screenshots/dark2.png" width="760" alt="Settings">
+  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark2.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/light2.webp">
+  <img src="screenshots/dark2.webp" width="760" alt="Settings">
 </picture>
 
 </details>

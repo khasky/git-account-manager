@@ -1,3 +1,7 @@
+/** The platforms this app knows. Mirrors `models::Platform` in the backend,
+ *  whose serialized form is exactly these three strings. */
+export type PlatformId = "github" | "gitlab" | "bitbucket";
+
 export interface PlatformAccount {
   username: string;
   git_name: string;
@@ -9,7 +13,7 @@ export interface PlatformAccount {
 export interface Profile {
   id: string;
   name: string;
-  default_platform?: string;
+  default_platform?: PlatformId;
   github?: PlatformAccount;
   gitlab?: PlatformAccount;
   bitbucket?: PlatformAccount;
@@ -61,13 +65,11 @@ export interface GitIdentity {
   email: string;
 }
 
-export type PlatformId = "github" | "gitlab" | "bitbucket";
-
 /** A folder whose repositories belong to one profile. */
 export interface RepoRoot {
   path: string;
   profile_id: string;
-  platform: string;
+  platform: PlatformId;
   /** Defaults every repository in this folder starts with. */
   install_hook: boolean;
   pin_remote_alias: boolean;
@@ -77,7 +79,7 @@ export interface RepoRoot {
 export interface RepoBinding {
   path: string;
   profile_id: string;
-  platform: string;
+  platform: PlatformId;
   pin_remote_alias: boolean;
   install_hook: boolean;
   extra_allowed_emails: string[];
@@ -107,7 +109,7 @@ export interface DiscoveredRepo {
   owner: string;
   repo: string;
   suggested_profile_id: string | null;
-  suggested_platform: string | null;
+  suggested_platform: PlatformId | null;
   reason: "alias" | "owner" | "ambiguous" | "unknown";
   candidate_profile_ids: string[];
   bound: boolean;
@@ -148,7 +150,7 @@ export interface RepoStatus {
   name: string;
   profile_id: string;
   profile_name: string;
-  platform: string;
+  platform: PlatformId;
   expected_email: string;
   effective_email: string;
   remote_url: string;

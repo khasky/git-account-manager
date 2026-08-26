@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { useI18n, fmt } from "../i18n";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { useEffect, useState } from "react";
+import { fmt, useI18n } from "../i18n";
 
 type State =
   | { kind: "hidden" }
@@ -75,12 +75,14 @@ export default function UpdateBanner() {
           </span>
           <div className="flex shrink-0 items-center gap-2">
             <button
+              type="button"
               onClick={() => runUpdate(state.update)}
               className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500"
             >
               {m.update.updateNow}
             </button>
             <button
+              type="button"
               onClick={() => setState({ kind: "hidden" })}
               className="rounded-md bg-raised px-3 py-1.5 text-xs font-medium text-fg-3 transition-colors hover:bg-subtle hover:text-fg-2"
             >
@@ -102,6 +104,7 @@ export default function UpdateBanner() {
             {fmt(m.update.failed, { error: state.message })}
           </span>
           <button
+            type="button"
             onClick={() => setState({ kind: "hidden" })}
             className="shrink-0 rounded-md bg-raised px-3 py-1.5 text-xs font-medium text-fg-3 transition-colors hover:bg-subtle hover:text-fg-2"
           >

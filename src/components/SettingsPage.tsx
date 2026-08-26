@@ -1,22 +1,19 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  enable as enableAutostart,
   disable as disableAutostart,
+  enable as enableAutostart,
   isEnabled as isAutostartEnabled,
 } from "@tauri-apps/plugin-autostart";
-import {
-  DoctorReport,
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useEffect, useRef, useState } from "react";
+import * as api from "../api";
+import { fmt, LANGUAGES, type LangCode, rich, useI18n } from "../i18n";
+import { useTheme } from "../ThemeContext";
+import type {
   GuardSettings,
   GuardStatus,
-  OAuthSettings,
   OpenSshIntegrationProbe,
-  RepoState,
 } from "../types";
-import { useTheme } from "../ThemeContext";
-import { useI18n, fmt, rich, LANGUAGES, type LangCode } from "../i18n";
-import { MonitorIcon, MoonIcon, SunIcon } from "./icons";
+import { BackIcon, MonitorIcon, MoonIcon, SunIcon } from "./icons";
 import Toggle from "./Toggle";
 
 interface Props {
@@ -42,9 +39,8 @@ export default function SettingsPage({ onBack }: Props) {
   const [githubId, setGithubId] = useState("");
   const [gitlabId, setGitlabId] = useState("");
   const [useOpenSsh, setUseOpenSsh] = useState(false);
-  const [openSshProbe, setOpenSshProbe] = useState<OpenSshIntegrationProbe | null>(
-    null,
-  );
+  const [openSshProbe, setOpenSshProbe] =
+    useState<OpenSshIntegrationProbe | null>(null);
   const [autostart, setAutostart] = useState(false);
   const [guard, setGuard] = useState<GuardSettings | null>(null);
   // What the guard rails actually did to this machine, read back rather than
@@ -57,25 +53,38 @@ export default function SettingsPage({ onBack }: Props) {
   const { m, lang, setLang } = useI18n();
 
   useEffect(() => {
-    invoke<OAuthSettings>("get_settings")
+    api
+      .getSettings()
       .then((s) => {
         setGithubId(s.github_client_id);
         setGitlabId(s.gitlab_client_id);
         setUseOpenSsh(Boolean(s.use_openssh_for_git_tools));
       })
       .catch(() => {});
-    invoke<OpenSshIntegrationProbe>("openssh_integration_probe")
+    api
+      .openSshIntegrationProbe()
       .then(setOpenSshProbe)
       .catch(() => setOpenSshProbe({ available: false, ssh_exe: null }));
     isAutostartEnabled()
       .then(setAutostart)
       .catch(() => {});
-    invoke<RepoState>("get_repo_state")
+    api
+      .getRepoState()
       .then((s) => setGuard(s.guard))
       .catch(() => {});
-    invoke<DoctorReport>("doctor")
+    api
+      .doctor()
       .then((r) => setGuardStatus(r.guard))
       .catch(() => {});
+  }, []);
+
+  // The "Saved" hint is on a timer, and leaving the page before it fires would
+  // otherwise set state on a component that is gone.
+  const savedHintRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (savedHintRef.current) clearTimeout(savedHintRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -107,7 +116,7 @@ export default function SettingsPage({ onBack }: Props) {
     const next = { ...guard, [key]: !guard[key] };
     setGuard(next);
     try {
-      await invoke("save_guard_settings", { settings: next });
+      await api.saveGuardSettings(next);
       setSaveError("");
     } catch (e) {
       setGuard(guard);
@@ -119,19 +128,18 @@ export default function SettingsPage({ onBack }: Props) {
     setSaving(true);
     setSaveError("");
     try {
-      await invoke("save_settings", {
-        settings: {
-          github_client_id: githubId.trim(),
-          gitlab_client_id: gitlabId.trim(),
-          use_openssh_for_git_tools: useOpenSsh,
-        },
+      await api.saveSettings({
+        github_client_id: githubId.trim(),
+        gitlab_client_id: gitlabId.trim(),
+        use_openssh_for_git_tools: useOpenSsh,
       });
-      const probe = await invoke<OpenSshIntegrationProbe>(
-        "openssh_integration_probe",
-      );
-      setOpenSshProbe(probe);
+      setOpenSshProbe(await api.openSshIntegrationProbe());
       setSaved(true);
-      setTimeout(() => setSaved(false), SAVED_HINT_MS);
+      if (savedHintRef.current) clearTimeout(savedHintRef.current);
+      savedHintRef.current = setTimeout(() => {
+        setSaved(false);
+        savedHintRef.current = null;
+      }, SAVED_HINT_MS);
     } catch (e) {
       setSaveError(formatInvokeError(e, m.settings.saveError));
     } finally {
@@ -148,20 +156,13 @@ export default function SettingsPage({ onBack }: Props) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-bd px-6 py-4">
-        <button onClick={onBack} className="text-fg-4 hover:text-fg-2">
-          <svg
-            className="h-5 w-5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
+        <button
+          type="button"
+          onClick={onBack}
+          title={m.settings.title}
+          className="text-fg-4 hover:text-fg-2"
+        >
+          <BackIcon />
         </button>
         <h2 className="text-lg font-semibold text-fg">{m.settings.title}</h2>
       </div>
@@ -178,6 +179,7 @@ export default function SettingsPage({ onBack }: Props) {
             <div className="flex rounded-lg border border-bd">
               {themeOptions.map((opt) => (
                 <button
+                  type="button"
                   key={opt.value}
                   onClick={() => setPreference(opt.value)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-[7px] last:rounded-r-[7px] ${
@@ -208,6 +210,7 @@ export default function SettingsPage({ onBack }: Props) {
               <p className="text-xs text-fg-5">{m.settings.languageHint}</p>
             </div>
             <select
+              aria-label={m.settings.language}
               value={lang}
               onChange={(e) => setLang(e.target.value as LangCode)}
               className="rounded-md border border-bd-s bg-input px-3 py-1.5 text-sm text-fg outline-none focus:border-blue-500"
@@ -228,25 +231,23 @@ export default function SettingsPage({ onBack }: Props) {
               {m.settings.guard.intro}
             </p>
 
-            {(
-              [
-                {
-                  key: "unset_global_identity" as const,
-                  label: m.settings.guard.unsetGlobal,
-                  hint: m.settings.guard.unsetGlobalHint,
-                },
-                {
-                  key: "manage_gitconfig_includes" as const,
-                  label: m.settings.guard.manageIncludes,
-                  hint: m.settings.guard.manageIncludesHint,
-                },
-                {
-                  key: "own_bare_ssh_hosts" as const,
-                  label: m.settings.guard.ownBareHosts,
-                  hint: m.settings.guard.ownBareHostsHint,
-                },
-              ]
-            ).map((row) => (
+            {[
+              {
+                key: "unset_global_identity" as const,
+                label: m.settings.guard.unsetGlobal,
+                hint: m.settings.guard.unsetGlobalHint,
+              },
+              {
+                key: "manage_gitconfig_includes" as const,
+                label: m.settings.guard.manageIncludes,
+                hint: m.settings.guard.manageIncludesHint,
+              },
+              {
+                key: "own_bare_ssh_hosts" as const,
+                label: m.settings.guard.ownBareHosts,
+                hint: m.settings.guard.ownBareHostsHint,
+              },
+            ].map((row) => (
               <div
                 key={row.key}
                 className="flex items-center justify-between gap-4"
@@ -291,7 +292,9 @@ export default function SettingsPage({ onBack }: Props) {
 
         {openSshProbe?.available ? (
           <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
-            <h3 className="font-medium text-fg-2">{m.settings.tortoise.title}</h3>
+            <h3 className="font-medium text-fg-2">
+              {m.settings.tortoise.title}
+            </h3>
             <p className="text-xs text-fg-4 leading-relaxed">
               {rich(m.settings.tortoise.intro)}
             </p>
@@ -313,7 +316,9 @@ export default function SettingsPage({ onBack }: Props) {
             )}
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm text-fg-3">{m.settings.tortoise.toggle}</p>
+                <p className="text-sm text-fg-3">
+                  {m.settings.tortoise.toggle}
+                </p>
                 <p className="text-xs text-fg-5">
                   {rich(m.settings.tortoise.toggleHint, {
                     codeClass: "text-fg-4",
@@ -385,13 +390,16 @@ export default function SettingsPage({ onBack }: Props) {
 
       <div className="flex items-center gap-3 border-t border-bd px-6 py-4">
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+          className="btn-primary"
         >
           {saving ? m.settings.saving : m.settings.save}
         </button>
-        {saved && <span className="text-sm text-success-fg">{m.settings.saved}</span>}
+        {saved && (
+          <span className="text-sm text-success-fg">{m.settings.saved}</span>
+        )}
         {saveError ? (
           <span className="max-w-md text-sm text-red-600 dark:text-red-400">
             {saveError}

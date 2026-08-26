@@ -8,8 +8,14 @@
   "bumpFiles": [
     { "filename": "package.json", "type": "json" },
     { "filename": "src-tauri/tauri.conf.json", "type": "json" },
-    { "filename": "src-tauri/Cargo.toml", "updater": "scripts/cargo-toml-updater.cjs" },
-    { "filename": "src-tauri/Cargo.lock", "updater": "scripts/cargo-lock-updater.cjs" }
+    {
+      "filename": "src-tauri/Cargo.toml",
+      "updater": "scripts/cargo-toml-updater.cjs"
+    },
+    {
+      "filename": "src-tauri/Cargo.lock",
+      "updater": "scripts/cargo-lock-updater.cjs"
+    }
   ],
   "types": [
     { "type": "feat", "section": "Features" },

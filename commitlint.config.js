@@ -43,14 +43,21 @@ const rules = {
   // commit so `git log --grep` and the changelog can pair the two.
   "revert-refs-footer": ({ type, raw }) => {
     if (type !== "revert" || revertRefs.test(raw ?? "")) return [true];
-    return [false, 'revert commits need a "Refs: <sha>" footer naming the reverted commit'];
+    return [
+      false,
+      'revert commits need a "Refs: <sha>" footer naming the reverted commit',
+    ];
   },
 
   // `!` marks that something breaks; it can't say what, and a user reading the
   // changelog needs the what. The footer is what lands under Breaking Changes.
   "breaking-change-footer": ({ header, raw }) => {
-    if (!bangHeader.test(header ?? "") || breakingNote.test(raw ?? "")) return [true];
-    return [false, 'a "!" header needs a "BREAKING CHANGE: <what breaks>" footer'];
+    if (!bangHeader.test(header ?? "") || breakingNote.test(raw ?? ""))
+      return [true];
+    return [
+      false,
+      'a "!" header needs a "BREAKING CHANGE: <what breaks>" footer',
+    ];
   },
 };
 

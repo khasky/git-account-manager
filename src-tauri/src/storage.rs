@@ -1,7 +1,30 @@
 use crate::{models::AppState, repos, secrets};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Runs a read-modify-write of the state with no other one interleaved.
+///
+/// Every command that changes anything performs the same three steps: load the
+/// state, mutate it, save it. Tauri runs commands on a thread pool, so two
+/// overlapping ones would both read the same file, each mutate its own copy,
+/// and the second write would drop the first one's change with nothing
+/// reported — a profile saved from the form while the tray switched the active
+/// one, and the activation is simply gone.
+///
+/// The machine sync that follows a save is inside the lock too: it rewrites
+/// `~/.ssh/config` and the managed region of `~/.gitconfig` from the state it
+/// was handed, and two of those interleaving leave whichever finished last on
+/// disk rather than whichever was correct.
+pub fn with_lock<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    // A command that panicked poisons the lock. `save_state` writes through a
+    // temp file and a rename, so what is on disk is a whole state either way
+    // and the next command may proceed.
+    let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    f()
+}
 
 fn storage_dir() -> PathBuf {
     let data_dir = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));

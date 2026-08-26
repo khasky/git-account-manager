@@ -117,6 +117,48 @@
   --color-toggle-off: var(--c-toggle-off);
 }
 
+/* --- Recurring element shapes ---
+ *
+ * These class strings were repeated verbatim across every screen — the input
+ * one thirteen times, the primary button fifteen — so a change to the focus
+ * ring or the padding meant finding all of them and getting all of them right.
+ * Named here, they are one edit. Anything used once stays inline where it is
+ * read. */
+
+@utility field {
+  @apply w-full rounded-md border border-bd-s bg-input px-3 py-2 text-sm text-fg outline-none focus:border-blue-500;
+}
+
+/* The same control in a dense row. */
+@utility field-sm {
+  @apply w-full rounded-md border border-bd-s bg-input px-2.5 py-1.5 text-sm text-fg outline-none focus:border-blue-500;
+}
+
+@utility select-sm {
+  @apply rounded-md border border-bd-s bg-input px-2 py-1 text-xs text-fg outline-none focus:border-blue-500;
+}
+
+@utility btn-primary {
+  @apply rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50;
+}
+
+@utility btn-subtle {
+  @apply rounded-md bg-subtle px-4 py-2 text-sm font-medium text-fg-2 transition-colors hover:bg-hover disabled:opacity-50;
+}
+
+@utility btn-raised-sm {
+  @apply rounded-md bg-raised px-3 py-1.5 text-xs font-medium text-fg-2 transition-colors hover:bg-subtle disabled:opacity-50;
+}
+
+/* An icon-only control in the header bar. */
+@utility btn-icon {
+  @apply rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2;
+}
+
+@utility panel {
+  @apply rounded-lg border border-bd bg-raised-40 p-4;
+}
+
 button,
 a,
 [role="button"],

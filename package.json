@@ -54,6 +54,10 @@
     "build:desktop": "tauri build",
     "build:desktop:signed": "tauri build --config src-tauri/tauri.updater.conf.json",
     "preview:web": "vite preview",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "tauri": "tauri",
     "release": "commit-and-tag-version",
     "prepare": "husky"
@@ -72,16 +76,23 @@
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
     "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.3.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "commit-and-tag-version": "^12.7.3",
     "husky": "^9.1.7",
+    "jsdom": "^30.0.1",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.11"
   },
   "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
 }

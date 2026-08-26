@@ -64,7 +64,12 @@ export default function ConfirmDialog({
 
   if (!open) return null;
 
+  // Clicking the backdrop is a pointer shortcut for Cancel, not the only way
+  // out: Escape is handled above and the Cancel button is in the tab order, so
+  // there is nothing here a keyboard cannot already reach.
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop is a pointer-only shortcut
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape and Cancel cover the keyboard
     <div
       ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-overlay"
@@ -87,7 +92,7 @@ export default function ConfirmDialog({
         </div>
         <div className="px-5 py-4">{children}</div>
         <div className="flex flex-col gap-2 border-t border-bd px-5 py-4">
-          {actions.map((action, i) => {
+          {actions.map((action) => {
             const base =
               "w-full rounded-md px-4 py-2 text-sm font-medium transition-colors";
             const style =
@@ -97,7 +102,15 @@ export default function ConfirmDialog({
                   ? `${base} bg-subtle text-fg-3 hover:bg-hover`
                   : `${base} bg-blue-600 text-white hover:bg-blue-500`;
             return (
-              <button key={i} onClick={action.onClick} className={style}>
+              // The label is what distinguishes one action from another, and no
+              // dialog offers the same one twice; the index would reorder the
+              // buttons' identity whenever the action list changes shape.
+              <button
+                type="button"
+                key={action.label}
+                onClick={action.onClick}
+                className={style}
+              >
                 {action.label}
               </button>
             );

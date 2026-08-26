@@ -1,3 +1,16 @@
+# Seventeen files were committed with CRLF before this rule existed, so a
+# formatter that writes LF produced whole-file diffs on them and nothing else.
+# Normalizing in the index makes the checkout's line endings the platform's
+# business and keeps the diff about the code. Run `git add --renormalize .`
+# once to apply it to the files already committed.
+* text=auto eol=lf
+
 # Shell scripts run on the Linux CI runners. A CRLF checked in from a Windows
 # clone makes them fail there with `$'\r': command not found`.
 *.sh text eol=lf
+
+# Binary: never normalized, never diffed as text.
+*.png binary
+*.webp binary
+*.ico binary
+*.icns binary

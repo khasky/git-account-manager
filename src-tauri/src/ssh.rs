@@ -1,6 +1,6 @@
 use crate::models::{Profile, SshKeyInfo, SshKeyPair, MANAGED_FOOTER, MANAGED_HEADER, PLATFORMS};
 use crate::proc::hidden_command;
-use crate::repos::canonical_host;
+use crate::repos::host_alias;
 use std::fs;
 use std::path::PathBuf;
 
@@ -164,19 +164,18 @@ pub fn update_ssh_config(profiles: &[Profile], own_bare_hosts: bool) -> Result<(
     if let (true, Some(profile)) = (own_bare_hosts, active) {
         for platform in PLATFORMS {
             if let Some(account) = profile.account(platform) {
-                let host = canonical_host(platform);
+                let host = platform.canonical_host();
                 entries.push(host_entry(host, host, &account.ssh_private_key_path));
             }
         }
     }
 
     for profile in profiles {
-        let slug = profile.slug();
         for platform in PLATFORMS {
             if let Some(account) = profile.account(platform) {
                 entries.push(host_entry(
-                    &format!("{}-{}", platform, slug),
-                    canonical_host(platform),
+                    &host_alias(platform, profile),
+                    platform.canonical_host(),
                     &account.ssh_private_key_path,
                 ));
             }

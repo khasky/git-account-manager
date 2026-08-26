@@ -1,6 +1,48 @@
-use crate::models::PlatformUser;
-use reqwest::Client;
+use crate::http::client;
+use crate::models::{Platform, PlatformUser};
+use reqwest::{Client, Response};
 use serde::Deserialize;
+
+/// Statuses the three platforms answer with when a key is already registered.
+/// None of them gives that case a code of its own, so the body has to decide.
+const AMBIGUOUS_UPLOAD_STATUSES: [u16; 3] = [400, 409, 422];
+
+/// Whether a rejected upload was rejected because the account already carries
+/// the key.
+///
+/// Matched on wording because no platform distinguishes it by status: GitHub
+/// answers 422 both to a duplicate and to a malformed key, GitLab answers 400 to
+/// both. Treating the whole status as success — which is what this code used to
+/// do — reported a key that was never registered as uploaded, leaving a profile
+/// whose pushes fail and nothing on screen to explain why.
+///
+/// The match is deliberately narrow: "already" appears in all three duplicate
+/// messages ("key is already in use", "has already been taken", "already have
+/// this key") and in none of their validation messages. If a platform rewords
+/// it, a duplicate starts being reported as a failure — visible and harmless —
+/// rather than the reverse.
+fn is_duplicate_key(body: &str) -> bool {
+    body.to_ascii_lowercase().contains("already")
+}
+
+/// Turns an upload response into the answer the caller actually needs: is the
+/// key on the account now?
+async fn accept_key_upload(resp: Response, platform: Platform) -> Result<(), String> {
+    if resp.status().is_success() {
+        return Ok(());
+    }
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    if AMBIGUOUS_UPLOAD_STATUSES.contains(&status.as_u16()) && is_duplicate_key(&body) {
+        return Ok(());
+    }
+    Err(format!(
+        "{} API error ({}): {}",
+        platform.label(),
+        status,
+        body.trim()
+    ))
+}
 
 #[derive(Deserialize)]
 struct GithubUser {
@@ -27,13 +69,12 @@ struct GitlabUser {
     commit_email: Option<String>,
 }
 
-pub async fn verify_token(platform: &str, token: &str) -> Result<PlatformUser, String> {
-    let client = Client::new();
+pub async fn verify_token(platform: Platform, token: &str) -> Result<PlatformUser, String> {
+    let client = client();
     match platform {
-        "github" => verify_github(&client, token).await,
-        "gitlab" => verify_gitlab(&client, token).await,
-        "bitbucket" => verify_bitbucket(&client, token).await,
-        _ => Err(format!("Unknown platform: {}", platform)),
+        Platform::Github => verify_github(client, token).await,
+        Platform::Gitlab => verify_gitlab(client, token).await,
+        Platform::Bitbucket => verify_bitbucket(client, token).await,
     }
 }
 
@@ -41,7 +82,6 @@ async fn verify_github(client: &Client, token: &str) -> Result<PlatformUser, Str
     let resp = client
         .get("https://api.github.com/user")
         .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "git-account-manager")
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -73,7 +113,6 @@ async fn fetch_github_primary_email(client: &Client, token: &str) -> Option<Stri
     let resp = client
         .get("https://api.github.com/user/emails")
         .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "git-account-manager")
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -91,7 +130,6 @@ async fn verify_gitlab(client: &Client, token: &str) -> Result<PlatformUser, Str
     let resp = client
         .get("https://gitlab.com/api/v4/user")
         .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "git-account-manager")
         .send()
         .await
         .map_err(|e| format!("GitLab API request failed: {}", e))?;
@@ -138,35 +176,34 @@ fn normalize_key(key: &str) -> String {
     }
 }
 
+/// Where a platform's user keys live, and the id shape they carry.
+fn keys_endpoint(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Github => "https://api.github.com/user/keys",
+        Platform::Gitlab => "https://gitlab.com/api/v4/user/keys",
+        // Bitbucket scopes keys under the account's uuid, which has to be
+        // fetched first; `delete_bitbucket_key` builds the URL itself.
+        Platform::Bitbucket => "",
+    }
+}
+
 pub async fn delete_ssh_key_from_platform(
-    platform: &str,
+    platform: Platform,
     token: &str,
     pub_key_content: &str,
 ) -> Result<(), String> {
-    let client = Client::new();
+    let client = client();
     let local = normalize_key(pub_key_content);
 
-    if platform == "bitbucket" {
-        return delete_bitbucket_key(&client, token, &local).await;
+    if platform == Platform::Bitbucket {
+        return delete_bitbucket_key(client, token, &local).await;
     }
 
-    let (url, auth_header) = match platform {
-        "github" => (
-            "https://api.github.com/user/keys",
-            format!("Bearer {}", token),
-        ),
-        "gitlab" => (
-            "https://gitlab.com/api/v4/user/keys",
-            format!("Bearer {}", token),
-        ),
-        _ => return Err(format!("Unknown platform: {}", platform)),
-    };
+    let url = keys_endpoint(platform);
+    let auth_header = format!("Bearer {}", token);
 
-    let mut req = client
-        .get(url)
-        .header("Authorization", &auth_header)
-        .header("User-Agent", "git-account-manager");
-    if platform == "github" {
+    let mut req = client.get(url).header("Authorization", &auth_header);
+    if platform == Platform::Github {
         req = req.header("Accept", "application/vnd.github+json");
     }
 
@@ -185,26 +222,22 @@ pub async fn delete_ssh_key_from_platform(
 
     for remote in &keys {
         if normalize_key(&remote.key) == local {
-            let delete_url = match platform {
-                "github" => format!("https://api.github.com/user/keys/{}", remote.id),
-                "gitlab" => format!("https://gitlab.com/api/v4/user/keys/{}", remote.id),
-                _ => continue,
-            };
+            let delete_url = format!("{}/{}", url, remote.id);
             let mut del = client
                 .delete(&delete_url)
-                .header("Authorization", &auth_header)
-                .header("User-Agent", "git-account-manager");
-            if platform == "github" {
+                .header("Authorization", &auth_header);
+            if platform == Platform::Github {
                 del = del.header("Accept", "application/vnd.github+json");
             }
             let del_resp = del
                 .send()
                 .await
                 .map_err(|e| format!("Failed to delete key: {}", e))?;
+            // A key that is already gone is the state the caller wanted.
             if !del_resp.status().is_success() && del_resp.status().as_u16() != 404 {
                 return Err(format!(
                     "Failed to delete key from {}: HTTP {}",
-                    platform,
+                    platform.label(),
                     del_resp.status()
                 ));
             }
@@ -216,17 +249,16 @@ pub async fn delete_ssh_key_from_platform(
 }
 
 pub async fn upload_ssh_key(
-    platform: &str,
+    platform: Platform,
     token: &str,
     title: &str,
     key_content: &str,
 ) -> Result<(), String> {
-    let client = Client::new();
+    let client = client();
     match platform {
-        "github" => upload_github_key(&client, token, title, key_content).await,
-        "gitlab" => upload_gitlab_key(&client, token, title, key_content).await,
-        "bitbucket" => upload_bitbucket_key(&client, token, title, key_content).await,
-        _ => Err(format!("Unknown platform: {}", platform)),
+        Platform::Github => upload_github_key(client, token, title, key_content).await,
+        Platform::Gitlab => upload_gitlab_key(client, token, title, key_content).await,
+        Platform::Bitbucket => upload_bitbucket_key(client, token, title, key_content).await,
     }
 }
 
@@ -239,23 +271,13 @@ async fn upload_github_key(
     let resp = client
         .post("https://api.github.com/user/keys")
         .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "git-account-manager")
         .header("Accept", "application/vnd.github+json")
         .json(&serde_json::json!({ "title": title, "key": key }))
         .send()
         .await
         .map_err(|e| format!("GitHub API request failed: {}", e))?;
 
-    if resp.status().as_u16() == 422 {
-        return Ok(());
-    }
-
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("GitHub API error: {}", body));
-    }
-
-    Ok(())
+    accept_key_upload(resp, Platform::Github).await
 }
 
 async fn upload_gitlab_key(
@@ -267,23 +289,12 @@ async fn upload_gitlab_key(
     let resp = client
         .post("https://gitlab.com/api/v4/user/keys")
         .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "git-account-manager")
         .json(&serde_json::json!({ "title": title, "key": key }))
         .send()
         .await
         .map_err(|e| format!("GitLab API request failed: {}", e))?;
 
-    let status = resp.status().as_u16();
-    if status == 400 || status == 409 {
-        return Ok(());
-    }
-
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("GitLab API error: {}", body));
-    }
-
-    Ok(())
+    accept_key_upload(resp, Platform::Gitlab).await
 }
 
 /// Bitbucket takes an Atlassian API token over HTTP Basic, not a Bearer token
@@ -337,7 +348,6 @@ async fn bitbucket_get_user(client: &Client, token: &str) -> Result<BitbucketUse
     let resp = client
         .get("https://api.bitbucket.org/2.0/user")
         .header("Authorization", basic_auth(token))
-        .header("User-Agent", "git-account-manager")
         .send()
         .await
         .map_err(|e| format!("Bitbucket API request failed: {}", e))?;
@@ -371,7 +381,6 @@ async fn fetch_bitbucket_primary_email(client: &Client, token: &str) -> Option<S
     let resp = client
         .get("https://api.bitbucket.org/2.0/user/emails")
         .header("Authorization", basic_auth(token))
-        .header("User-Agent", "git-account-manager")
         .send()
         .await
         .ok()?;
@@ -400,24 +409,12 @@ async fn upload_bitbucket_key(
     let resp = client
         .post(&url)
         .header("Authorization", basic_auth(token))
-        .header("User-Agent", "git-account-manager")
         .json(&serde_json::json!({ "key": key, "label": title }))
         .send()
         .await
         .map_err(|e| format!("Bitbucket API request failed: {}", e))?;
 
-    // 400/409 => key already registered; treat as success like GitHub/GitLab.
-    let status = resp.status().as_u16();
-    if status == 400 || status == 409 {
-        return Ok(());
-    }
-
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Bitbucket API error: {}", body));
-    }
-
-    Ok(())
+    accept_key_upload(resp, Platform::Bitbucket).await
 }
 
 async fn delete_bitbucket_key(
@@ -434,7 +431,6 @@ async fn delete_bitbucket_key(
     let resp = client
         .get(&base)
         .header("Authorization", basic_auth(token))
-        .header("User-Agent", "git-account-manager")
         .send()
         .await
         .map_err(|e| format!("Failed to list keys: {}", e))?;
@@ -469,4 +465,80 @@ async fn delete_bitbucket_key(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The real bodies the three platforms answer with when the account already
+    /// carries the key. Reporting these as failures would make a second Save
+    /// look broken.
+    #[test]
+    fn recognises_a_key_the_account_already_has() {
+        for body in [
+            r#"{"message":"Validation Failed","errors":[{"resource":"PublicKey","code":"custom","field":"key","message":"key is already in use"}]}"#,
+            r#"{"message":{"fingerprint":["has already been taken"]}}"#,
+            r#"{"error":{"message":"Someone has already added this SSH key to a Bitbucket account."}}"#,
+        ] {
+            assert!(is_duplicate_key(body), "must read as a duplicate: {}", body);
+        }
+    }
+
+    /// The case this used to swallow. GitHub answers a malformed key with the
+    /// same 422 it answers a duplicate with, so a status-only check reported
+    /// "uploaded" for a key that was never registered — and the profile's pushes
+    /// then failed with nothing on screen to connect the two.
+    #[test]
+    fn a_rejected_key_is_not_a_duplicate() {
+        for body in [
+            r#"{"message":"Validation Failed","errors":[{"field":"key","message":"key is invalid. It must begin with 'ssh-ed25519'"}]}"#,
+            r#"{"message":{"key":["is invalid"]}}"#,
+            r#"{"message":"Bad credentials"}"#,
+            "",
+        ] {
+            assert!(
+                !is_duplicate_key(body),
+                "must not read as a duplicate: {}",
+                body
+            );
+        }
+    }
+
+    /// Only the statuses that are genuinely ambiguous may be forgiven; a 500
+    /// whose body happens to say "already" is still a failure.
+    #[test]
+    fn only_the_ambiguous_statuses_can_mean_duplicate() {
+        assert_eq!(AMBIGUOUS_UPLOAD_STATUSES, [400, 409, 422]);
+        assert!(!AMBIGUOUS_UPLOAD_STATUSES.contains(&500));
+        assert!(!AMBIGUOUS_UPLOAD_STATUSES.contains(&401));
+        assert!(!AMBIGUOUS_UPLOAD_STATUSES.contains(&403));
+    }
+
+    /// The comment body is rewritten by the platforms, so only the type and the
+    /// base64 payload can be compared when looking for a key to delete.
+    #[test]
+    fn key_comparison_ignores_the_trailing_comment() {
+        let local = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 me@laptop";
+        let remote = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 someone@github";
+        assert_eq!(normalize_key(local), normalize_key(remote));
+        assert_ne!(
+            normalize_key(local),
+            normalize_key("ssh-ed25519 DIFFERENTBODY me@laptop")
+        );
+    }
+
+    /// The delete path builds `<endpoint>/<id>`, so the endpoint has to be the
+    /// collection URL for the two platforms that use it.
+    #[test]
+    fn the_key_endpoints_are_the_collections_the_delete_path_appends_to() {
+        assert_eq!(
+            keys_endpoint(Platform::Github),
+            "https://api.github.com/user/keys"
+        );
+        assert_eq!(
+            keys_endpoint(Platform::Gitlab),
+            "https://gitlab.com/api/v4/user/keys"
+        );
+    }
 }

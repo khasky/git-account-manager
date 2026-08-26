@@ -2,20 +2,21 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
+import { de } from "./de";
 import { en, type Messages } from "./en";
-import { zhHans } from "./zh-Hans";
-import { zhHant } from "./zh-Hant";
+import { es } from "./es";
+import { fr } from "./fr";
 import { ja } from "./ja";
 import { ko } from "./ko";
-import { es } from "./es";
 import { ptBR } from "./pt-BR";
 import { ru } from "./ru";
-import { fr } from "./fr";
-import { de } from "./de";
 import { uk } from "./uk";
+import { zhHans } from "./zh-Hans";
+import { zhHant } from "./zh-Hant";
 
 export type LangCode =
   | "en"
@@ -62,6 +63,10 @@ export const LANGUAGES: { code: LangCode; name: string }[] = [
 const KEY = "language-preference";
 
 function isLangCode(v: string | null): v is LangCode {
+  // `registry` is an object literal with no prototype games, and the suggested
+  // Object.hasOwn is ES2022 — Tauri still supports the WKWebView on macOS
+  // 10.15, which predates it, so the call would throw there rather than answer.
+  // biome-ignore lint/suspicious/noPrototypeBuiltins: Object.hasOwn is ES2022
   return v !== null && Object.prototype.hasOwnProperty.call(registry, v);
 }
 
@@ -105,10 +110,7 @@ const TAG_RE = /(<\/?(?:code|b|a)>)/g;
 // Render a translated string that contains a small, fixed set of inline tags
 // (<code>, <b>, <a>) into React nodes. Only one <a> per string is supported;
 // its behaviour comes from opts.onLink (button) or opts.href (external link).
-export function rich(
-  text: string,
-  opts: RichOptions = {},
-): React.ReactNode {
+export function rich(text: string, opts: RichOptions = {}): React.ReactNode {
   const codeClass = opts.codeClass ?? "text-fg-3";
   const tokens = text.split(TAG_RE).filter((t) => t !== "");
   let i = 0;
@@ -186,8 +188,16 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const setLang = useCallback((l: LangCode) => {
     localStorage.setItem(KEY, l);
     setLangState(l);
-    document.documentElement.setAttribute("lang", l);
   }, []);
+
+  // Driven by the value rather than by the setter, so the very first render
+  // publishes it too. Setting it only inside `setLang` left `index.html`'s
+  // hard-coded `lang="en"` in place for anyone who never opened the language
+  // picker — a Russian interface announced to a screen reader as English, and
+  // hyphenated by English rules.
+  useEffect(() => {
+    document.documentElement.setAttribute("lang", lang);
+  }, [lang]);
 
   const value = useMemo<I18nCtx>(
     () => ({ lang, setLang, m: registry[lang] }),
