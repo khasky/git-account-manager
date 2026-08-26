@@ -105,7 +105,12 @@ async fn verify_gitlab(client: &Client, token: &str) -> Result<PlatformUser, Str
     let noreply = user
         .commit_email
         .filter(|e| !e.is_empty() && e.contains("noreply"))
-        .or_else(|| Some(format!("{}-{}@users.noreply.gitlab.com", user.id, user.username)));
+        .or_else(|| {
+            Some(format!(
+                "{}-{}@users.noreply.gitlab.com",
+                user.id, user.username
+            ))
+        });
 
     Ok(PlatformUser {
         username: user.username.clone(),
@@ -116,158 +121,21 @@ async fn verify_gitlab(client: &Client, token: &str) -> Result<PlatformUser, Str
     })
 }
 
-// --- Repository access: which account can actually push here ---
-
-/// Namespace matching answers "who owns this" for personal repositories. For an
-/// organisation or a fork it cannot, so the platform is asked directly: the
-/// account that may push is the account the repository belongs to.
-#[derive(serde::Serialize)]
-pub struct RepoAccess {
-    pub found: bool,
-    pub can_push: bool,
-    pub full_name: String,
-}
-
-#[derive(Deserialize)]
-struct GithubRepo {
-    full_name: String,
-    permissions: Option<GithubPermissions>,
-}
-
-#[derive(Deserialize)]
-struct GithubPermissions {
-    push: bool,
-}
-
-#[derive(Deserialize)]
-struct GitlabProject {
-    path_with_namespace: String,
-    permissions: Option<GitlabPermissions>,
-}
-
-#[derive(Deserialize)]
-struct GitlabPermissions {
-    project_access: Option<GitlabAccess>,
-    group_access: Option<GitlabAccess>,
-}
-
-#[derive(Deserialize)]
-struct GitlabAccess {
-    access_level: u32,
-}
-
-pub async fn check_repo_access(
-    platform: &str,
-    token: &str,
-    owner: &str,
-    repo: &str,
-) -> Result<RepoAccess, String> {
-    let client = Client::new();
-    match platform {
-        "github" => github_repo_access(&client, token, owner, repo).await,
-        "gitlab" => gitlab_repo_access(&client, token, owner, repo).await,
-        _ => Err(format!("Access check is not supported for {}", platform)),
-    }
-}
-
-async fn github_repo_access(
-    client: &Client,
-    token: &str,
-    owner: &str,
-    repo: &str,
-) -> Result<RepoAccess, String> {
-    let url = format!(
-        "https://api.github.com/repos/{}/{}",
-        urlencoding::encode(owner),
-        urlencoding::encode(repo)
-    );
-    let resp = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "git-account-manager")
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| format!("GitHub API request failed: {}", e))?;
-
-    if resp.status().as_u16() == 404 {
-        return Ok(RepoAccess {
-            found: false,
-            can_push: false,
-            full_name: format!("{}/{}", owner, repo),
-        });
-    }
-    if !resp.status().is_success() {
-        return Err(format!("GitHub API error: {}", resp.status()));
-    }
-
-    let repo: GithubRepo = resp.json().await.map_err(|e| e.to_string())?;
-    Ok(RepoAccess {
-        found: true,
-        can_push: repo.permissions.map(|p| p.push).unwrap_or(false),
-        full_name: repo.full_name,
-    })
-}
-
-async fn gitlab_repo_access(
-    client: &Client,
-    token: &str,
-    owner: &str,
-    repo: &str,
-) -> Result<RepoAccess, String> {
-    let full = format!("{}/{}", owner, repo);
-    let url = format!(
-        "https://gitlab.com/api/v4/projects/{}",
-        urlencoding::encode(&full)
-    );
-    let resp = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "git-account-manager")
-        .send()
-        .await
-        .map_err(|e| format!("GitLab API request failed: {}", e))?;
-
-    if resp.status().as_u16() == 404 {
-        return Ok(RepoAccess {
-            found: false,
-            can_push: false,
-            full_name: full,
-        });
-    }
-    if !resp.status().is_success() {
-        return Err(format!("GitLab API error: {}", resp.status()));
-    }
-
-    let project: GitlabProject = resp.json().await.map_err(|e| e.to_string())?;
-    // 30 is Developer, the lowest level that may push to a protected default branch.
-    let level = project
-        .permissions
-        .as_ref()
-        .and_then(|p| {
-            let a = p.project_access.as_ref().map(|x| x.access_level);
-            let b = p.group_access.as_ref().map(|x| x.access_level);
-            a.max(b)
-        })
-        .unwrap_or(0);
-    Ok(RepoAccess {
-        found: true,
-        can_push: level >= 30,
-        full_name: project.path_with_namespace,
-    })
-}
-
-// --- Delete SSH key from platform by matching public key content ---
-
 #[derive(Deserialize)]
 struct RemoteKey {
     id: u64,
     key: String,
 }
 
+/// Type plus base64 body, dropping the trailing comment — the platforms rewrite
+/// or strip that, so it is the only part that compares reliably.
 fn normalize_key(key: &str) -> String {
-    let parts: Vec<&str> = key.trim().split_whitespace().collect();
-    if parts.len() >= 2 { format!("{} {}", parts[0], parts[1]) } else { key.trim().to_string() }
+    let parts: Vec<&str> = key.split_whitespace().collect();
+    if parts.len() >= 2 {
+        format!("{} {}", parts[0], parts[1])
+    } else {
+        key.trim().to_string()
+    }
 }
 
 pub async fn delete_ssh_key_from_platform(
@@ -283,22 +151,37 @@ pub async fn delete_ssh_key_from_platform(
     }
 
     let (url, auth_header) = match platform {
-        "github" => ("https://api.github.com/user/keys", format!("Bearer {}", token)),
-        "gitlab" => ("https://gitlab.com/api/v4/user/keys", format!("Bearer {}", token)),
+        "github" => (
+            "https://api.github.com/user/keys",
+            format!("Bearer {}", token),
+        ),
+        "gitlab" => (
+            "https://gitlab.com/api/v4/user/keys",
+            format!("Bearer {}", token),
+        ),
         _ => return Err(format!("Unknown platform: {}", platform)),
     };
 
-    let mut req = client.get(url).header("Authorization", &auth_header).header("User-Agent", "git-account-manager");
+    let mut req = client
+        .get(url)
+        .header("Authorization", &auth_header)
+        .header("User-Agent", "git-account-manager");
     if platform == "github" {
         req = req.header("Accept", "application/vnd.github+json");
     }
 
-    let resp = req.send().await.map_err(|e| format!("Failed to list keys: {}", e))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("Failed to list keys: {}", e))?;
     if !resp.status().is_success() {
         return Err(format!("Failed to list keys: HTTP {}", resp.status()));
     }
 
-    let keys: Vec<RemoteKey> = resp.json().await.map_err(|e| format!("Failed to parse keys: {}", e))?;
+    let keys: Vec<RemoteKey> = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse keys: {}", e))?;
 
     for remote in &keys {
         if normalize_key(&remote.key) == local {
@@ -307,13 +190,23 @@ pub async fn delete_ssh_key_from_platform(
                 "gitlab" => format!("https://gitlab.com/api/v4/user/keys/{}", remote.id),
                 _ => continue,
             };
-            let mut del = client.delete(&delete_url).header("Authorization", &auth_header).header("User-Agent", "git-account-manager");
+            let mut del = client
+                .delete(&delete_url)
+                .header("Authorization", &auth_header)
+                .header("User-Agent", "git-account-manager");
             if platform == "github" {
                 del = del.header("Accept", "application/vnd.github+json");
             }
-            let del_resp = del.send().await.map_err(|e| format!("Failed to delete key: {}", e))?;
+            let del_resp = del
+                .send()
+                .await
+                .map_err(|e| format!("Failed to delete key: {}", e))?;
             if !del_resp.status().is_success() && del_resp.status().as_u16() != 404 {
-                return Err(format!("Failed to delete key from {}: HTTP {}", platform, del_resp.status()));
+                return Err(format!(
+                    "Failed to delete key from {}: HTTP {}",
+                    platform,
+                    del_resp.status()
+                ));
             }
             return Ok(());
         }
@@ -393,8 +286,8 @@ async fn upload_gitlab_key(
     Ok(())
 }
 
-// --------------- Bitbucket (Atlassian API token, HTTP Basic auth) ---------------
-
+/// Bitbucket takes an Atlassian API token over HTTP Basic, not a Bearer token
+/// like the other two, and the token is already the `email:token` pair.
 fn basic_auth(token: &str) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
     format!("Basic {}", STANDARD.encode(token))
@@ -453,7 +346,9 @@ async fn bitbucket_get_user(client: &Client, token: &str) -> Result<BitbucketUse
         return Err(format!("Bitbucket API error: {}", resp.status()));
     }
 
-    resp.json::<BitbucketUser>().await.map_err(|e| e.to_string())
+    resp.json::<BitbucketUser>()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 async fn verify_bitbucket(client: &Client, token: &str) -> Result<PlatformUser, String> {

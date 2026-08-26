@@ -4,6 +4,7 @@ mod models;
 mod oauth;
 mod openssh_integration;
 mod platform;
+mod proc;
 mod repos;
 mod secrets;
 mod ssh;
@@ -18,11 +19,9 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use git::GitIdentity;
 use models::{
-    AppState, DeviceCodeResponse, GuardSettings, OAuthSettings, PlatformUser, Profile, RepoBinding,
-    RepoRoot, SshKeyInfo, SshKeyPair,
+    slugify, AppState, DeviceCodeResponse, GuardSettings, OAuthSettings, PlatformUser, Profile,
+    RepoBinding, RepoRoot, SshKeyInfo, SshKeyPair, PLATFORMS,
 };
-
-// ---- Profile CRUD ----
 
 #[tauri::command]
 fn get_profiles() -> Result<Vec<Profile>, String> {
@@ -69,51 +68,31 @@ fn sync_machine(state: &AppState) -> Result<(), String> {
 }
 
 fn delete_removed_platform_tokens(existing: &Profile, next: &Profile) -> Result<(), String> {
-    for platform in ["github", "gitlab", "bitbucket"] {
-        if has_platform(existing, platform) && !has_platform(next, platform) {
+    for platform in PLATFORMS {
+        if existing.account(platform).is_some() && next.account(platform).is_none() {
             secrets::delete_token(&existing.id, platform)?;
         }
     }
     Ok(())
 }
 
-fn has_platform(profile: &Profile, platform: &str) -> bool {
-    match platform {
-        "github" => profile.github.is_some(),
-        "gitlab" => profile.gitlab.is_some(),
-        "bitbucket" => profile.bitbucket.is_some(),
-        _ => false,
-    }
-}
-
 #[tauri::command]
 fn delete_profile(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let state = storage::load_state()?;
-    let has_github_remaining = state
-        .profiles
-        .iter()
-        .any(|p| p.id != id && p.github.is_some());
-    let has_gitlab_remaining = state
-        .profiles
-        .iter()
-        .any(|p| p.id != id && p.gitlab.is_some());
-    let has_bitbucket_remaining = state
-        .profiles
-        .iter()
-        .any(|p| p.id != id && p.bitbucket.is_some());
 
-    let mut hosts_to_clean: Vec<&str> = Vec::new();
-    if !has_github_remaining {
-        hosts_to_clean.push("github.com");
-    }
-    if !has_gitlab_remaining {
-        hosts_to_clean.push("gitlab.com");
-    }
-    if !has_bitbucket_remaining {
-        hosts_to_clean.push("bitbucket.org");
-    }
+    // A host key only goes once no profile left can still reach that platform.
+    let hosts_to_clean: Vec<&str> = PLATFORMS
+        .iter()
+        .filter(|platform| {
+            !state
+                .profiles
+                .iter()
+                .any(|p| p.id != id && p.account(platform).is_some())
+        })
+        .map(|platform| repos::canonical_host(platform))
+        .collect();
     if !hosts_to_clean.is_empty() {
-        ssh::clean_known_hosts(&hosts_to_clean).ok();
+        ssh::clean_known_hosts(&hosts_to_clean);
     }
 
     let mut state = state;
@@ -147,8 +126,6 @@ fn activate_profile(app: tauri::AppHandle, id: String) -> Result<(), String> {
     refresh_tray(&app);
     Ok(())
 }
-
-// ---- SSH Keys ----
 
 #[tauri::command]
 fn generate_ssh_key(email: String, key_name: String) -> Result<SshKeyPair, String> {
@@ -184,7 +161,7 @@ async fn remove_ssh_key_from_platform(
     platform::delete_ssh_key_from_platform(&platform, &token, &pub_key).await
 }
 
-/// Lowercase hostname safe for SSH key filenames (alphanumeric + hyphens).
+/// This machine's name, reduced to something safe inside an SSH key filename.
 fn hostname_slug_for_key() -> String {
     let raw = hostname::get()
         .ok()
@@ -192,26 +169,7 @@ fn hostname_slug_for_key() -> String {
         .or_else(|| std::env::var("COMPUTERNAME").ok())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unknown".to_string());
-    let s = raw
-        .to_lowercase()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("-");
-    if s.is_empty() {
-        "unknown".to_string()
-    } else {
-        s
-    }
+    slugify(&raw)
 }
 
 #[tauri::command]
@@ -222,7 +180,7 @@ async fn generate_and_upload_key(
     email: String,
 ) -> Result<SshKeyPair, String> {
     let token = secrets::get_token(&profile_id, &platform)?;
-    let slug = username.to_lowercase().replace(' ', "-");
+    let slug = slugify(&username);
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -237,8 +195,6 @@ async fn generate_and_upload_key(
 
     Ok(pair)
 }
-
-// ---- Platform Verification ----
 
 #[tauri::command]
 async fn connect_bitbucket(
@@ -273,8 +229,6 @@ fn delete_profile_tokens(profile_id: String) -> Result<(), String> {
     secrets::delete_profile_tokens(&profile_id)
 }
 
-// ---- OAuth: GitHub Device Flow ----
-
 #[tauri::command]
 async fn github_oauth_start(client_id: String) -> Result<DeviceCodeResponse, String> {
     oauth::github_device_start(&client_id).await
@@ -293,8 +247,6 @@ async fn github_oauth_poll(
     secrets::set_token(&profile_id, "github", &token)?;
     Ok(Some(user))
 }
-
-// ---- OAuth: GitLab PKCE ----
 
 fn gitlab_oauth_cancel_slot() -> &'static Mutex<Option<Arc<AtomicBool>>> {
     static SLOT: OnceLock<Mutex<Option<Arc<AtomicBool>>>> = OnceLock::new();
@@ -341,12 +293,7 @@ async fn gitlab_oauth_connect(
     let (verifier, challenge) = oauth::generate_pkce();
 
     let port = oauth::GITLAB_CALLBACK_PORT;
-    let listener = std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).map_err(|e| {
-        format!(
-            "Cannot bind to port {} (is the app already running?): {}",
-            port, e
-        )
-    })?;
+    let listeners = oauth::bind_callback_listeners(port)?;
     let redirect_uri = format!("http://localhost:{}/callback", port);
 
     let auth_url = oauth::build_gitlab_auth_url(&client_id, &redirect_uri, &challenge);
@@ -357,7 +304,7 @@ async fn gitlab_oauth_connect(
 
     let cancel_for_wait = cancel.clone();
     let code =
-        tokio::task::spawn_blocking(move || oauth::wait_for_callback(listener, cancel_for_wait))
+        tokio::task::spawn_blocking(move || oauth::wait_for_callback(listeners, cancel_for_wait))
             .await
             .map_err(|e| e.to_string())??;
 
@@ -366,8 +313,6 @@ async fn gitlab_oauth_connect(
     secrets::set_token(&profile_id, "gitlab", &token)?;
     Ok(user)
 }
-
-// ---- Settings ----
 
 #[tauri::command]
 fn get_settings() -> Result<OAuthSettings, String> {
@@ -404,14 +349,10 @@ fn openssh_integration_probe() -> openssh_integration::OpenSshIntegrationProbe {
     openssh_integration::probe()
 }
 
-// ---- Git Identity ----
-
 #[tauri::command]
 fn get_git_identity() -> Result<GitIdentity, String> {
     git::get_global_identity()
 }
-
-// ---- Repository bindings ----
 
 #[derive(serde::Serialize)]
 struct RepoState {
@@ -570,12 +511,17 @@ async fn verify_repo_access(
     platform: String,
     owner: String,
     repo: String,
-) -> Result<platform::RepoAccess, String> {
-    let token = secrets::get_token(&profile_id, &platform)?;
-    platform::check_repo_access(&platform, &token, &owner, &repo).await
+) -> Result<repos::RepoReach, String> {
+    let state = storage::load_state()?;
+    let profile = state
+        .profiles
+        .into_iter()
+        .find(|p| p.id == profile_id)
+        .ok_or("Profile not found")?;
+    tokio::task::spawn_blocking(move || repos::reach(&profile, &platform, &owner, &repo))
+        .await
+        .map_err(|e| e.to_string())
 }
-
-// ---- Tray ----
 
 // Localized labels for the tray menu. The menu is rebuilt from scratch on every
 // change (Tauri cannot patch individual items) and the translations live in the
@@ -694,8 +640,6 @@ fn set_tray_labels(
     refresh_tray(&app);
     Ok(())
 }
-
-// ---- App Entry ----
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

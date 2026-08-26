@@ -1,9 +1,8 @@
-use crate::models::{AppState, PlatformAccount, Profile};
+use crate::models::{AppState, PLATFORMS};
 use keyring_core::{Entry, Error};
 use std::sync::OnceLock;
 
 const SERVICE: &str = "com.khasky.git-account-manager";
-const PLATFORMS: [&str; 3] = ["github", "gitlab", "bitbucket"];
 
 pub trait SecretStore {
     fn set_token(&self, profile_id: &str, platform: &str, token: &str) -> Result<(), String>;
@@ -78,16 +77,17 @@ pub fn migrate_plaintext_tokens_with_store<S: SecretStore>(
     let mut found_legacy_tokens = false;
 
     for profile in &state.profiles {
-        found_legacy_tokens |=
-            collect_legacy_token(&mut pending, profile, "github", profile.github.as_ref());
-        found_legacy_tokens |=
-            collect_legacy_token(&mut pending, profile, "gitlab", profile.gitlab.as_ref());
-        found_legacy_tokens |= collect_legacy_token(
-            &mut pending,
-            profile,
-            "bitbucket",
-            profile.bitbucket.as_ref(),
-        );
+        for platform in PLATFORMS {
+            let Some(token) = profile.account(platform).and_then(|a| a.token.as_ref()) else {
+                continue;
+            };
+            found_legacy_tokens = true;
+            // An empty legacy field still has to be cleared from the JSON, but
+            // storing it would shadow a real token in the OS store.
+            if !token.trim().is_empty() {
+                pending.push((profile.id.clone(), platform, token.clone()));
+            }
+        }
     }
 
     if !found_legacy_tokens {
@@ -99,34 +99,14 @@ pub fn migrate_plaintext_tokens_with_store<S: SecretStore>(
     }
 
     for profile in &mut state.profiles {
-        clear_legacy_token(profile.github.as_mut());
-        clear_legacy_token(profile.gitlab.as_mut());
-        clear_legacy_token(profile.bitbucket.as_mut());
+        for platform in PLATFORMS {
+            if let Some(account) = profile.account_mut(platform) {
+                account.token = None;
+            }
+        }
     }
 
     Ok(true)
-}
-
-fn collect_legacy_token(
-    pending: &mut Vec<(String, &'static str, String)>,
-    profile: &Profile,
-    platform: &'static str,
-    account: Option<&PlatformAccount>,
-) -> bool {
-    if let Some(token) = account.and_then(|a| a.token.as_ref()) {
-        if !token.trim().is_empty() {
-            pending.push((profile.id.clone(), platform, token.clone()));
-        }
-        true
-    } else {
-        false
-    }
-}
-
-fn clear_legacy_token(account: Option<&mut PlatformAccount>) {
-    if let Some(account) = account {
-        account.token = None;
-    }
 }
 
 fn ensure_store() -> Result<(), String> {
@@ -205,6 +185,7 @@ fn store_error(action: &str, err: Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{PlatformAccount, Profile};
     use std::cell::RefCell;
 
     #[derive(Default)]

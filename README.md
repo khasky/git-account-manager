@@ -80,8 +80,10 @@ Add one or more **watched folders**, each naming the profile its repositories be
 | ----------------------------------------------------------- | -------------------------------------------------- |
 | The remote uses a `<platform>-<profile>` SSH alias           | Already pinned to that profile                     |
 | The remote namespace matches exactly one account's username  | Personal repository of that account                |
-| **Check access** — asks the platform API with each token     | Organisations and forks, where the namespace cannot answer |
+| **Check access** — `git ls-remote` with that profile's key alone | Organisations and forks, where the namespace cannot answer |
 | **Test SSH alias** — `ssh -T` returns the account greeting   | The alias really reaches the account it is named after |
+
+**Check access** deliberately skips `~/.ssh/config` (`ssh -F none`) so the answer describes the profile's own key. Asking the platform API instead would answer a different question and answer it wrongly: an OAuth token without the `repo` scope — which this app never requests, because that scope grants write access to every repository you can see — reports every private repository as missing.
 
 When the evidence is ambiguous the app asks instead of choosing. Binding then writes:
 

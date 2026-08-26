@@ -7,12 +7,20 @@
 //! what TortoiseGit commits through), and the IDEs.
 
 use crate::git;
-use crate::models::{Profile, RepoBinding, RepoRoot};
+use crate::models::{Profile, RepoBinding, RepoRoot, PLATFORMS};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-const PLATFORMS: [&str; 3] = ["github", "gitlab", "bitbucket"];
 const HOOK_MARKER: &str = "# git-account-manager: pre-push identity guard";
+
+/// How deep a watched folder is walked. Deep enough for the usual
+/// `<root>/<org>/<repo>` layouts without turning a scan into a full disk crawl.
+const MAX_SCAN_DEPTH: usize = 6;
+
+/// How far back the doctor reads author and committer addresses. Far enough to
+/// catch a wrong identity that has been in use for a while, short enough that
+/// the check stays instant on a large repository.
+const HISTORY_COMMITS_CHECKED: usize = 200;
 
 /// Directories that never contain a repository worth binding and cost a lot to
 /// walk.
@@ -30,8 +38,6 @@ const SKIP_DIRS: [&str; 12] = [
     ".cache",
     ".pnpm-store",
 ];
-
-// ---- Remote URLs ----
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoteRef {
@@ -130,8 +136,6 @@ pub fn alias_url(platform: &str, profile: &Profile, remote: &RemoteRef) -> Strin
     )
 }
 
-// ---- Discovery ----
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveredRepo {
     pub path: String,
@@ -177,11 +181,15 @@ fn walk(dir: &Path, depth: usize, max_depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
-pub fn scan(roots: &[RepoRoot], profiles: &[Profile], bindings: &[RepoBinding]) -> Vec<DiscoveredRepo> {
+pub fn scan(
+    roots: &[RepoRoot],
+    profiles: &[Profile],
+    bindings: &[RepoBinding],
+) -> Vec<DiscoveredRepo> {
     let mut found = Vec::new();
     for root in roots {
         let mut paths = Vec::new();
-        walk(Path::new(&root.path), 0, 6, &mut paths);
+        walk(Path::new(&root.path), 0, MAX_SCAN_DEPTH, &mut paths);
         for path in paths {
             let dir = path.to_string_lossy().replace('\\', "/");
             let Some(url) = git::repo_remote_url(&dir, "origin") else {
@@ -193,8 +201,7 @@ pub fn scan(roots: &[RepoRoot], profiles: &[Profile], bindings: &[RepoBinding]) 
             if found.iter().any(|r: &DiscoveredRepo| r.path == dir) {
                 continue;
             }
-            let (profile_id, platform, reason, candidates) =
-                suggest(&remote, profiles, Some(root));
+            let (profile_id, platform, reason, candidates) = suggest(&remote, profiles, Some(root));
             let name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -227,7 +234,12 @@ fn suggest(
     root: Option<&RepoRoot>,
 ) -> (Option<String>, Option<String>, String, Vec<String>) {
     if let Some((platform, Some(profile_id))) = platform_for_host(&remote.host, profiles) {
-        return (Some(profile_id), Some(platform), "alias".to_string(), vec![]);
+        return (
+            Some(profile_id),
+            Some(platform),
+            "alias".to_string(),
+            vec![],
+        );
     }
 
     let platform = platform_for_host(&remote.host, profiles).map(|(p, _)| p);
@@ -264,7 +276,47 @@ fn suggest(
     (None, platform, "unknown".to_string(), candidates)
 }
 
-// ---- Applying a binding ----
+#[derive(Debug, Serialize)]
+pub struct RepoReach {
+    pub reachable: bool,
+    pub full_name: String,
+    /// Empty when reachable; otherwise Git's own explanation.
+    pub detail: String,
+}
+
+/// Answers what a push actually depends on: does *this profile's key* reach this
+/// repository? Asking the platform API instead would answer a different question
+/// and answer it wrongly — GitHub returns 404 for a private repository whenever
+/// the token lacks the `repo` scope, so every private repository reads as
+/// missing, and the token is not what carries a push anyway.
+///
+/// The canonical host is used with `IdentitiesOnly`, so the answer describes the
+/// profile's key rather than whichever key an SSH alias currently resolves to.
+pub fn reach(profile: &Profile, platform: &str, owner: &str, repo: &str) -> RepoReach {
+    let full_name = format!("{}/{}", owner, repo);
+    let deny = |detail: String| RepoReach {
+        reachable: false,
+        full_name: full_name.clone(),
+        detail,
+    };
+
+    let Some(account) = profile.account(platform) else {
+        return deny(format!("Profile has no {} account", platform));
+    };
+    if account.ssh_private_key_path.trim().is_empty() {
+        return deny(format!("Profile has no SSH key for {}", platform));
+    }
+
+    let url = format!("git@{}:{}/{}.git", canonical_host(platform), owner, repo);
+    match git::ls_remote_with_key(&url, &account.ssh_private_key_path) {
+        Ok(()) => RepoReach {
+            reachable: true,
+            full_name,
+            detail: String::new(),
+        },
+        Err(detail) => deny(detail),
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BindResult {
@@ -358,7 +410,11 @@ pub fn remove_hook(dir: &str) -> Result<(), String> {
         return Ok(());
     };
     let path = hooks_dir.join("pre-push");
-    if path.exists() && std::fs::read_to_string(&path).unwrap_or_default().contains(HOOK_MARKER) {
+    if path.exists()
+        && std::fs::read_to_string(&path)
+            .unwrap_or_default()
+            .contains(HOOK_MARKER)
+    {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -411,8 +467,6 @@ if [ "$status" -ne 0 ]; then
 fi
 exit $status
 "#;
-
-// ---- Doctor ----
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoCheck {
@@ -494,7 +548,7 @@ pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
     };
     checks.push(check("remote", remote_ok, remote_url.clone()));
 
-    let seen = git::repo_recent_identities(&dir, 200);
+    let seen = git::repo_recent_identities(&dir, HISTORY_COMMITS_CHECKED);
     let offending: Vec<String> = seen
         .into_iter()
         .filter(|e| !allowed.iter().any(|a| a.eq_ignore_ascii_case(e)))
@@ -647,7 +701,10 @@ mod tests {
 
         let alias = parse_remote_url("git@github-personal:octo/demo.git").unwrap();
         let (id, platform, reason, _) = suggest(&alias, &profiles, Some(&root));
-        assert_eq!((id.as_deref(), platform.as_deref(), reason.as_str()), (Some("p1"), Some("github"), "alias"));
+        assert_eq!(
+            (id.as_deref(), platform.as_deref(), reason.as_str()),
+            (Some("p1"), Some("github"), "alias")
+        );
 
         let owned = parse_remote_url("git@github.com:octo/demo.git").unwrap();
         let (id, _, reason, _) = suggest(&owned, &profiles, Some(&root));
@@ -681,7 +738,10 @@ mod tests {
             (&inner, "git@github.com:octo/inner.git"),
         ] {
             let p = path.to_string_lossy().replace('\\', "/");
-            Command::new("git").args(["init", "-q", &p]).output().unwrap();
+            Command::new("git")
+                .args(["init", "-q", &p])
+                .output()
+                .unwrap();
             git(&p, &["remote", "add", "origin", url]);
         }
 
@@ -711,7 +771,10 @@ mod tests {
             .args(["init", "-q", &path])
             .output()
             .expect("git must be on PATH");
-        git(&path, &["remote", "add", "origin", "git@github.com:octo/demo.git"]);
+        git(
+            &path,
+            &["remote", "add", "origin", "git@github.com:octo/demo.git"],
+        );
 
         let profile = profile();
         let binding = RepoBinding {

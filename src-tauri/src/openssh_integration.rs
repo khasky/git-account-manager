@@ -3,7 +3,6 @@
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct OpenSshIntegrationProbe {
     /// Integration is meaningful (currently: Windows only).
     pub available: bool,
@@ -88,9 +87,7 @@ fn detect_ssh_exe() -> Option<std::path::PathBuf> {
                 .join("ssh.exe"),
         );
     }
-    candidates.push(PathBuf::from(
-        r"C:\Program Files\Git\usr\bin\ssh.exe",
-    ));
+    candidates.push(PathBuf::from(r"C:\Program Files\Git\usr\bin\ssh.exe"));
 
     if let Ok(pf86) = std::env::var("ProgramFiles(x86)") {
         candidates.push(
@@ -124,12 +121,8 @@ fn detect_ssh_exe() -> Option<std::path::PathBuf> {
 
 #[cfg(windows)]
 fn find_ssh_via_where() -> Option<std::path::PathBuf> {
-    use std::os::windows::process::CommandExt;
-    use std::process::Command;
-
-    let mut cmd = Command::new("cmd");
+    let mut cmd = crate::proc::hidden_command("cmd");
     cmd.args(["/C", "where", "ssh"]);
-    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
     let output = cmd.output().ok()?;
     if !output.status.success() {
@@ -143,7 +136,11 @@ fn find_ssh_via_where() -> Option<std::path::PathBuf> {
         .to_string();
 
     let p = std::path::PathBuf::from(line);
-    if p.is_file() { Some(p) } else { None }
+    if p.is_file() {
+        Some(p)
+    } else {
+        None
+    }
 }
 
 #[cfg(windows)]

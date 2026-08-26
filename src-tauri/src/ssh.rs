@@ -1,7 +1,8 @@
-use crate::models::{Profile, SshKeyInfo, SshKeyPair};
+use crate::models::{Profile, SshKeyInfo, SshKeyPair, MANAGED_FOOTER, MANAGED_HEADER, PLATFORMS};
+use crate::proc::hidden_command;
+use crate::repos::canonical_host;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 fn ssh_dir() -> Result<PathBuf, String> {
     let dir = dirs::home_dir()
@@ -20,15 +21,10 @@ pub fn generate_key(email: &str, key_name: &str) -> Result<SshKeyPair, String> {
         return Err(format!("Key '{}' already exists", key_name));
     }
 
-    let mut cmd = Command::new("ssh-keygen");
+    let mut cmd = hidden_command("ssh-keygen");
     cmd.args(["-t", "ed25519", "-C", email, "-f"])
         .arg(&private_path)
         .args(["-N", ""]);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
     let output = cmd
         .output()
         .map_err(|e| format!("Failed to run ssh-keygen: {}", e))?;
@@ -45,7 +41,6 @@ pub fn generate_key(email: &str, key_name: &str) -> Result<SshKeyPair, String> {
         public_key_path: public_path.to_string_lossy().to_string(),
     })
 }
-
 
 pub fn list_keys() -> Result<Vec<SshKeyInfo>, String> {
     let dir = ssh_dir()?;
@@ -77,38 +72,29 @@ pub fn list_keys() -> Result<Vec<SshKeyInfo>, String> {
     Ok(keys)
 }
 
-pub fn clean_known_hosts(hostnames: &[&str]) -> Result<(), String> {
-    let dir = ssh_dir()?;
-    let path = dir.join("known_hosts");
-    let content = match fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return Ok(()),
-    };
-
-    let filtered: Vec<&str> = content
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            if trimmed.is_empty() { return true; }
-            !hostnames.iter().any(|h| trimmed.starts_with(h))
-        })
-        .collect();
-
-    let result = filtered.join("\n");
-    fs::write(&path, if result.ends_with('\n') { result } else { result + "\n" })
-        .map_err(|e| e.to_string())
+/// Drops a host's entries from `~/.ssh/known_hosts`.
+///
+/// `ssh-keygen -R` is the only thing that also matches hashed entries, and
+/// `HashKnownHosts yes` is the default in most builds — a text filter reading
+/// the file sees opaque hashes and silently removes nothing. It writes its own
+/// `.old` backup. Failures are ignored: this runs while deleting a profile and
+/// a leftover host key never blocks anything.
+pub fn clean_known_hosts(hostnames: &[&str]) {
+    for host in hostnames {
+        let _ = hidden_command("ssh-keygen")
+            .args(["-q", "-R", host])
+            .output();
+    }
 }
 
 pub fn delete_key_pair(private_key_path: &str) -> Result<(), String> {
     let priv_path = std::path::Path::new(private_key_path);
     let pub_path = priv_path.with_extension("pub");
     if priv_path.exists() {
-        fs::remove_file(priv_path)
-            .map_err(|e| format!("Failed to delete private key: {}", e))?;
+        fs::remove_file(priv_path).map_err(|e| format!("Failed to delete private key: {}", e))?;
     }
     if pub_path.exists() {
-        fs::remove_file(pub_path)
-            .map_err(|e| format!("Failed to delete public key: {}", e))?;
+        fs::remove_file(pub_path).map_err(|e| format!("Failed to delete public key: {}", e))?;
     }
     Ok(())
 }
@@ -125,7 +111,7 @@ pub fn read_public_key(pub_key_path: &str) -> Result<String, String> {
 /// the account it is named after.
 pub fn probe_host(host: &str) -> Result<String, String> {
     let target = format!("git@{}", host);
-    let mut cmd = Command::new("ssh");
+    let mut cmd = hidden_command("ssh");
     cmd.args([
         "-T",
         "-o",
@@ -136,11 +122,6 @@ pub fn probe_host(host: &str) -> Result<String, String> {
         "StrictHostKeyChecking=accept-new",
         &target,
     ]);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
 
     let output = cmd
         .output()
@@ -162,9 +143,6 @@ pub fn probe_host(host: &str) -> Result<String, String> {
     Ok(text)
 }
 
-const MANAGED_HEADER: &str = "# === begin git-account-manager ===";
-const MANAGED_FOOTER: &str = "# === end git-account-manager ===";
-
 /// Writes the managed region of `~/.ssh/config`.
 ///
 /// With `own_bare_hosts` the active profile also claims the bare `github.com` /
@@ -184,27 +162,24 @@ pub fn update_ssh_config(profiles: &[Profile], own_bare_hosts: bool) -> Result<(
     let active = profiles.iter().find(|p| p.is_active);
 
     if let (true, Some(profile)) = (own_bare_hosts, active) {
-        if let Some(gh) = &profile.github {
-            entries.push(host_entry("github.com", "github.com", &gh.ssh_private_key_path));
-        }
-        if let Some(gl) = &profile.gitlab {
-            entries.push(host_entry("gitlab.com", "gitlab.com", &gl.ssh_private_key_path));
-        }
-        if let Some(bb) = &profile.bitbucket {
-            entries.push(host_entry("bitbucket.org", "bitbucket.org", &bb.ssh_private_key_path));
+        for platform in PLATFORMS {
+            if let Some(account) = profile.account(platform) {
+                let host = canonical_host(platform);
+                entries.push(host_entry(host, host, &account.ssh_private_key_path));
+            }
         }
     }
 
     for profile in profiles {
         let slug = profile.slug();
-        if let Some(gh) = &profile.github {
-            entries.push(host_entry(&format!("github-{}", slug), "github.com", &gh.ssh_private_key_path));
-        }
-        if let Some(gl) = &profile.gitlab {
-            entries.push(host_entry(&format!("gitlab-{}", slug), "gitlab.com", &gl.ssh_private_key_path));
-        }
-        if let Some(bb) = &profile.bitbucket {
-            entries.push(host_entry(&format!("bitbucket-{}", slug), "bitbucket.org", &bb.ssh_private_key_path));
+        for platform in PLATFORMS {
+            if let Some(account) = profile.account(platform) {
+                entries.push(host_entry(
+                    &format!("{}-{}", platform, slug),
+                    canonical_host(platform),
+                    &account.ssh_private_key_path,
+                ));
+            }
         }
     }
 
@@ -227,6 +202,20 @@ pub fn update_ssh_config(profiles: &[Profile], own_bare_hosts: bool) -> Result<(
         result.push('\n');
     }
 
+    if result == existing {
+        return Ok(());
+    }
+
+    // One backup, taken the first time the app rewrites the file — the same
+    // safety net `~/.gitconfig` gets, and this file can hold hand-written Host
+    // blocks that only exist here.
+    if !existing.is_empty() {
+        let backup = config_path.with_file_name("config.gam-backup");
+        if !backup.exists() {
+            fs::write(&backup, &existing).map_err(|e| e.to_string())?;
+        }
+    }
+
     fs::write(&config_path, &result).map_err(|e| e.to_string())
 }
 
@@ -235,7 +224,10 @@ fn strip_all_managed(config: &str) -> String {
     let mut result = config.to_string();
 
     loop {
-        let header_pos = headers.iter().filter_map(|h| result.find(h).map(|p| (p, *h))).min_by_key(|(p, _)| *p);
+        let header_pos = headers
+            .iter()
+            .filter_map(|h| result.find(h).map(|p| (p, *h)))
+            .min_by_key(|(p, _)| *p);
         let footer_pos = result.find(MANAGED_FOOTER);
 
         match (header_pos, footer_pos) {

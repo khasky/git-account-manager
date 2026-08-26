@@ -45,7 +45,7 @@ export interface OAuthSettings {
 /** Result of `openssh_integration_probe` — Windows-only integration. */
 export interface OpenSshIntegrationProbe {
   available: boolean;
-  sshExe: string | null;
+  ssh_exe: string | null;
 }
 
 export interface DeviceCodeResponse {
@@ -147,8 +147,8 @@ export interface DoctorReport {
   repos: RepoStatus[];
 }
 
-export interface RepoAccess {
-  found: boolean;
-  can_push: boolean;
+export interface RepoReach {
+  reachable: boolean;
   full_name: string;
+  detail: string;
 }

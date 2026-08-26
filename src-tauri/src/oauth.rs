@@ -4,11 +4,9 @@ use reqwest::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-// --------------- GitHub Device Flow ---------------
 
 pub async fn github_device_start(client_id: &str) -> Result<DeviceCodeResponse, String> {
     let client = Client::new();
@@ -50,10 +48,7 @@ pub async fn github_device_poll(
         .form(&[
             ("client_id", client_id),
             ("device_code", device_code),
-            (
-                "grant_type",
-                "urn:ietf:params:oauth:grant-type:device_code",
-            ),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
         ])
         .send()
         .await
@@ -71,8 +66,6 @@ pub async fn github_device_poll(
         None => Err("Unexpected response from GitHub".to_string()),
     }
 }
-
-// --------------- GitLab PKCE Flow ---------------
 
 pub fn generate_pkce() -> (String, String) {
     let verifier = format!(
@@ -99,26 +92,75 @@ pub fn build_gitlab_auth_url(client_id: &str, redirect_uri: &str, challenge: &st
 
 pub const GITLAB_CALLBACK_PORT: u16 = 19847;
 const GITLAB_CALLBACK_TIMEOUT_SECS: u64 = 120;
+const CALLBACK_POLL_INTERVAL_MS: u64 = 250;
 
-pub fn wait_for_callback(listener: TcpListener, cancel: Arc<AtomicBool>) -> Result<String, String> {
-    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
-    let deadline = std::time::Instant::now()
-        + std::time::Duration::from_secs(GITLAB_CALLBACK_TIMEOUT_SECS);
+/// Binds the callback port on both loopback addresses.
+///
+/// The redirect URI names `localhost`, and which address a browser picks for it
+/// is not knowable in advance — Windows and macOS commonly try `::1` first. A
+/// single IPv4 listener silently never receives the callback there. One
+/// successful bind is enough; a machine with IPv6 disabled just fails the
+/// second, and the port being taken fails both.
+pub fn bind_callback_listeners(port: u16) -> Result<Vec<TcpListener>, String> {
+    let mut listeners = Vec::new();
+    let mut first_error = None;
+
+    for addr in [
+        SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+        SocketAddr::from((Ipv6Addr::LOCALHOST, port)),
+    ] {
+        match TcpListener::bind(addr) {
+            Ok(listener) => listeners.push(listener),
+            Err(e) => {
+                first_error.get_or_insert(e);
+            }
+        }
+    }
+
+    if listeners.is_empty() {
+        return Err(format!(
+            "Cannot bind to port {} (is the app already running?): {}",
+            port,
+            first_error
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "no loopback address available".to_string())
+        ));
+    }
+    Ok(listeners)
+}
+
+pub fn wait_for_callback(
+    listeners: Vec<TcpListener>,
+    cancel: Arc<AtomicBool>,
+) -> Result<String, String> {
+    for listener in &listeners {
+        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    }
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(GITLAB_CALLBACK_TIMEOUT_SECS);
 
     let mut stream = loop {
-        match listener.accept() {
-            Ok((s, _)) => break s,
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                if cancel.load(Ordering::SeqCst) {
-                    return Err("Authorization cancelled.".to_string());
+        let mut accepted = None;
+        for listener in &listeners {
+            match listener.accept() {
+                Ok((s, _)) => {
+                    accepted = Some(s);
+                    break;
                 }
-                if std::time::Instant::now() > deadline {
-                    return Err("Authorization timed out. Please try again.".to_string());
-                }
-                std::thread::sleep(std::time::Duration::from_millis(250));
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => return Err(format!("Waiting for callback: {}", e)),
             }
-            Err(e) => return Err(format!("Waiting for callback: {}", e)),
         }
+        if let Some(s) = accepted {
+            break s;
+        }
+        if cancel.load(Ordering::SeqCst) {
+            return Err("Authorization cancelled.".to_string());
+        }
+        if std::time::Instant::now() > deadline {
+            return Err("Authorization timed out. Please try again.".to_string());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(CALLBACK_POLL_INTERVAL_MS));
     };
 
     stream.set_nonblocking(false).ok();

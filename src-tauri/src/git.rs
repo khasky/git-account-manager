@@ -1,3 +1,4 @@
+use crate::proc::hidden_command;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
@@ -55,8 +56,6 @@ pub fn unset_global_ssh_command() -> Result<(), String> {
     run_git_optional(&["config", "--global", "--unset", "core.sshCommand"])
 }
 
-// ---- Repository-scoped helpers ----
-
 pub fn is_repo(dir: &Path) -> bool {
     dir.join(".git").exists()
 }
@@ -108,6 +107,46 @@ pub fn set_repo_remote_url(dir: &str, remote: &str, url: &str) -> Result<(), Str
     run_git(&["-C", dir, "remote", "set-url", remote, url]).map(|_| ())
 }
 
+/// `-F none` is what makes the answer about this one key. `IdentitiesOnly` drops
+/// the agent and the default filenames but still offers every `IdentityFile`
+/// `~/.ssh/config` declares — including the `Host github.com` block this app
+/// points at the active profile, which authenticates and makes any key look like
+/// it reaches anything. Skipping the config also skips a hand-written
+/// `ProxyCommand` or `Port` for that host, which is the lesser problem: a probe
+/// that quietly borrows the active profile's key answers a different question.
+fn ssh_command_for_key(key_path: &str) -> String {
+    // Git splits GIT_SSH_COMMAND with shell quoting rules, where a backslash
+    // escapes rather than separates; ~/.ssh/config is written the same way.
+    let key = key_path.replace('\\', "/");
+    format!(
+        "ssh -F none -i \"{}\" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new",
+        key
+    )
+}
+
+/// Asks the host for a repository's refs over SSH using one key and no other.
+/// On failure the error is Git's own first line — "Repository not found",
+/// "Permission denied (publickey)" — which says more than a rephrasing would.
+pub fn ls_remote_with_key(url: &str, key_path: &str) -> Result<(), String> {
+    let mut cmd = git_command(&["ls-remote", "--heads", url]);
+    cmd.env("GIT_SSH_COMMAND", ssh_command_for_key(key_path));
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(stderr
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("git ls-remote failed")
+        .to_string())
+}
+
 /// Distinct author and committer emails across the most recent `limit` commits.
 /// An empty repository has no log and yields an empty list.
 pub fn repo_recent_identities(dir: &str, limit: usize) -> Vec<String> {
@@ -147,16 +186,9 @@ pub fn repo_hooks_dir(dir: &str) -> Option<std::path::PathBuf> {
     }
 }
 
-// ---- Process plumbing ----
-
 fn git_command(args: &[&str]) -> Command {
-    let mut cmd = Command::new("git");
+    let mut cmd = hidden_command("git");
     cmd.args(args);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
     cmd
 }
 
@@ -194,4 +226,29 @@ fn run_git_optional(args: &[&str]) -> Result<(), String> {
     }
 
     Err(stderr.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Without `-F none` the `Host github.com` block this app writes supplies a
+    /// second IdentityFile, it authenticates, and the probe reports success for a
+    /// key that reaches nothing. Verified against github.com: an unregistered key
+    /// passes with the flag missing and gets `Permission denied (publickey)` with
+    /// it present.
+    #[test]
+    fn the_probe_offers_one_key_and_ignores_ssh_config() {
+        let cmd = ssh_command_for_key(r"C:\Users\a\.ssh\id_ed25519");
+
+        assert!(cmd.contains(" -F none "), "{}", cmd);
+        assert!(
+            cmd.contains(r#"-i "C:/Users/a/.ssh/id_ed25519""#),
+            "{}",
+            cmd
+        );
+        assert!(cmd.contains("IdentitiesOnly=yes"), "{}", cmd);
+        // No prompt may block a probe running inside the app.
+        assert!(cmd.contains("BatchMode=yes"), "{}", cmd);
+    }
 }

@@ -10,27 +10,13 @@ import {
   OAuthSettings,
   DeviceCodeResponse,
   GitIdentity,
+  PlatformId,
 } from "../types";
 import ConfirmDialog, { DialogAction } from "./ConfirmDialog";
+import { CopyIcon } from "./icons";
+import { PLATFORMS, PLATFORM_LABEL, profileUrl } from "../platforms";
 import { copySshPublicKey } from "../copySshPublicKey";
 import { useI18n, fmt, rich } from "../i18n";
-
-const CopyIcon = () => (
-  <svg
-    className="h-3.5 w-3.5"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-    aria-hidden
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-    />
-  </svg>
-);
 
 interface Props {
   profile: Profile | null;
@@ -41,7 +27,7 @@ interface Props {
   onDelete: (id: string, deleteKeys: boolean) => void;
 }
 
-type PlatformName = "github" | "gitlab" | "bitbucket";
+const COPY_HINT_MS = 2000;
 
 interface PlatformState {
   connected: boolean;
@@ -110,7 +96,7 @@ export default function ProfileForm({
   const isEdit = profile !== null;
   const { m } = useI18n();
   const [profileId] = useState(() => profile?.id || crypto.randomUUID());
-  const initialPlatformsRef = useRef<Record<PlatformName, boolean>>({
+  const initialPlatformsRef = useRef<Record<PlatformId, boolean>>({
     github: Boolean(profile?.github),
     gitlab: Boolean(profile?.gitlab),
     bitbucket: Boolean(profile?.bitbucket),
@@ -137,7 +123,7 @@ export default function ProfileForm({
   const [sshKeys, setSshKeys] = useState<SshKeyInfo[]>([]);
   const [saving, setSaving] = useState(false);
   const [disconnectTarget, setDisconnectTarget] = useState<{
-    platform: PlatformName;
+    platform: PlatformId;
     keyPath: string;
     pubKeyPath: string;
   } | null>(null);
@@ -151,7 +137,7 @@ export default function ProfileForm({
   const [ghCountdown, setGhCountdown] = useState(0);
   const ghCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function cancelGitHubAuth() {
+  function clearGitHubTimers() {
     if (ghPollRef.current) {
       clearInterval(ghPollRef.current);
       ghPollRef.current = null;
@@ -165,6 +151,10 @@ export default function ProfileForm({
       ghCountdownRef.current = null;
     }
     setGhCountdown(0);
+  }
+
+  function cancelGitHubAuth() {
+    clearGitHubTimers();
     updateGh({ connecting: false, deviceCode: null, error: "" });
   }
 
@@ -172,6 +162,14 @@ export default function ProfileForm({
   const glCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const glCancelledRef = useRef(false);
   const glConnectingRef = useRef(false);
+
+  function clearGitLabCountdown() {
+    if (glCountdownRef.current) {
+      clearInterval(glCountdownRef.current);
+      glCountdownRef.current = null;
+    }
+    setGlCountdown(0);
+  }
 
   useEffect(() => {
     glConnectingRef.current = gl.connecting;
@@ -191,7 +189,7 @@ export default function ProfileForm({
       copyHintTimerRef.current = setTimeout(() => {
         setCopiedPublicPath(null);
         copyHintTimerRef.current = null;
-      }, 2000);
+      }, COPY_HINT_MS);
     } catch {
       /* ignore */
     }
@@ -204,11 +202,7 @@ export default function ProfileForm({
   function cancelGitLabAuth() {
     glCancelledRef.current = true;
     abortGitLabOAuthBackend();
-    if (glCountdownRef.current) {
-      clearInterval(glCountdownRef.current);
-      glCountdownRef.current = null;
-    }
-    setGlCountdown(0);
+    clearGitLabCountdown();
     updateGl({ connecting: false, error: "" });
   }
 
@@ -219,13 +213,13 @@ export default function ProfileForm({
     }
 
     const initial = initialPlatformsRef.current;
-    const connected: Record<PlatformName, boolean> = {
+    const connected: Record<PlatformId, boolean> = {
       github: gh.connected,
       gitlab: gl.connected,
       bitbucket: bb.connected,
     };
 
-    (Object.keys(connected) as PlatformName[]).forEach((platform) => {
+    (Object.keys(connected) as PlatformId[]).forEach((platform) => {
       if (!initial[platform] && connected[platform]) {
         void invoke("delete_platform_token", { profileId, platform }).catch(
           () => {},
@@ -236,14 +230,7 @@ export default function ProfileForm({
 
   function handleProfileCancel() {
     if (gl.connecting) {
-      glCancelledRef.current = true;
-      abortGitLabOAuthBackend();
-      if (glCountdownRef.current) {
-        clearInterval(glCountdownRef.current);
-        glCountdownRef.current = null;
-      }
-      setGlCountdown(0);
-      updateGl({ connecting: false, error: "" });
+      cancelGitLabAuth();
     }
     if (gh.connecting || gh.deviceCode) {
       cancelGitHubAuth();
@@ -290,9 +277,6 @@ export default function ProfileForm({
   const updateBb = (p: Partial<PlatformState>) =>
     setBb((prev) => ({ ...prev, ...p }));
 
-  const platformLabel = (p: string) =>
-    p === "github" ? "GitHub" : p === "gitlab" ? "GitLab" : "Bitbucket";
-
   async function handleImportFromGit() {
     try {
       const id = await invoke<GitIdentity>("get_git_identity");
@@ -326,15 +310,7 @@ export default function ProfileForm({
       }, 1000);
 
       ghTimeoutRef.current = setTimeout(() => {
-        if (ghPollRef.current) {
-          clearInterval(ghPollRef.current);
-          ghPollRef.current = null;
-        }
-        if (ghCountdownRef.current) {
-          clearInterval(ghCountdownRef.current);
-          ghCountdownRef.current = null;
-        }
-        setGhCountdown(0);
+        clearGitHubTimers();
         updateGh({
           connecting: false,
           deviceCode: null,
@@ -351,19 +327,7 @@ export default function ProfileForm({
               profileId,
             });
             if (user) {
-              if (ghPollRef.current) {
-                clearInterval(ghPollRef.current);
-                ghPollRef.current = null;
-              }
-              if (ghTimeoutRef.current) {
-                clearTimeout(ghTimeoutRef.current);
-                ghTimeoutRef.current = null;
-              }
-              if (ghCountdownRef.current) {
-                clearInterval(ghCountdownRef.current);
-                ghCountdownRef.current = null;
-              }
-              setGhCountdown(0);
+              clearGitHubTimers();
               const noreply = user.noreply_email || "";
               const pubEmail = user.email || "";
               updateGh({
@@ -378,19 +342,7 @@ export default function ProfileForm({
               });
             }
           } catch (e) {
-            if (ghPollRef.current) {
-              clearInterval(ghPollRef.current);
-              ghPollRef.current = null;
-            }
-            if (ghTimeoutRef.current) {
-              clearTimeout(ghTimeoutRef.current);
-              ghTimeoutRef.current = null;
-            }
-            if (ghCountdownRef.current) {
-              clearInterval(ghCountdownRef.current);
-              ghCountdownRef.current = null;
-            }
-            setGhCountdown(0);
+            clearGitHubTimers();
             updateGh({ connecting: false, deviceCode: null, error: String(e) });
           }
         },
@@ -419,11 +371,7 @@ export default function ProfileForm({
         clientId: settings.gitlab_client_id,
         profileId,
       });
-      if (glCountdownRef.current) {
-        clearInterval(glCountdownRef.current);
-        glCountdownRef.current = null;
-      }
-      setGlCountdown(0);
+      clearGitLabCountdown();
       if (glCancelledRef.current) return;
       const noreply = user.noreply_email || "";
       const pubEmail = user.email || "";
@@ -437,11 +385,7 @@ export default function ProfileForm({
         noreplyEmail: noreply,
       });
     } catch (e) {
-      if (glCountdownRef.current) {
-        clearInterval(glCountdownRef.current);
-        glCountdownRef.current = null;
-      }
-      setGlCountdown(0);
+      clearGitLabCountdown();
       if (glCancelledRef.current) return;
       updateGl({ connecting: false, error: String(e) });
     }
@@ -476,7 +420,7 @@ export default function ProfileForm({
   }
 
   async function generateAndUpload(
-    platform: "github" | "gitlab" | "bitbucket",
+    platform: PlatformId,
     section: PlatformState,
     update: (p: Partial<PlatformState>) => void,
   ) {
@@ -486,7 +430,7 @@ export default function ProfileForm({
         platform,
         profileId,
         username: section.username,
-        email: section.gitEmail || "git@account-switcher",
+        email: section.gitEmail || "git@git-account-manager",
       });
       update({
         sshPrivateKeyPath: pair.private_key_path,
@@ -512,7 +456,7 @@ export default function ProfileForm({
   }
 
   async function uploadExistingKey(
-    platform: "github" | "gitlab" | "bitbucket",
+    platform: PlatformId,
     section: PlatformState,
     update: (p: Partial<PlatformState>) => void,
   ) {
@@ -577,13 +521,13 @@ export default function ProfileForm({
     }
   }
 
-  function renderError(err: string, platform: string) {
+  function renderError(err: string, platform: PlatformId) {
     if (err === "settings_required") {
       return (
         <p className="text-xs text-danger-fg">
           {rich(
             fmt(m.form.errSettingsRequired, {
-              platform: platformLabel(platform),
+              platform: PLATFORM_LABEL[platform],
             }),
             { onLink: onSettings },
           )}
@@ -594,27 +538,19 @@ export default function ProfileForm({
   }
 
   function renderPlatform(
-    label: string,
-    platform: "github" | "gitlab" | "bitbucket",
+    platform: PlatformId,
     section: PlatformState,
     update: (p: Partial<PlatformState>) => void,
     onConnect: () => void,
   ) {
+    const label = PLATFORM_LABEL[platform];
     return (
       <div className="rounded-lg border border-bd bg-raised-40 p-4">
         <div className="mb-3 flex items-center justify-between">
           <h4 className="font-medium text-fg-2">{label}</h4>
           {section.connected && (
             <button
-              onClick={() =>
-                openUrl(
-                  platform === "github"
-                    ? `https://github.com/${section.username}`
-                    : platform === "gitlab"
-                      ? `https://gitlab.com/${section.username}`
-                      : `https://bitbucket.org/${section.username}`,
-                )
-              }
+              onClick={() => openUrl(profileUrl(platform, section.username))}
               className="text-sm text-link hover:text-link-hover hover:underline"
             >
               @{section.username}
@@ -1042,16 +978,16 @@ export default function ProfileForm({
     },
   ];
 
-  const connectedPlatforms = (
-    [
-      ["github", "GitHub", gh],
-      ["gitlab", "GitLab", gl],
-      ["bitbucket", "Bitbucket", bb],
-    ] as const
-  ).filter((entry) => entry[2].connected);
-  const activeSection =
-    connectedPlatforms.find((e) => e[0] === defaultPlatform)?.[2] ??
-    connectedPlatforms[0]?.[2];
+  const sections: Record<PlatformId, PlatformState> = {
+    github: gh,
+    gitlab: gl,
+    bitbucket: bb,
+  };
+  const connectedPlatforms = PLATFORMS.filter((p) => sections[p].connected);
+  const activePlatform =
+    connectedPlatforms.find((p) => p === defaultPlatform) ??
+    connectedPlatforms[0];
+  const activeSection = activePlatform ? sections[activePlatform] : undefined;
 
   return (
     <>
@@ -1104,15 +1040,9 @@ export default function ProfileForm({
             </button>
           )}
 
-          {renderPlatform("GitHub", "github", gh, updateGh, connectGitHub)}
-          {renderPlatform("GitLab", "gitlab", gl, updateGl, connectGitLab)}
-          {renderPlatform(
-            "Bitbucket",
-            "bitbucket",
-            bb,
-            updateBb,
-            connectBitbucket,
-          )}
+          {renderPlatform("github", gh, updateGh, connectGitHub)}
+          {renderPlatform("gitlab", gl, updateGl, connectGitLab)}
+          {renderPlatform("bitbucket", bb, updateBb, connectBitbucket)}
 
           {connectedPlatforms.length >= 2 && (
             <div className="rounded-lg border border-bd bg-raised-40 p-4">
@@ -1126,7 +1056,7 @@ export default function ProfileForm({
                 {m.form.defaultIdentityHint2}
               </p>
               <div className="mb-3 flex flex-wrap gap-3">
-                {connectedPlatforms.map(([p, plabel]) => (
+                {connectedPlatforms.map((p) => (
                   <button
                     key={p}
                     onClick={() => setDefaultPlatform(p)}
@@ -1136,7 +1066,7 @@ export default function ProfileForm({
                         : "bg-subtle text-fg-3"
                     }`}
                   >
-                    {plabel}
+                    {PLATFORM_LABEL[p]}
                   </button>
                 ))}
               </div>
@@ -1185,7 +1115,7 @@ export default function ProfileForm({
       <ConfirmDialog
         open={disconnectTarget !== null}
         title={fmt(m.form.disconnectTitle, {
-          platform: platformLabel(disconnectTarget?.platform || "github"),
+          platform: PLATFORM_LABEL[disconnectTarget?.platform ?? "github"],
         })}
         actions={disconnectActions}
       >

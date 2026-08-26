@@ -14,10 +14,14 @@ import {
 } from "../types";
 import { useTheme } from "../ThemeContext";
 import { useI18n, fmt, rich, LANGUAGES, type LangCode } from "../i18n";
+import { MonitorIcon, MoonIcon, SunIcon } from "./icons";
+import Toggle from "./Toggle";
 
 interface Props {
   onBack: () => void;
 }
+
+const SAVED_HINT_MS = 2000;
 
 function formatInvokeError(e: unknown, fallback: string): string {
   if (typeof e === "string") return e;
@@ -31,54 +35,6 @@ function formatInvokeError(e: unknown, fallback: string): string {
   }
   return fallback;
 }
-
-const SunIcon = () => (
-  <svg
-    className="h-4 w-4"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-    />
-  </svg>
-);
-
-const MoonIcon = () => (
-  <svg
-    className="h-4 w-4"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-    />
-  </svg>
-);
-
-const MonitorIcon = () => (
-  <svg
-    className="h-4 w-4"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-    />
-  </svg>
-);
 
 export default function SettingsPage({ onBack }: Props) {
   const [githubId, setGithubId] = useState("");
@@ -105,7 +61,7 @@ export default function SettingsPage({ onBack }: Props) {
       .catch(() => {});
     invoke<OpenSshIntegrationProbe>("openssh_integration_probe")
       .then(setOpenSshProbe)
-      .catch(() => setOpenSshProbe({ available: false, sshExe: null }));
+      .catch(() => setOpenSshProbe({ available: false, ssh_exe: null }));
     isAutostartEnabled()
       .then(setAutostart)
       .catch(() => {});
@@ -167,7 +123,7 @@ export default function SettingsPage({ onBack }: Props) {
       );
       setOpenSshProbe(probe);
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), SAVED_HINT_MS);
     } catch (e) {
       setSaveError(formatInvokeError(e, m.settings.saveError));
     } finally {
@@ -203,7 +159,6 @@ export default function SettingsPage({ onBack }: Props) {
       </div>
 
       <div className="flex-1 space-y-6 overflow-y-auto p-6">
-        {/* General */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
           <h3 className="font-medium text-fg-2">{m.settings.general}</h3>
 
@@ -236,18 +191,7 @@ export default function SettingsPage({ onBack }: Props) {
               <p className="text-sm text-fg-3">{m.settings.autostart}</p>
               <p className="text-xs text-fg-5">{m.settings.autostartHint}</p>
             </div>
-            <button
-              onClick={toggleAutostart}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-                autostart ? "bg-emerald-600" : "bg-toggle-off"
-              }`}
-            >
-              <span
-                className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                  autostart ? "translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
+            <Toggle on={autostart} onClick={toggleAutostart} />
           </div>
 
           <div className="flex items-center justify-between">
@@ -269,7 +213,6 @@ export default function SettingsPage({ onBack }: Props) {
           </div>
         </div>
 
-        {/* Identity guard */}
         {guard ? (
           <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
             <h3 className="font-medium text-fg-2">{m.settings.guard.title}</h3>
@@ -306,37 +249,26 @@ export default function SettingsPage({ onBack }: Props) {
                     {rich(row.hint, { codeClass: "text-fg-4" })}
                   </p>
                 </div>
-                <button
-                  type="button"
+                <Toggle
+                  on={guard[row.key]}
                   onClick={() => toggleGuard(row.key)}
-                  aria-pressed={guard[row.key]}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-                    guard[row.key] ? "bg-emerald-600" : "bg-toggle-off"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                      guard[row.key] ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
+                />
               </div>
             ))}
           </div>
         ) : null}
 
-        {/* TortoiseGit + Git: OpenSSH (Windows) */}
         {openSshProbe?.available ? (
           <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
             <h3 className="font-medium text-fg-2">{m.settings.tortoise.title}</h3>
             <p className="text-xs text-fg-4 leading-relaxed">
               {rich(m.settings.tortoise.intro)}
             </p>
-            {openSshProbe.sshExe ? (
+            {openSshProbe.ssh_exe ? (
               <p className="text-xs text-fg-5">
                 {rich(
                   fmt(m.settings.tortoise.detected, {
-                    path: openSshProbe.sshExe,
+                    path: openSshProbe.ssh_exe,
                   }),
                   { codeClass: "break-all text-fg-3" },
                 )}
@@ -357,22 +289,12 @@ export default function SettingsPage({ onBack }: Props) {
                   })}
                 </p>
               </div>
-              <button
-                type="button"
+              <Toggle
+                on={useOpenSsh}
                 onClick={() => setUseOpenSsh(!useOpenSsh)}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-                  useOpenSsh ? "bg-emerald-600" : "bg-toggle-off"
-                }`}
-                aria-pressed={useOpenSsh}
-              >
-                <span
-                  className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                    useOpenSsh ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </button>
+              />
             </div>
-            {useOpenSsh && !openSshProbe.sshExe ? (
+            {useOpenSsh && !openSshProbe.ssh_exe ? (
               <p className="text-xs text-red-600 dark:text-red-400">
                 {rich(m.settings.tortoise.willFail)}
               </p>
@@ -380,7 +302,6 @@ export default function SettingsPage({ onBack }: Props) {
           </div>
         ) : null}
 
-        {/* GitHub OAuth */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
           <h3 className="font-medium text-fg-2">{m.settings.github.title}</h3>
           <p className="text-xs text-fg-4">{m.settings.github.required}</p>
@@ -405,7 +326,6 @@ export default function SettingsPage({ onBack }: Props) {
           />
         </div>
 
-        {/* GitLab OAuth */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
           <h3 className="font-medium text-fg-2">{m.settings.gitlab.title}</h3>
           <p className="text-xs text-fg-4">{m.settings.gitlab.required}</p>

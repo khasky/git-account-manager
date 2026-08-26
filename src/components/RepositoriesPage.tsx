@@ -6,20 +6,20 @@ import {
   DiscoveredRepo,
   DoctorReport,
   Profile,
-  RepoAccess,
+  RepoReach,
   RepoBinding,
   RepoCheck,
   RepoRoot,
   RepoState,
+  PlatformId,
 } from "../types";
+import { PLATFORMS } from "../platforms";
+import Toggle from "./Toggle";
 import { useI18n, fmt } from "../i18n";
 
 interface Props {
   onBack: () => void;
 }
-
-const PLATFORMS = ["github", "gitlab", "bitbucket"] as const;
-type PlatformId = (typeof PLATFORMS)[number];
 
 interface Draft {
   profileId: string;
@@ -27,8 +27,14 @@ interface Draft {
   installHook: boolean;
 }
 
+const DEFAULT_DRAFT: Draft = {
+  profileId: "",
+  pinAlias: false,
+  installHook: true,
+};
+
 function platformsOf(profile: Profile): PlatformId[] {
-  return PLATFORMS.filter((p) => profile[p] !== undefined && profile[p] !== null);
+  return PLATFORMS.filter((p) => profile[p] != null);
 }
 
 /** The host tells us the platform; a self-hosted host does not, so fall back to
@@ -41,31 +47,6 @@ function resolvePlatform(
   if (!profile) return null;
   const owned = platformsOf(profile);
   return owned.length === 1 ? owned[0] : null;
-}
-
-function Toggle({
-  on,
-  onClick,
-}: {
-  on: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-        on ? "bg-emerald-600" : "bg-toggle-off"
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-          on ? "translate-x-4" : "translate-x-0"
-        }`}
-      />
-    </button>
-  );
 }
 
 export default function RepositoriesPage({ onBack }: Props) {
@@ -165,9 +146,9 @@ export default function RepositoriesPage({ onBack }: Props) {
             bound?.profile_id ??
             repo.suggested_profile_id ??
             repo.candidate_profile_ids[0] ??
-            "",
-          pinAlias: bound?.pin_remote_alias ?? false,
-          installHook: bound?.install_hook ?? true,
+            DEFAULT_DRAFT.profileId,
+          pinAlias: bound?.pin_remote_alias ?? DEFAULT_DRAFT.pinAlias,
+          installHook: bound?.install_hook ?? DEFAULT_DRAFT.installHook,
         };
       }
       return next;
@@ -215,7 +196,7 @@ export default function RepositoriesPage({ onBack }: Props) {
     const platform = resolvePlatform(repo, profile);
     if (!profile || !platform) return;
     const access = await run(`access:${repo.path}`, () =>
-      invoke<RepoAccess>("verify_repo_access", {
+      invoke<RepoReach>("verify_repo_access", {
         profileId: profile.id,
         platform,
         owner: repo.owner,
@@ -223,12 +204,14 @@ export default function RepositoriesPage({ onBack }: Props) {
       }),
     );
     if (!access) return;
-    const template = !access.found
-      ? m.repos.accessMissing
-      : access.can_push
-        ? m.repos.accessOk
-        : m.repos.accessNoPush;
-    setNote(fmt(template, { full: access.full_name }));
+    setNote(
+      access.reachable
+        ? fmt(m.repos.accessOk, { full: access.full_name })
+        : fmt(m.repos.accessDenied, {
+            full: access.full_name,
+            detail: access.detail,
+          }),
+    );
   }
 
   async function probeAlias(host: string) {
@@ -303,7 +286,6 @@ export default function RepositoriesPage({ onBack }: Props) {
       </div>
 
       <div className="flex-1 space-y-6 overflow-y-auto p-6">
-        {/* Machine-wide state */}
         {report && (
           <div className="space-y-2 rounded-lg border border-bd bg-raised-40 p-4">
             <h3 className="font-medium text-fg-2">{m.repos.machineTitle}</h3>
@@ -330,7 +312,6 @@ export default function RepositoriesPage({ onBack }: Props) {
           </div>
         )}
 
-        {/* Watched folders */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -415,7 +396,6 @@ export default function RepositoriesPage({ onBack }: Props) {
           </button>
         </div>
 
-        {/* Discovered repositories */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
           <h3 className="font-medium text-fg-2">{m.repos.reposTitle}</h3>
           {found.length === 0 ? (
@@ -463,11 +443,7 @@ export default function RepositoriesPage({ onBack }: Props) {
                           setDrafts((prev) => ({
                             ...prev,
                             [repo.path]: {
-                              ...(prev[repo.path] ?? {
-                                pinAlias: false,
-                                installHook: true,
-                                profileId: "",
-                              }),
+                              ...(prev[repo.path] ?? DEFAULT_DRAFT),
                               profileId: e.target.value,
                             },
                           }))
@@ -523,17 +499,17 @@ export default function RepositoriesPage({ onBack }: Props) {
                           </p>
                         </div>
                         <Toggle
-                          on={draft?.pinAlias ?? false}
+                          size="sm"
+                          on={draft?.pinAlias ?? DEFAULT_DRAFT.pinAlias}
                           onClick={() =>
                             setDrafts((prev) => ({
                               ...prev,
                               [repo.path]: {
-                                ...(prev[repo.path] ?? {
-                                  profileId: "",
-                                  installHook: true,
-                                  pinAlias: false,
-                                }),
-                                pinAlias: !(prev[repo.path]?.pinAlias ?? false),
+                                ...(prev[repo.path] ?? DEFAULT_DRAFT),
+                                pinAlias: !(
+                                  prev[repo.path]?.pinAlias ??
+                                  DEFAULT_DRAFT.pinAlias
+                                ),
                               },
                             }))
                           }
@@ -549,18 +525,16 @@ export default function RepositoriesPage({ onBack }: Props) {
                           </p>
                         </div>
                         <Toggle
-                          on={draft?.installHook ?? true}
+                          size="sm"
+                          on={draft?.installHook ?? DEFAULT_DRAFT.installHook}
                           onClick={() =>
                             setDrafts((prev) => ({
                               ...prev,
                               [repo.path]: {
-                                ...(prev[repo.path] ?? {
-                                  profileId: "",
-                                  pinAlias: false,
-                                  installHook: true,
-                                }),
+                                ...(prev[repo.path] ?? DEFAULT_DRAFT),
                                 installHook: !(
-                                  prev[repo.path]?.installHook ?? true
+                                  prev[repo.path]?.installHook ??
+                                  DEFAULT_DRAFT.installHook
                                 ),
                               },
                             }))
@@ -575,7 +549,6 @@ export default function RepositoriesPage({ onBack }: Props) {
           )}
         </div>
 
-        {/* Doctor */}
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
           <div className="flex items-start justify-between gap-4">
             <div>

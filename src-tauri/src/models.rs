@@ -1,5 +1,36 @@
 use serde::{Deserialize, Serialize};
 
+/// The platforms this app knows, in the order every list and menu shows them.
+pub const PLATFORMS: [&str; 3] = ["github", "gitlab", "bitbucket"];
+
+/// Delimiters of the region this app owns inside `~/.gitconfig` and
+/// `~/.ssh/config`. Two different modules rewrite those files and the markers
+/// must never drift apart, so they live in one place.
+pub const MANAGED_HEADER: &str = "# === begin git-account-manager ===";
+pub const MANAGED_FOOTER: &str = "# === end git-account-manager ===";
+
+/// Reduces a free-form name to a token usable as an SSH `Host` alias and as a
+/// filename: anything that is not alphanumeric becomes a hyphen, runs of them
+/// collapse, and the result never starts or ends with one. Letters outside
+/// ASCII survive — dropping them would collapse two different non-Latin names
+/// onto the same alias.
+pub fn slugify(raw: &str) -> String {
+    let collapsed = raw
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if collapsed.is_empty() {
+        "unknown".to_string()
+    } else {
+        collapsed
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformAccount {
     pub username: String,
@@ -36,22 +67,27 @@ impl Profile {
         }
     }
 
-    /// The profile name as it appears in SSH host aliases (`github-<slug>`).
+    pub fn account_mut(&mut self, platform: &str) -> Option<&mut PlatformAccount> {
+        match platform {
+            "github" => self.github.as_mut(),
+            "gitlab" => self.gitlab.as_mut(),
+            "bitbucket" => self.bitbucket.as_mut(),
+            _ => None,
+        }
+    }
+
+    /// The profile name as it appears in SSH host aliases (`github-<slug>`) and
+    /// in generated identity filenames. Sanitized, because a name carrying `/`,
+    /// `:` or `*` would otherwise write a broken `Host` line or escape the
+    /// directory the identity file belongs in.
     pub fn slug(&self) -> String {
-        self.name.to_lowercase().replace(' ', "-")
+        slugify(&self.name)
     }
 
     pub fn active_identity(&self) -> Option<(&str, &str)> {
-        let platform = self.default_platform.as_deref();
-        match platform {
-            Some("github") => self.github.as_ref(),
-            Some("gitlab") => self.gitlab.as_ref(),
-            Some("bitbucket") => self.bitbucket.as_ref(),
-            _ => self
-                .github
-                .as_ref()
-                .or(self.gitlab.as_ref())
-                .or(self.bitbucket.as_ref()),
+        match self.default_platform.as_deref() {
+            Some(platform @ ("github" | "gitlab" | "bitbucket")) => self.account(platform),
+            _ => PLATFORMS.iter().find_map(|p| self.account(p)),
         }
         .map(|a| (a.git_name.as_str(), a.git_email.as_str()))
     }
@@ -189,4 +225,41 @@ pub struct DeviceCodeResponse {
     pub verification_uri: String,
     pub expires_in: u64,
     pub interval: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The slug is pasted into an SSH `Host` line and into a filename, so the
+    /// characters that break either one must not survive: a path separator
+    /// would escape the identities directory, `:` would split the scp-form
+    /// remote URL in the wrong place, and `*`/`?` are SSH host wildcards.
+    #[test]
+    fn slug_drops_everything_that_breaks_a_host_alias_or_a_filename() {
+        assert_eq!(slugify("Work/Team"), "work-team");
+        assert_eq!(slugify(r"Work\Team"), "work-team");
+        assert_eq!(slugify("host:22"), "host-22");
+        assert_eq!(slugify("any*thing?"), "any-thing");
+        assert_eq!(slugify("../escape"), "escape");
+        assert_eq!(slugify("  spaced  out  "), "spaced-out");
+        assert_eq!(slugify("!!!"), "unknown");
+    }
+
+    /// Plain names keep the shape aliases already written on disk have, so an
+    /// existing install keeps resolving `github-<slug>`.
+    #[test]
+    fn slug_leaves_ordinary_names_untouched() {
+        assert_eq!(slugify("Personal"), "personal");
+        assert_eq!(slugify("Work Account"), "work-account");
+        assert_eq!(slugify("my-pc"), "my-pc");
+    }
+
+    /// Stripping non-ASCII letters would map every Cyrillic name onto the same
+    /// alias and silently point two profiles at one key.
+    #[test]
+    fn slug_keeps_non_ascii_letters_apart() {
+        assert_ne!(slugify("Работа"), slugify("Личное"));
+        assert_eq!(slugify("Работа"), "работа");
+    }
 }

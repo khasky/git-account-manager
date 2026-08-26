@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Profile, GitIdentity } from "./types";
+import { Profile, GitIdentity, PlatformId } from "./types";
+import { PLATFORMS, PLATFORM_LABEL } from "./platforms";
 import { useTheme } from "./ThemeContext";
 import { useI18n, fmt } from "./i18n";
 import ProfileCard from "./components/ProfileCard";
@@ -10,56 +11,16 @@ import ProfileForm from "./components/ProfileForm";
 import SettingsPage from "./components/SettingsPage";
 import RepositoriesPage from "./components/RepositoriesPage";
 import UpdateBanner from "./components/UpdateBanner";
+import {
+  GitHubIcon,
+  MonitorIcon,
+  MoonIcon,
+  SunIcon,
+} from "./components/icons";
 
 type View = "list" | "form" | "settings" | "repos";
 
-const SunIcon = () => (
-  <svg
-    className="h-4 w-4"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-    />
-  </svg>
-);
-
-const MoonIcon = () => (
-  <svg
-    className="h-4 w-4"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-    />
-  </svg>
-);
-
-const MonitorIcon = () => (
-  <svg
-    className="h-4 w-4"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-    />
-  </svg>
-);
+const TOAST_MS = 3000;
 
 function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -72,6 +33,7 @@ function App() {
   const { m } = useI18n();
   const [themeOpen, setThemeOpen] = useState(false);
   const themeRef = useRef<HTMLDivElement>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -118,9 +80,21 @@ function App() {
     };
   }, [loadProfiles]);
 
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  // Restart the timer rather than add one: a second toast arriving early would
+  // otherwise be cleared by the first one's timeout.
   function showToast(msg: string) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(""), 3000);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMsg("");
+      toastTimerRef.current = null;
+    }, TOAST_MS);
   }
 
   function handleAdd() {
@@ -167,33 +141,15 @@ function App() {
     try {
       if (deleteKeys) {
         const keyPaths: string[] = [];
-        if (profile.github) {
-          keyPaths.push(profile.github.ssh_private_key_path);
-          if (profile.github.ssh_public_key_path) {
+        for (const platform of PLATFORMS) {
+          const account = profile[platform];
+          if (!account) continue;
+          keyPaths.push(account.ssh_private_key_path);
+          if (account.ssh_public_key_path) {
             await invoke("remove_ssh_key_from_platform", {
-              platform: "github",
+              platform,
               profileId: profile.id,
-              publicKeyPath: profile.github.ssh_public_key_path,
-            }).catch(() => {});
-          }
-        }
-        if (profile.gitlab) {
-          keyPaths.push(profile.gitlab.ssh_private_key_path);
-          if (profile.gitlab.ssh_public_key_path) {
-            await invoke("remove_ssh_key_from_platform", {
-              platform: "gitlab",
-              profileId: profile.id,
-              publicKeyPath: profile.gitlab.ssh_public_key_path,
-            }).catch(() => {});
-          }
-        }
-        if (profile.bitbucket) {
-          keyPaths.push(profile.bitbucket.ssh_private_key_path);
-          if (profile.bitbucket.ssh_public_key_path) {
-            await invoke("remove_ssh_key_from_platform", {
-              platform: "bitbucket",
-              profileId: profile.id,
-              publicKeyPath: profile.bitbucket.ssh_public_key_path,
+              publicKeyPath: account.ssh_public_key_path,
             }).catch(() => {});
           }
         }
@@ -210,10 +166,7 @@ function App() {
     }
   }
 
-  async function handleSetDefault(
-    id: string,
-    platform: "github" | "gitlab" | "bitbucket",
-  ) {
+  async function handleSetDefault(id: string, platform: PlatformId) {
     const profile = profiles.find((p) => p.id === id);
     if (!profile) return;
     try {
@@ -223,12 +176,7 @@ function App() {
       await loadProfiles();
       showToast(
         fmt(m.app.toastDefaultIdentity, {
-          platform:
-            platform === "github"
-              ? "GitHub"
-              : platform === "gitlab"
-                ? "GitLab"
-                : "Bitbucket",
+          platform: PLATFORM_LABEL[platform],
         }),
       );
     } catch (e) {
@@ -304,9 +252,7 @@ function App() {
             className="rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2"
             title={m.app.githubRepo}
           >
-            <svg className="h-5 w-5" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
-            </svg>
+            <GitHubIcon className="h-5 w-5" />
           </button>
           <div className="relative" ref={themeRef}>
             <button

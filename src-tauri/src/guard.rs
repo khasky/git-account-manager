@@ -11,14 +11,10 @@
 //! outside it is preserved byte for byte.
 
 use crate::git;
-use crate::models::{GuardSettings, Profile, RepoRoot};
+use crate::models::{GuardSettings, Profile, RepoRoot, MANAGED_FOOTER, MANAGED_HEADER, PLATFORMS};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-
-const MANAGED_HEADER: &str = "# === begin git-account-manager ===";
-const MANAGED_FOOTER: &str = "# === end git-account-manager ===";
-const PLATFORMS: [&str; 3] = ["github", "gitlab", "bitbucket"];
 
 fn gitconfig_path() -> Result<PathBuf, String> {
     Ok(dirs::home_dir()
@@ -42,8 +38,6 @@ fn identity_file(profile: &Profile, platform: &str) -> Result<PathBuf, String> {
 fn posix(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
-
-// ---- Global identity fuse ----
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuardStatus {
@@ -110,8 +104,6 @@ pub fn apply(
 pub fn relax_global_identity() -> Result<(), String> {
     git::set_use_config_only(false)
 }
-
-// ---- Generated includeIf region ----
 
 fn write_includes(profiles: &[Profile], roots: &[RepoRoot]) -> Result<(), String> {
     let mut body = String::new();
