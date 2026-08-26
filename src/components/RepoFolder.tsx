@@ -1,6 +1,8 @@
 import { fmt, useI18n } from "../i18n";
 import { decidedByEvidence } from "../repoEvidence";
-import type { DiscoveredRepo, PlatformId, RepoRoot } from "../types";
+import type { DiscoveredRepo, PlatformId, RepoNote, RepoRoot } from "../types";
+import InfoTip from "./InfoTip";
+import Spinner from "./Spinner";
 import Toggle from "./Toggle";
 
 interface Props {
@@ -13,13 +15,17 @@ interface Props {
   selected: Record<string, boolean>;
   open: boolean;
   busy: string;
+  /** Some action is running: every other one waits its turn. */
+  blocked: boolean;
+  note: RepoNote | null;
   onToggleOpen: () => void;
   onRemove: () => void;
   onUpdate: (next: Partial<RepoRoot>) => void;
   onSelect: (path: string, checked: boolean) => void;
   onOverride: (path: string, next: Partial<DiscoveredRepo>) => void;
+  onFollowFolder: (path: string) => void;
   onCheckAccess: (repo: DiscoveredRepo) => void;
-  onProbeAlias: (host: string) => void;
+  onProbeAlias: (repo: DiscoveredRepo) => void;
 }
 
 /** One watched folder: where it is, what its repositories inherit, and which of
@@ -32,11 +38,14 @@ export default function RepoFolder({
   selected,
   open,
   busy,
+  blocked,
+  note,
   onToggleOpen,
   onRemove,
   onUpdate,
   onSelect,
   onOverride,
+  onFollowFolder,
   onCheckAccess,
   onProbeAlias,
 }: Props) {
@@ -83,9 +92,13 @@ export default function RepoFolder({
       </div>
 
       <div className="space-y-1.5 border-t border-bd pt-2">
+        <p className="text-[11px] text-fg-5">{m.repos.folderDefaults}</p>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs text-fg-3">{m.repos.installHook}</p>
+            <p className="flex items-center gap-1.5 text-xs text-fg-3">
+              {m.repos.installHook}
+              <InfoTip text={m.repos.installHookInfo} />
+            </p>
             <p className="text-[11px] text-fg-5">{m.repos.installHookHint}</p>
           </div>
           <Toggle
@@ -96,7 +109,10 @@ export default function RepoFolder({
         </div>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs text-fg-3">{m.repos.pinAlias}</p>
+            <p className="flex items-center gap-1.5 text-xs text-fg-3">
+              {m.repos.pinAlias}
+              <InfoTip text={m.repos.pinAliasInfo} />
+            </p>
             <p className="text-[11px] text-fg-5">{m.repos.pinAliasHint}</p>
           </div>
           <Toggle
@@ -148,11 +164,6 @@ export default function RepoFolder({
                   >
                     {repo.name}
                   </label>
-                  {repo.overrides_root && (
-                    <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] text-fg-4">
-                      {m.repos.overridden}
-                    </span>
-                  )}
                 </div>
                 <p className="text-[11px] text-fg-5">
                   {reasonLabel[repo.reason]}
@@ -161,8 +172,28 @@ export default function RepoFolder({
                   {repo.remote_url}
                 </code>
 
-                <div className="flex flex-wrap items-center gap-3 pt-0.5">
-                  <label className="flex items-center gap-1 text-[11px] text-fg-4">
+                {/* The same two settings as the folder above, shown here so it
+                    is visible which ones this repository will actually get and
+                    whether they still come from the folder. */}
+                <div className="space-y-1 rounded bg-raised/60 px-2 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-[11px] text-fg-5">
+                      {repo.overrides_root
+                        ? m.repos.setApart
+                        : m.repos.followsFolder}
+                      <InfoTip text={m.repos.overrideInfo} />
+                    </span>
+                    {repo.overrides_root && (
+                      <button
+                        type="button"
+                        onClick={() => onFollowFolder(repo.path)}
+                        className="text-[11px] text-link hover:underline"
+                      >
+                        {m.repos.useFolderDefaults}
+                      </button>
+                    )}
+                  </div>
+                  <label className="flex items-center gap-1.5 text-[11px] text-fg-4">
                     <input
                       type="checkbox"
                       checked={repo.install_hook}
@@ -173,9 +204,9 @@ export default function RepoFolder({
                       }
                       className="h-3 w-3 accent-blue-600"
                     />
-                    {m.repos.hookShort}
+                    {m.repos.installHook}
                   </label>
-                  <label className="flex items-center gap-1 text-[11px] text-fg-4">
+                  <label className="flex items-center gap-1.5 text-[11px] text-fg-4">
                     <input
                       type="checkbox"
                       checked={repo.pin_remote_alias}
@@ -186,25 +217,42 @@ export default function RepoFolder({
                       }
                       className="h-3 w-3 accent-blue-600"
                     />
-                    {m.repos.aliasShort}
+                    {m.repos.pinAlias}
                   </label>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 pt-0.5">
                   <button
                     type="button"
                     onClick={() => onCheckAccess(repo)}
-                    disabled={busy === `access:${repo.path}`}
-                    className="text-[11px] text-link hover:underline disabled:opacity-50"
+                    disabled={blocked}
+                    className="inline-flex items-center gap-1 text-[11px] text-link hover:underline disabled:opacity-50"
                   >
+                    {busy === `access:${repo.path}` && <Spinner />}
                     {m.repos.verifyAccess}
                   </button>
                   <button
                     type="button"
-                    onClick={() => onProbeAlias(repo.host)}
-                    disabled={busy === `ssh:${repo.host}`}
-                    className="text-[11px] text-link hover:underline disabled:opacity-50"
+                    onClick={() => onProbeAlias(repo)}
+                    disabled={blocked}
+                    className="inline-flex items-center gap-1 text-[11px] text-link hover:underline disabled:opacity-50"
                   >
+                    {busy === `ssh:${repo.path}` && <Spinner />}
                     {m.repos.probeAlias}
                   </button>
                 </div>
+
+                {note &&
+                  (note.key === `access:${repo.path}` ||
+                    note.key === `ssh:${repo.path}`) && (
+                    <p
+                      className={`rounded bg-raised px-2 py-1.5 text-[11px] break-all whitespace-pre-wrap ${
+                        note.tone === "bad" ? "text-danger-fg" : "text-fg-3"
+                      }`}
+                    >
+                      {note.text}
+                    </p>
+                  )}
               </li>
             );
           })}

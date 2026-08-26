@@ -143,6 +143,16 @@ export interface RepoCheck {
   id: "exists" | "identity" | "local" | "remote" | "history" | "hooks";
   ok: boolean;
   detail: string;
+  /** Where to look — empty when the detail already says everything. */
+  hint: string;
+}
+
+/** A result addressed to the control that produced it, so it can be rendered
+ *  next to that control instead of at the bottom of the panel. */
+export interface RepoNote {
+  key: string;
+  tone: "ok" | "bad";
+  text: string;
 }
 
 export interface RepoStatus {

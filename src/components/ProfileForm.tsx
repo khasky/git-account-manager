@@ -24,6 +24,7 @@ import PlatformSection, {
   type PlatformState,
 } from "./PlatformSection";
 import ProfileRepos from "./ProfileRepos";
+import Spinner from "./Spinner";
 
 interface Props {
   profile: Profile | null;
@@ -134,15 +135,26 @@ export default function ProfileForm({
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [storedBindings, setStoredBindings] = useState<RepoBinding[]>([]);
   const [statuses, setStatuses] = useState<RepoStatus[]>([]);
+  // The doctor reads every bound repository from disk, so the section announces
+  // itself as loading rather than rendering an empty state it is about to
+  // contradict.
+  const [reposLoading, setReposLoading] = useState(true);
 
   const loadRepoState = useCallback(async () => {
-    const [state, report] = await Promise.all([
-      api.getRepoState(),
-      api.doctor(),
-    ]);
-    setRoots(state.roots.filter((r) => r.profile_id === profileId));
-    setStoredBindings(state.bindings.filter((b) => b.profile_id === profileId));
-    setStatuses(report.repos.filter((r) => r.profile_id === profileId));
+    setReposLoading(true);
+    try {
+      const [state, report] = await Promise.all([
+        api.getRepoState(),
+        api.doctor(),
+      ]);
+      setRoots(state.roots.filter((r) => r.profile_id === profileId));
+      setStoredBindings(
+        state.bindings.filter((b) => b.profile_id === profileId),
+      );
+      setStatuses(report.repos.filter((r) => r.profile_id === profileId));
+    } finally {
+      setReposLoading(false);
+    }
   }, [profileId]);
 
   useEffect(() => {
@@ -759,6 +771,7 @@ export default function ProfileForm({
               selected={selected}
               setSelected={setSelected}
               statuses={statuses}
+              loading={reposLoading}
               onFixed={() => loadRepoState().catch(() => {})}
             />
           )}
@@ -775,8 +788,9 @@ export default function ProfileForm({
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="btn-primary"
+            className="btn-primary inline-flex items-center gap-2"
           >
+            {saving && <Spinner />}
             {saving
               ? m.form.saving
               : isEdit
