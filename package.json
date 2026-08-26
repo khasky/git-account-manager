@@ -2,12 +2,51 @@
   "name": "git-account-manager",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "author": {
     "name": "Khasky",
     "url": "https://github.com/khasky"
   },
-  "license": "MIT",
+  "description": "A desktop Git account manager for identity switching across popular code hosting platforms.",
+  "keywords": [
+    "git",
+    "git-config",
+    "account-manager",
+    "identity",
+    "ssh",
+    "ssh-keys",
+    "github",
+    "gitlab",
+    "bitbucket",
+    "tauri",
+    "desktop-app"
+  ],
+  "homepage": "https://github.com/khasky/git-account-manager",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khasky/git-account-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/khasky/git-account-manager/issues"
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/khasky"
+    },
+    {
+      "type": "patreon",
+      "url": "https://www.patreon.com/khasky"
+    },
+    {
+      "type": "ko-fi",
+      "url": "https://ko-fi.com/khasky"
+    }
+  ],
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev:web": "vite",
     "dev:desktop": "tauri dev",
