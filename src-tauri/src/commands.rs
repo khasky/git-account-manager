@@ -362,6 +362,23 @@ pub struct RepoState {
     guard: GuardSettings,
 }
 
+/// Runs blocking work off the main thread.
+///
+/// Tauri executes a synchronous command on the main thread, so anything that
+/// shells out to Git holds the window frozen for as long as it takes — a scan
+/// walks the disk, the doctor spawns several Git processes per repository.
+/// Declaring the command `async` and handing the body to `spawn_blocking` keeps
+/// the UI responsive while the work runs.
+async fn off_main<T, F>(work: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[derive(serde::Serialize)]
 pub struct DoctorReport {
     guard: guard::GuardStatus,
@@ -369,20 +386,21 @@ pub struct DoctorReport {
 }
 
 #[tauri::command]
-pub fn get_repo_state() -> Result<RepoState, String> {
-    storage::with_lock(|| {
+pub async fn get_repo_state() -> Result<RepoState, String> {
+    off_main(|| storage::with_lock(|| {
         let state = storage::load_state()?;
         Ok(RepoState {
             roots: state.repo_roots,
             bindings: state.bindings,
             guard: state.guard,
         })
-    })
+    }))
+    .await
 }
 
 #[tauri::command]
-pub fn apply_profile_repos(plan: repos::RepoPlan) -> Result<repos::ApplyReport, String> {
-    storage::with_lock(|| {
+pub async fn apply_profile_repos(plan: repos::RepoPlan) -> Result<repos::ApplyReport, String> {
+    off_main(move || storage::with_lock(move || {
         let mut state = storage::load_state()?;
         let report = repos::apply_plan(
             &state.profiles,
@@ -393,7 +411,8 @@ pub fn apply_profile_repos(plan: repos::RepoPlan) -> Result<repos::ApplyReport, 
         storage::save_state(&state)?;
         guard::apply(&state.guard, &state.profiles, &state.repo_roots)?;
         Ok(report)
-    })
+    }))
+    .await
 }
 
 #[tauri::command]
@@ -443,8 +462,8 @@ fn profile_by_id(state: &AppState, id: &str) -> Result<Profile, String> {
 }
 
 #[tauri::command]
-pub fn fix_repository(path: String) -> Result<repos::BindResult, String> {
-    storage::with_lock(|| {
+pub async fn fix_repository(path: String) -> Result<repos::BindResult, String> {
+    off_main(move || storage::with_lock(move || {
         let state = storage::load_state()?;
         let binding = state
             .bindings
@@ -454,14 +473,18 @@ pub fn fix_repository(path: String) -> Result<repos::BindResult, String> {
             .ok_or_else(|| format!("No binding for {}", path))?;
         let profile = profile_by_id(&state, &binding.profile_id)?;
         repos::apply_binding(&binding, &profile)
-    })
+    }))
+    .await
 }
 
 /// Widens one repository's allow-list. Used to accept an address the history
 /// check flagged — a bot, a co-author — without weakening any other repository.
 #[tauri::command]
-pub fn allow_email_in_repository(path: String, email: String) -> Result<repos::BindResult, String> {
-    storage::with_lock(|| {
+pub async fn allow_email_in_repository(
+    path: String,
+    email: String,
+) -> Result<repos::BindResult, String> {
+    off_main(move || storage::with_lock(move || {
         let mut state = storage::load_state()?;
         let binding = state
             .bindings
@@ -480,12 +503,13 @@ pub fn allow_email_in_repository(path: String, email: String) -> Result<repos::B
         let result = repos::apply_binding(&binding, &profile)?;
         storage::save_state(&state)?;
         Ok(result)
-    })
+    }))
+    .await
 }
 
 #[tauri::command]
-pub fn doctor() -> Result<DoctorReport, String> {
-    storage::with_lock(|| {
+pub async fn doctor() -> Result<DoctorReport, String> {
+    off_main(|| storage::with_lock(|| {
         let state = storage::load_state()?;
         let repos = state
             .bindings
@@ -502,7 +526,8 @@ pub fn doctor() -> Result<DoctorReport, String> {
             guard: guard::status(&state.guard),
             repos,
         })
-    })
+    }))
+    .await
 }
 
 #[tauri::command]
