@@ -8,6 +8,15 @@ Contributions are welcome — bug reports, feature requests, and pull requests.
 
 Set up your local build first: [Development](README.md#development). Every PR branches off `main` the [way described below](#branches-and-pull-requests), runs the [gates](#pre-pr-gates), and follows the [commit convention](#commit-messages). By contributing you agree your work is licensed under the [MIT License](./LICENSE).
 
+## Where each guide lives
+
+| Doc | What it covers |
+| --- | --- |
+| [README.md](README.md#development) | Building and running from source: prerequisites, `pnpm dev:desktop`, the bundle, IDE setup |
+| [docs/releasing.md](docs/releasing.md) | Maintainer-only: cutting a release, what the tag triggers, recovering from a bad one |
+| [SECURITY.md](./SECURITY.md) | Reporting a vulnerability privately |
+| [SUPPORT.md](./SUPPORT.md) | Where to ask a question |
+
 ## Branches and pull requests
 
 `main` is the only long-lived branch, and it is always releasable: every installer is built from a `v*` tag on `main`, so anything merged there has already passed the [gates below](#pre-pr-gates).
@@ -32,11 +41,28 @@ PRs land as a **squash merge**, so `main` keeps a linear history where 1 PR is 1
 A pull request runs the `smoke` job on Linux and Windows. Both platforms are built because a fair amount of the Rust side sits behind `#[cfg(windows)]` or `#[cfg(unix)]`. Reproduce it locally with:
 
 ```bash
-pnpm build:web                                              # tsc --noEmit plus the Vite build
+pnpm build:web                                                              # tsc --noEmit plus the Vite build
+cargo fmt --check --manifest-path src-tauri/Cargo.toml
+cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
 cargo test --all-targets --manifest-path src-tauri/Cargo.toml
 ```
 
+Formatting and lints gate in CI rather than in a hook: `commit-msg` is the only hook installed, and a fork's clone runs none of ours at all.
+
 Installers are not built for a pull request — bundling needs the signing secrets, which a fork never receives. They are produced when a maintainer pushes a `v*` tag.
+
+## What CI runs, and when
+
+One workflow, [`.github/workflows/build.yml`](.github/workflows/build.yml), with jobs gated on what triggered it:
+
+| Job | Runs on | Does |
+| --- | --- | --- |
+| `pr-title` | pull requests | validates the title a squash merge will use as the commit message |
+| `smoke` | pushes and PRs, never tags | the gate above, on Linux and Windows |
+| `build` | `v*` tags, `workflow_dispatch` | bundles all four platforms; on a tag, publishes the release |
+| `finalize-release` | `v*` tags | renames the installers and writes the release notes |
+
+Your PR reaches `pr-title` and `smoke`. The other two are the maintainer's path — [docs/releasing.md](docs/releasing.md).
 
 ## Commit messages
 
@@ -72,18 +98,8 @@ Refs: 79a8186
 
 Keep one concern per commit and per PR: a title that needs a comma-separated list of changes is two PRs.
 
-## Releasing (maintainers)
+## Releasing
 
-Run `pnpm release` ([`commit-and-tag-version`](https://github.com/absolute-version/commit-and-tag-version)). It derives the next version from the Conventional Commits since the last `v*` tag, bumps it in **all four** version files in lockstep — `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock` (the last two via the custom updaters in `scripts/`) — updates `CHANGELOG.md`, then creates the release commit and the `v*` tag.
+Maintainer-only, and it needs the signing secrets — a fork cannot cut one. The runbook lives in [docs/releasing.md](docs/releasing.md): what to run, what the tag triggers, and how to recover from a release that came out wrong.
 
-Publish with `git push --follow-tags`. Pushing the tag triggers `.github/workflows/build.yml`, which builds the signed installers for every platform, publishes the GitHub Release, and fills in its notes automatically.
-
-The release is titled with the tag itself — `v0.1.0`, `v1.1.1` — and its installers are renamed to one pattern:
-
-```text
-Git-Account-Manager-<version>-<win|mac|linux>-<x64|arm64>[-setup].<ext>
-```
-
-Tauri has no artifact-name template, so `scripts/rename-release-assets.sh` does it after tauri-action publishes, and re-points `latest.json` at the new URLs in the same step — an updater aimed at a URL that no longer resolves is worse than an inconsistent filename. The updater's own payloads (`*.nsis.zip`, `*.app.tar.gz`) keep Tauri's names; nobody downloads those by hand. The detached `.sig` files are dropped from the release in the step after the rename: `latest.json` embeds every signature the updater verifies, so the loose files only padded the download list. The script fails the job on any asset it cannot classify rather than leaving one file under the old scheme. Check the naming rules without a release: `bash scripts/rename-release-assets.sh --self-test`.
-
-Preview a release without writing anything: `pnpm exec commit-and-tag-version --dry-run`.
+What matters on the contributor side is that the version and the changelog are derived from what lands on `main`, so the [commit convention](#commit-messages) above is what decides them.
