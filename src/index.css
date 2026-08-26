@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+/* --- Theme variables --- */
+
+[data-theme="dark"] {
+  --c-bg: #0d1117;
+  --c-raised: #161b22;
+  --c-raised-60: rgba(22, 27, 34, 0.6);
+  --c-raised-40: rgba(22, 27, 34, 0.4);
+  --c-subtle: #21262d;
+  --c-hover: #30363d;
+  --c-fg: #e6edf3;
+  --c-fg-2: #c9d1d9;
+  --c-fg-3: #b1bac4;
+  --c-fg-4: #8b949e;
+  --c-fg-5: #6e7681;
+  --c-fg-6: #484f58;
+  --c-border: #30363d;
+  --c-border-s: #484f58;
+  --c-scrollbar: #30363d;
+  --c-overlay: rgba(0, 0, 0, 0.6);
+  --c-dialog: #0d1117;
+  --c-input: #0d1117;
+  --c-link: #58a6ff;
+  --c-link-hover: #79c0ff;
+  --c-active-bg: rgba(6, 78, 59, 0.3);
+  --c-active-border: rgba(52, 211, 153, 0.5);
+  --c-selected-bg: rgba(30, 58, 138, 0.3);
+  --c-selected-border: rgba(96, 165, 250, 0.5);
+  --c-selected-fg: #bfdbfe;
+  --c-info-bg: rgba(23, 37, 84, 0.4);
+  --c-info-border: #1e3a5f;
+  --c-danger-bg: rgba(127, 29, 29, 0.3);
+  --c-danger-hover: rgba(127, 29, 29, 0.5);
+  --c-danger-fg: #f87171;
+  --c-success-fg: #6ee7b7;
+  --c-success-icon: #34d399;
+  --c-badge-ok-bg: rgba(6, 95, 70, 0.6);
+  --c-badge-ok-fg: #6ee7b7;
+  --c-toggle-off: #484f58;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --c-bg: #ffffff;
+  --c-raised: #f6f8fa;
+  --c-raised-60: rgba(234, 238, 242, 0.8);
+  --c-raised-40: rgba(234, 238, 242, 0.6);
+  --c-subtle: #e1e4e8;
+  --c-hover: #d0d7de;
+  --c-fg: #1f2328;
+  --c-fg-2: #32383f;
+  --c-fg-3: #57606a;
+  --c-fg-4: #656d76;
+  --c-fg-5: #8b949e;
+  --c-fg-6: #afb8c1;
+  --c-border: #d0d7de;
+  --c-border-s: #afb8c1;
+  --c-scrollbar: #c0c8d0;
+  --c-overlay: rgba(0, 0, 0, 0.3);
+  --c-dialog: #ffffff;
+  --c-input: #ffffff;
+  --c-link: #0969da;
+  --c-link-hover: #0550ae;
+  --c-active-bg: rgba(218, 251, 225, 0.6);
+  --c-active-border: rgba(22, 163, 74, 0.5);
+  --c-selected-bg: rgba(221, 244, 255, 0.6);
+  --c-selected-border: rgba(59, 130, 246, 0.5);
+  --c-selected-fg: #1e40af;
+  --c-info-bg: #dbeafe;
+  --c-info-border: #93c5fd;
+  --c-danger-bg: #fee2e2;
+  --c-danger-hover: #fecaca;
+  --c-danger-fg: #cf222e;
+  --c-success-fg: #116329;
+  --c-success-icon: #1a7f37;
+  --c-badge-ok-bg: #d1fae5;
+  --c-badge-ok-fg: #065f46;
+  --c-toggle-off: #afb8c1;
+  color-scheme: light;
+}
+
+@theme {
+  --color-surface: var(--c-bg);
+  --color-raised: var(--c-raised);
+  --color-raised-60: var(--c-raised-60);
+  --color-raised-40: var(--c-raised-40);
+  --color-subtle: var(--c-subtle);
+  --color-hover: var(--c-hover);
+  --color-fg: var(--c-fg);
+  --color-fg-2: var(--c-fg-2);
+  --color-fg-3: var(--c-fg-3);
+  --color-fg-4: var(--c-fg-4);
+  --color-fg-5: var(--c-fg-5);
+  --color-fg-6: var(--c-fg-6);
+  --color-bd: var(--c-border);
+  --color-bd-s: var(--c-border-s);
+  --color-overlay: var(--c-overlay);
+  --color-dialog: var(--c-dialog);
+  --color-input: var(--c-input);
+  --color-link: var(--c-link);
+  --color-link-hover: var(--c-link-hover);
+  --color-active-bg: var(--c-active-bg);
+  --color-active-border: var(--c-active-border);
+  --color-selected-bg: var(--c-selected-bg);
+  --color-selected-border: var(--c-selected-border);
+  --color-selected-fg: var(--c-selected-fg);
+  --color-info-bg: var(--c-info-bg);
+  --color-info-border: var(--c-info-border);
+  --color-danger-bg: var(--c-danger-bg);
+  --color-danger-hover: var(--c-danger-hover);
+  --color-danger-fg: var(--c-danger-fg);
+  --color-success-fg: var(--c-success-fg);
+  --color-success-icon: var(--c-success-icon);
+  --color-badge-ok-bg: var(--c-badge-ok-bg);
+  --color-badge-ok-fg: var(--c-badge-ok-fg);
+  --color-toggle-off: var(--c-toggle-off);
+}
+
+button,
+a,
+[role="button"],
+select,
+summary {
+  cursor: pointer;
+}
+
+body {
+  margin: 0;
+  background-color: var(--c-bg);
+  color: var(--c-fg);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  overflow: hidden;
+}
+
+input::placeholder {
+  color: var(--c-fg-5);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--c-scrollbar);
+  border-radius: 3px;
+}
