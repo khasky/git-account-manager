@@ -387,31 +387,35 @@ pub struct DoctorReport {
 
 #[tauri::command]
 pub async fn get_repo_state() -> Result<RepoState, String> {
-    off_main(|| storage::with_lock(|| {
-        let state = storage::load_state()?;
-        Ok(RepoState {
-            roots: state.repo_roots,
-            bindings: state.bindings,
-            guard: state.guard,
+    off_main(|| {
+        storage::with_lock(|| {
+            let state = storage::load_state()?;
+            Ok(RepoState {
+                roots: state.repo_roots,
+                bindings: state.bindings,
+                guard: state.guard,
+            })
         })
-    }))
+    })
     .await
 }
 
 #[tauri::command]
 pub async fn apply_profile_repos(plan: repos::RepoPlan) -> Result<repos::ApplyReport, String> {
-    off_main(move || storage::with_lock(move || {
-        let mut state = storage::load_state()?;
-        let report = repos::apply_plan(
-            &state.profiles,
-            &mut state.repo_roots,
-            &mut state.bindings,
-            plan,
-        )?;
-        storage::save_state(&state)?;
-        guard::apply(&state.guard, &state.profiles, &state.repo_roots)?;
-        Ok(report)
-    }))
+    off_main(move || {
+        storage::with_lock(move || {
+            let mut state = storage::load_state()?;
+            let report = repos::apply_plan(
+                &state.profiles,
+                &mut state.repo_roots,
+                &mut state.bindings,
+                plan,
+            )?;
+            storage::save_state(&state)?;
+            guard::apply(&state.guard, &state.profiles, &state.repo_roots)?;
+            Ok(report)
+        })
+    })
     .await
 }
 
@@ -463,17 +467,19 @@ fn profile_by_id(state: &AppState, id: &str) -> Result<Profile, String> {
 
 #[tauri::command]
 pub async fn fix_repository(path: String) -> Result<repos::BindResult, String> {
-    off_main(move || storage::with_lock(move || {
-        let state = storage::load_state()?;
-        let binding = state
-            .bindings
-            .iter()
-            .find(|b| b.path == path)
-            .cloned()
-            .ok_or_else(|| format!("No binding for {}", path))?;
-        let profile = profile_by_id(&state, &binding.profile_id)?;
-        repos::apply_binding(&binding, &profile)
-    }))
+    off_main(move || {
+        storage::with_lock(move || {
+            let state = storage::load_state()?;
+            let binding = state
+                .bindings
+                .iter()
+                .find(|b| b.path == path)
+                .cloned()
+                .ok_or_else(|| format!("No binding for {}", path))?;
+            let profile = profile_by_id(&state, &binding.profile_id)?;
+            repos::apply_binding(&binding, &profile)
+        })
+    })
     .await
 }
 
@@ -484,49 +490,53 @@ pub async fn allow_email_in_repository(
     path: String,
     email: String,
 ) -> Result<repos::BindResult, String> {
-    off_main(move || storage::with_lock(move || {
-        let mut state = storage::load_state()?;
-        let binding = state
-            .bindings
-            .iter_mut()
-            .find(|b| b.path == path)
-            .ok_or_else(|| format!("No binding for {}", path))?;
-        let email = email.trim().to_string();
-        if email.is_empty() {
-            return Err("Email is empty".to_string());
-        }
-        if !binding.extra_allowed_emails.contains(&email) {
-            binding.extra_allowed_emails.push(email);
-        }
-        let binding = binding.clone();
-        let profile = profile_by_id(&state, &binding.profile_id)?;
-        let result = repos::apply_binding(&binding, &profile)?;
-        storage::save_state(&state)?;
-        Ok(result)
-    }))
+    off_main(move || {
+        storage::with_lock(move || {
+            let mut state = storage::load_state()?;
+            let binding = state
+                .bindings
+                .iter_mut()
+                .find(|b| b.path == path)
+                .ok_or_else(|| format!("No binding for {}", path))?;
+            let email = email.trim().to_string();
+            if email.is_empty() {
+                return Err("Email is empty".to_string());
+            }
+            if !binding.extra_allowed_emails.contains(&email) {
+                binding.extra_allowed_emails.push(email);
+            }
+            let binding = binding.clone();
+            let profile = profile_by_id(&state, &binding.profile_id)?;
+            let result = repos::apply_binding(&binding, &profile)?;
+            storage::save_state(&state)?;
+            Ok(result)
+        })
+    })
     .await
 }
 
 #[tauri::command]
 pub async fn doctor() -> Result<DoctorReport, String> {
-    off_main(|| storage::with_lock(|| {
-        let state = storage::load_state()?;
-        let repos = state
-            .bindings
-            .iter()
-            .filter_map(|b| {
-                state
-                    .profiles
-                    .iter()
-                    .find(|p| p.id == b.profile_id)
-                    .map(|p| repos::inspect(b, p))
+    off_main(|| {
+        storage::with_lock(|| {
+            let state = storage::load_state()?;
+            let repos = state
+                .bindings
+                .iter()
+                .filter_map(|b| {
+                    state
+                        .profiles
+                        .iter()
+                        .find(|p| p.id == b.profile_id)
+                        .map(|p| repos::inspect(b, p))
+                })
+                .collect();
+            Ok(DoctorReport {
+                guard: guard::status(&state.guard),
+                repos,
             })
-            .collect();
-        Ok(DoctorReport {
-            guard: guard::status(&state.guard),
-            repos,
         })
-    }))
+    })
     .await
 }
 

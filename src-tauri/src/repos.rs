@@ -1235,22 +1235,32 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.to_string_lossy().replace('\\', "/");
 
-        Command::new("git").args(["init", "-q", &path]).output().unwrap();
+        Command::new("git")
+            .args(["init", "-q", &path])
+            .output()
+            .unwrap();
         let runners = dir.join(".husky").join("_");
         std::fs::create_dir_all(&runners).unwrap();
         std::fs::write(runners.join("h"), "#!/usr/bin/env sh\n").unwrap();
         // husky's own runner, which must survive.
-        std::fs::write(runners.join("pre-push"), "#!/usr/bin/env sh\n. \"$(dirname \"$0\")/h\"\n")
-            .unwrap();
+        std::fs::write(
+            runners.join("pre-push"),
+            "#!/usr/bin/env sh\n. \"$(dirname \"$0\")/h\"\n",
+        )
+        .unwrap();
         git(&path, &["config", "core.hooksPath", ".husky/_"]);
 
         assert_eq!(install_hook(&path).unwrap(), "installed");
 
         let ours = dir.join(".husky").join("pre-push");
         assert!(ours.exists(), "guard must land in the slot husky calls");
-        assert!(std::fs::read_to_string(&ours).unwrap().contains(HOOK_MARKER));
+        assert!(std::fs::read_to_string(&ours)
+            .unwrap()
+            .contains(HOOK_MARKER));
         assert!(
-            !std::fs::read_to_string(runners.join("pre-push")).unwrap().contains(HOOK_MARKER),
+            !std::fs::read_to_string(runners.join("pre-push"))
+                .unwrap()
+                .contains(HOOK_MARKER),
             "husky's runner must be left alone"
         );
         assert_eq!(hook_state(&path).0, "installed");
