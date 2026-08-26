@@ -661,6 +661,44 @@ fn check(id: &str, ok: bool, detail: String) -> RepoCheck {
     }
 }
 
+/// How many repositories are inspected at once. Each one is mostly spent waiting
+/// on Git processes, so the cap is about not spawning a thread per repository on
+/// a tree with hundreds of them, not about saturating the CPU.
+const INSPECT_CONCURRENCY: usize = 8;
+
+/// Inspects every binding, several at a time.
+///
+/// A single repository costs roughly eight Git processes and they are slow to
+/// spawn on Windows; the repositories do not depend on each other, so running
+/// them one after another made the report take the sum rather than the slowest.
+pub fn inspect_all(bindings: &[RepoBinding], profiles: &[Profile]) -> Vec<RepoStatus> {
+    let pairs: Vec<(&RepoBinding, &Profile)> = bindings
+        .iter()
+        .filter_map(|b| {
+            profiles
+                .iter()
+                .find(|p| p.id == b.profile_id)
+                .map(|p| (b, p))
+        })
+        .collect();
+
+    let mut out = Vec::with_capacity(pairs.len());
+    for chunk in pairs.chunks(INSPECT_CONCURRENCY) {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|(binding, profile)| scope.spawn(move || inspect(binding, profile)))
+                .collect();
+            for handle in handles {
+                if let Ok(status) = handle.join() {
+                    out.push(status);
+                }
+            }
+        });
+    }
+    out
+}
+
 pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
     let dir = binding.path.clone();
     let name = Path::new(&dir)

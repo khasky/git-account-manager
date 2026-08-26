@@ -518,23 +518,14 @@ pub async fn allow_email_in_repository(
 #[tauri::command]
 pub async fn doctor() -> Result<DoctorReport, String> {
     off_main(|| {
-        storage::with_lock(|| {
-            let state = storage::load_state()?;
-            let repos = state
-                .bindings
-                .iter()
-                .filter_map(|b| {
-                    state
-                        .profiles
-                        .iter()
-                        .find(|p| p.id == b.profile_id)
-                        .map(|p| repos::inspect(b, p))
-                })
-                .collect();
-            Ok(DoctorReport {
-                guard: guard::status(&state.guard),
-                repos,
-            })
+        // The lock guards the state file, and reading it takes milliseconds; the
+        // Git work that follows takes seconds and touches nothing shared. Holding
+        // the lock across both made every other command queue behind the report.
+        let state = storage::with_lock(storage::load_state)?;
+        let repos = repos::inspect_all(&state.bindings, &state.profiles);
+        Ok(DoctorReport {
+            guard: guard::status(&state.guard),
+            repos,
         })
     })
     .await
