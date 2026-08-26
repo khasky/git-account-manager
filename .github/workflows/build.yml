@@ -223,6 +223,23 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: bash scripts/rename-release-assets.sh
 
+      # Every signature the updater checks is already embedded in latest.json,
+      # which the rename step just rewrote - it never fetches a .sig asset. The
+      # loose files are 400 bytes each and only pad the download list, so they
+      # go once latest.json carries them.
+      - name: Drop detached signature assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh api "repos/$REPO/releases/tags/$TAG" \
+            --jq '.assets[] | select(.name | endswith(".sig")) | "\(.id) \(.name)"' |
+            while read -r id name; do
+              gh api --method DELETE "repos/$REPO/releases/assets/$id"
+              echo "dropped $name"
+            done
+
       - name: Generate release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -231,7 +248,9 @@ jobs:
         run: |
           release=$(gh api "repos/$REPO/releases/tags/$TAG")
           id=$(echo "$release" | jq -r '.id')
-          name=$(echo "$release" | jq -r '.name')
-          gh api --method PATCH "repos/$REPO/releases/$id" \
-            -f name="$name" \
-            -F generate_release_notes=true
+          # `generate_release_notes` exists only on Create a release; Update a
+          # release silently drops it and answers 200, leaving tauri-action's
+          # placeholder body in place. Generate the notes first, then write them.
+          notes=$(gh api --method POST "repos/$REPO/releases/generate-notes" \
+            -f tag_name="$TAG" -q .body)
+          gh api --method PATCH "repos/$REPO/releases/$id" -f body="$notes"
