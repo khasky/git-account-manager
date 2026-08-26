@@ -13,7 +13,7 @@ A desktop Git account manager for identity switching across popular code hosting
 <picture>
   <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark1.webp">
   <source media="(prefers-color-scheme: light)" srcset="screenshots/light1.webp">
-  <img src="screenshots/dark1.webp" width="760" alt="Git Account Manager">
+  <img src="screenshots/dark1.webp" width="760" alt="Profile list with three Git identities, one active">
 </picture>
 
 <sub>Built with <b>Tauri v2</b> (Rust) · <b>React</b> · <b>TypeScript</b> · <b>Tailwind CSS</b></sub>
@@ -57,14 +57,50 @@ It's the only tool here that **generates and uploads an SSH key for you from a G
 <picture>
   <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark3.webp">
   <source media="(prefers-color-scheme: light)" srcset="screenshots/light3.webp">
-  <img src="screenshots/dark3.webp" width="760" alt="Profile editor">
+  <img src="screenshots/dark3.webp" width="760" alt="Profile editor with a connected GitHub account and its uploaded SSH key">
 </picture>
+
+<sub><b>Profile editor</b> — each connected platform keeps its own name, address and SSH key.</sub>
+
+<br><br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark4.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/light4.webp">
+  <img src="screenshots/dark4.webp" width="760" alt="Default Git identity picker above the folders a profile watches">
+</picture>
+
+<sub><b>Default identity and folders</b> — which account supplies the global identity, and which folders the profile claims.</sub>
+
+<br><br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark5.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/light5.webp">
+  <img src="screenshots/dark5.webp" width="760" alt="Doctor listing repositories whose identity drifted">
+</picture>
+
+<sub><b>Doctor</b> — what drifted in each bound repository, and the two ways to settle it.</sub>
+
+<br><br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark6.webp">
+  <source media="(prefers-color-scheme: light)" srcset="screenshots/light6.webp">
+  <img src="screenshots/dark6.webp" width="760" alt="GitHub device code flow while connecting a new account">
+</picture>
+
+<sub><b>Connecting an account</b> — GitHub's device code flow, GitLab's browser authorization, Bitbucket's API token.</sub>
+
+<br><br>
 
 <picture>
   <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark2.webp">
   <source media="(prefers-color-scheme: light)" srcset="screenshots/light2.webp">
-  <img src="screenshots/dark2.webp" width="760" alt="Settings">
+  <img src="screenshots/dark2.webp" width="760" alt="Settings with theme, language and the identity guard rails">
 </picture>
+
+<sub><b>Settings</b> — theme, autostart, 11 languages, and the guard rails that move the identity off the machine.</sub>
 
 </details>
 
@@ -233,6 +269,7 @@ pnpm install
 | -------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------ |
 | **Web** (browser only, faster UI work; Tauri APIs unavailable) | `pnpm dev:web`     | Vite on [http://localhost:1420](http://localhost:1420)             |
 | **Desktop** (full Tauri shell)                                 | `pnpm dev:desktop` | Same as `pnpm tauri dev`; starts the Vite dev server automatically |
+| **Screenshots** (regenerate `screenshots/`)                    | `pnpm screenshots` | Drives the real UI against an invented fixture — see [`scripts/screenshots/`](scripts/screenshots/). Needs `pnpm exec playwright install chromium` once |
 
 ### Build
 

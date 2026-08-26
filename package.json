@@ -56,6 +56,7 @@
     "preview:web": "vite preview",
     "lint": "biome check",
     "lint:fix": "biome check --write",
+    "screenshots": "node scripts/screenshots/capture.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "tauri": "tauri",
@@ -90,6 +91,7 @@
     "commit-and-tag-version": "^12.7.3",
     "husky": "^9.1.7",
     "jsdom": "^30.0.1",
+    "playwright": "^1.62.1",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^4.1.11"
