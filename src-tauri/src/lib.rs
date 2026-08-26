@@ -51,14 +51,14 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
-            #[cfg(windows)]
-            {
-                let openssh_enabled = storage::load_state()
-                    .map(|s| s.oauth.use_openssh_for_git_tools)
-                    .unwrap_or(false);
-                if openssh_enabled {
-                    let _ = openssh_integration::apply(true);
-                }
+            // Re-applied on every launch because the registry value and
+            // `core.sshCommand` live outside this app and can be changed by
+            // anything. `openssh_integration` is a no-op off Windows.
+            let openssh_enabled = storage::load_state()
+                .map(|s| s.oauth.use_openssh_for_git_tools)
+                .unwrap_or(false);
+            if openssh_enabled {
+                let _ = openssh_integration::apply(true);
             }
 
             use tauri::tray::TrayIconBuilder;

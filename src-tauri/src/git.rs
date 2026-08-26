@@ -45,13 +45,19 @@ pub fn get_global_config(key: &str) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-/// Sets Git's global `core.sshCommand` so CLI Git uses the same OpenSSH as TortoiseGit when configured.
+/// Sets Git's global `core.sshCommand` so CLI Git uses the same OpenSSH as
+/// TortoiseGit when configured.
+///
+/// Windows-only, like the integration that calls it: everywhere else Git
+/// already uses the system `ssh` and there is nothing to point it at.
+#[cfg(windows)]
 pub fn set_global_ssh_command(ssh_exe: &str) -> Result<(), String> {
     let normalized = ssh_exe.replace('\\', "/");
     run_git(&["config", "--global", "core.sshCommand", normalized.as_str()]).map(|_| ())
 }
 
 /// Removes `core.sshCommand` if present (ignores "not set").
+#[cfg(windows)]
 pub fn unset_global_ssh_command() -> Result<(), String> {
     run_git_optional(&["config", "--global", "--unset", "core.sshCommand"])
 }

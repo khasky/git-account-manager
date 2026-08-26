@@ -1,4 +1,9 @@
-//! Windows: align TortoiseGit and Git CLI with OpenSSH so `~/.ssh/config` (managed by this app) is honored.
+//! Windows: align TortoiseGit and Git CLI with OpenSSH so `~/.ssh/config`
+//! (managed by this app) is honored.
+//!
+//! Every entry point compiles on every platform and does nothing off Windows,
+//! so callers do not repeat the `cfg`. They used to, which left these functions
+//! looking dead on Linux and macOS and failed `clippy -D warnings` there.
 
 use serde::Serialize;
 

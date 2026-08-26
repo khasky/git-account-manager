@@ -328,7 +328,9 @@ pub fn get_settings() -> Result<OAuthSettings, String> {
 
 #[tauri::command]
 pub fn save_settings(settings: OAuthSettings) -> Result<(), String> {
-    #[cfg(windows)]
+    // Not gated on the platform here: `openssh_integration` answers for that
+    // itself and does nothing off Windows. Repeating the `cfg` at the call site
+    // only made those functions look unused everywhere else.
     if settings.use_openssh_for_git_tools {
         openssh_integration::ensure_ssh_available()?;
     }
@@ -337,11 +339,7 @@ pub fn save_settings(settings: OAuthSettings) -> Result<(), String> {
         let mut state = storage::load_state()?;
         state.oauth = settings;
         storage::save_state(&state)?;
-
-        #[cfg(windows)]
-        openssh_integration::apply(state.oauth.use_openssh_for_git_tools)?;
-
-        Ok(())
+        openssh_integration::apply(state.oauth.use_openssh_for_git_tools)
     })
 }
 
