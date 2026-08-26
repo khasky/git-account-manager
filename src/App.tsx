@@ -50,9 +50,18 @@ function App() {
   const loadProfiles = useCallback(async () => {
     try {
       setProfiles(await api.getProfiles());
-      // The per-profile card shows how many of its repositories drifted, so the
-      // report is fetched here rather than only inside the form a user might
-      // never open.
+    } catch (e) {
+      console.error("Failed to load profiles:", e);
+    } finally {
+      setLoading(false);
+    }
+
+    // The per-profile card shows how many of its repositories drifted, so the
+    // report is fetched here rather than only inside the form a user might never
+    // open. It reads every bound repository from disk, so it is deliberately not
+    // awaited before the list renders — a count arriving a moment later beats a
+    // window that shows nothing until Git has been asked.
+    try {
       const report = await api.doctor();
       const counts: Record<string, number> = {};
       for (const repo of report.repos) {
@@ -62,9 +71,7 @@ function App() {
       }
       setProblems(counts);
     } catch (e) {
-      console.error("Failed to load profiles:", e);
-    } finally {
-      setLoading(false);
+      console.error("Failed to read repository health:", e);
     }
   }, []);
 
