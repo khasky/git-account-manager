@@ -78,4 +78,12 @@ Run `pnpm release` ([`commit-and-tag-version`](https://github.com/absolute-versi
 
 Publish with `git push --follow-tags`. Pushing the tag triggers `.github/workflows/build.yml`, which builds the signed installers for every platform, publishes the GitHub Release, and fills in its notes automatically.
 
+The release is titled with the tag itself — `v0.1.0`, `v1.1.1` — and its installers are renamed to one pattern:
+
+```text
+Git-Account-Manager-<version>-<win|mac|linux>-<x64|arm64>[-setup].<ext>
+```
+
+Tauri has no artifact-name template, so `scripts/rename-release-assets.sh` does it after tauri-action publishes, and re-points `latest.json` at the new URLs in the same step — an updater aimed at a URL that no longer resolves is worse than an inconsistent filename. The updater's own payloads (`*.nsis.zip`, `*.app.tar.gz`) and the `.sig` files keep Tauri's names; nobody downloads those by hand. The script fails the job on any asset it cannot classify rather than leaving one file under the old scheme. Check the naming rules without a release: `bash scripts/rename-release-assets.sh --self-test`.
+
 Preview a release without writing anything: `pnpm exec commit-and-tag-version --dry-run`.

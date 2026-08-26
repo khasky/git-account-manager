@@ -122,7 +122,7 @@ Download the latest release for your OS from the [Releases](https://github.com/k
 | ----------- | --------------------------------------------------------------------------------------------------------- |
 | **Windows** | Download the `.msi`, run it, follow the installer.                                                        |
 | **macOS**   | Download the `.dmg`, open it, drag the app to **Applications**.                                           |
-| **Linux**   | Download the `.AppImage`, `chmod +x GitAccountManager.AppImage`, then run `./GitAccountManager.AppImage`. |
+| **Linux**   | Download the `.AppImage`, `chmod +x Git-Account-Manager-*-linux-x64.AppImage`, then run it.               |
 
 > First Windows launch may show a SmartScreen warning (the installer is not yet code-signed) — see [Troubleshooting](#troubleshooting).
 
@@ -291,7 +291,7 @@ Updater artifacts (`latest.json` + per-installer `.sig`) are signed with a [mini
 
 <br>
 
-When you launch the Windows installer (`Git.Account.Manager_<version>_x64_en-US.msi`), Microsoft Defender SmartScreen may show a blue full-screen dialog titled **"Windows protected your PC"**, with the message _"Microsoft Defender SmartScreen prevented an unrecognized app from starting"_ and **Publisher: Unknown publisher**.
+When you launch the Windows installer (`Git-Account-Manager-<version>-win-x64.msi`), Microsoft Defender SmartScreen may show a blue full-screen dialog titled **"Windows protected your PC"**, with the message _"Microsoft Defender SmartScreen prevented an unrecognized app from starting"_ and **Publisher: Unknown publisher**.
 
 This is **not** a malware detection. SmartScreen is **reputation-based**: it warns about any installer that is **not signed with a paid code-signing certificate** or that has not yet accumulated enough download "reputation" with Microsoft. The Git Account Manager installer is currently **unsigned** — adding a code-signing certificate is a planned step, not an indication that the app is unsafe.
 
