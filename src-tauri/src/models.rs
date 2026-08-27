@@ -194,6 +194,12 @@ pub struct RepoBinding {
     /// so a deliberate exception is not undone by an unrelated edit.
     #[serde(default)]
     pub overrides_root: bool,
+    /// What `origin` was before the alias replaced it. Switching the alias back
+    /// off restores this exactly; rebuilding a canonical URL instead would hand
+    /// back an SSH address to a repository that was cloned over HTTPS, and would
+    /// drop a non-default port along the way.
+    #[serde(default)]
+    pub original_remote_url: Option<String>,
 }
 
 /// Machine-wide guard rails. All default to off so an existing install keeps

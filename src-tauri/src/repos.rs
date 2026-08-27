@@ -441,8 +441,15 @@ pub fn apply_plan(
 
     let mut bound = 0;
     let mut failed = Vec::new();
-    for binding in plan.bindings {
-        match apply_binding(&binding, profile) {
+    for mut binding in plan.bindings {
+        // The form cannot know what a repository's remote was before a previous
+        // run pinned it, so the stored binding keeps that memory across saves.
+        binding.original_remote_url = bindings
+            .iter()
+            .find(|b| b.path == binding.path)
+            .and_then(|b| b.original_remote_url.clone());
+
+        match apply_binding(&mut binding, profile) {
             Ok(_) => {
                 match bindings.iter_mut().find(|b| b.path == binding.path) {
                     Some(existing) => *existing = binding,
@@ -464,7 +471,12 @@ pub fn apply_plan(
     })
 }
 
-pub fn apply_binding(binding: &RepoBinding, profile: &Profile) -> Result<BindResult, String> {
+/// Writes a binding to its repository.
+///
+/// Both switches undo themselves: clearing one puts back what was there rather
+/// than merely stopping short of writing it again, or a repository would keep a
+/// guard and an alias the user had just turned off.
+pub fn apply_binding(binding: &mut RepoBinding, profile: &Profile) -> Result<BindResult, String> {
     let account = profile
         .account(binding.platform)
         .ok_or_else(|| format!("Profile has no {} account", binding.platform.label()))?;
@@ -474,15 +486,32 @@ pub fn apply_binding(binding: &RepoBinding, profile: &Profile) -> Result<BindRes
     let allowed = allowed_emails(binding, profile);
     git::repo_config_replace_all(&binding.path, "gam.allowedEmail", &allowed)?;
 
+    let alias = host_alias(binding.platform, profile);
+    let current = git::repo_remote_url(&binding.path, "origin");
     let mut rewritten = None;
+
     if binding.pin_remote_alias {
-        if let Some(url) = git::repo_remote_url(&binding.path, "origin") {
+        if let Some(url) = current {
             if let Some(remote) = parse_remote_url(&url) {
                 let next = alias_url(binding.platform, profile, &remote);
                 if next != url {
+                    // Remembered before the overwrite, and only the first time:
+                    // re-applying an already pinned remote must not record the
+                    // alias as the thing to restore.
+                    binding.original_remote_url = Some(url);
                     git::set_repo_remote_url(&binding.path, "origin", &next)?;
                     rewritten = Some(next);
                 }
+            }
+        }
+    } else if let Some(url) = current {
+        // Only a remote still carrying this profile's alias is ours to undo; one
+        // the user aliased by hand is left alone.
+        let is_ours = parse_remote_url(&url).is_some_and(|r| r.host.eq_ignore_ascii_case(&alias));
+        if is_ours {
+            if let Some(original) = binding.original_remote_url.take() {
+                git::set_repo_remote_url(&binding.path, "origin", &original)?;
+                rewritten = Some(original);
             }
         }
     }
@@ -490,6 +519,7 @@ pub fn apply_binding(binding: &RepoBinding, profile: &Profile) -> Result<BindRes
     let hook = if binding.install_hook {
         install_hook(&binding.path)?
     } else {
+        remove_hook(&binding.path)?;
         "off".to_string()
     };
 
@@ -894,6 +924,7 @@ mod tests {
             install_hook,
             extra_allowed_emails: vec![],
             overrides_root: overrides,
+            original_remote_url: None,
         }
     }
 
@@ -1035,7 +1066,7 @@ mod tests {
         let profiles = vec![profile()];
         let mut roots = vec![root_at(&dir.to_string_lossy().replace('\\', "/"))];
         let mut bindings = vec![binding_at(&drop, true, false, false)];
-        apply_binding(&bindings[0], &profiles[0]).unwrap();
+        apply_binding(&mut bindings[0], &profiles[0]).unwrap();
         assert!(git::repo_config_get(&drop, "gam.allowedEmail").is_some());
 
         let planned_roots = roots.clone();
@@ -1266,6 +1297,57 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Clearing a switch has to undo what setting it did. Leaving the guard on
+    /// disk or the remote rewritten would keep enforcing a choice the user has
+    /// just reversed, and the repository would disagree with its own settings.
+    #[test]
+    fn clearing_a_switch_puts_back_what_setting_it_changed() {
+        for original in [
+            "git@github.com:octo/demo.git",
+            // Stored rather than rebuilt precisely for this one: a canonical SSH
+            // address is not what this repository was cloned with.
+            "https://github.com/octo/demo.git",
+        ] {
+            let dir = std::env::temp_dir().join(format!(
+                "gam-undo-{}-{}",
+                std::process::id(),
+                original.len()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.to_string_lossy().replace('\\', "/");
+            Command::new("git")
+                .args(["init", "-q", &path])
+                .output()
+                .unwrap();
+            git(&path, &["remote", "add", "origin", original]);
+
+            let profile = profile();
+            let mut binding = binding_at(&path, true, true, false);
+
+            apply_binding(&mut binding, &profile).unwrap();
+            assert_eq!(
+                git::repo_remote_url(&path, "origin").as_deref(),
+                Some("git@github-personal:octo/demo.git")
+            );
+            assert_eq!(binding.original_remote_url.as_deref(), Some(original));
+            assert_eq!(hook_state(&path).0, "installed");
+
+            binding.install_hook = false;
+            binding.pin_remote_alias = false;
+            apply_binding(&mut binding, &profile).unwrap();
+
+            assert_eq!(
+                git::repo_remote_url(&path, "origin").as_deref(),
+                Some(original),
+                "the remote must come back as it was, not as a rebuilt guess"
+            );
+            assert_eq!(hook_state(&path).0, "missing");
+
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
     /// husky owns every file in `.husky/_` and each one runs its namesake from
     /// the parent. Installing into `_` would fight husky for the file and report
     /// a conflict that is not one; the parent slot lets both hooks run.
@@ -1337,7 +1419,7 @@ mod tests {
         );
 
         let profile = profile();
-        let binding = RepoBinding {
+        let mut binding = RepoBinding {
             path: path.clone(),
             profile_id: profile.id.clone(),
             platform: Platform::Github,
@@ -1345,9 +1427,10 @@ mod tests {
             install_hook: true,
             extra_allowed_emails: vec!["bot@example.com".to_string()],
             overrides_root: false,
+            original_remote_url: None,
         };
 
-        let result = apply_binding(&binding, &profile).unwrap();
+        let result = apply_binding(&mut binding, &profile).unwrap();
         assert_eq!(result.hook, "installed");
         assert_eq!(
             result.remote_url.as_deref(),

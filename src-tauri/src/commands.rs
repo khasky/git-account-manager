@@ -469,15 +469,24 @@ fn profile_by_id(state: &AppState, id: &str) -> Result<Profile, String> {
 pub async fn fix_repository(path: String) -> Result<repos::BindResult, String> {
     off_main(move || {
         storage::with_lock(move || {
-            let state = storage::load_state()?;
-            let binding = state
+            let mut state = storage::load_state()?;
+            let profile_id = state
                 .bindings
                 .iter()
                 .find(|b| b.path == path)
-                .cloned()
+                .map(|b| b.profile_id.clone())
                 .ok_or_else(|| format!("No binding for {}", path))?;
-            let profile = profile_by_id(&state, &binding.profile_id)?;
-            repos::apply_binding(&binding, &profile)
+            let profile = profile_by_id(&state, &profile_id)?;
+            let binding = state
+                .bindings
+                .iter_mut()
+                .find(|b| b.path == path)
+                .expect("looked up a moment ago");
+            let result = repos::apply_binding(binding, &profile)?;
+            // Re-applying can be what first pins the remote, and the address it
+            // replaced is only recoverable if it is written down now.
+            storage::save_state(&state)?;
+            Ok(result)
         })
     })
     .await
@@ -492,22 +501,31 @@ pub async fn allow_email_in_repository(
 ) -> Result<repos::BindResult, String> {
     off_main(move || {
         storage::with_lock(move || {
-            let mut state = storage::load_state()?;
-            let binding = state
-                .bindings
-                .iter_mut()
-                .find(|b| b.path == path)
-                .ok_or_else(|| format!("No binding for {}", path))?;
             let email = email.trim().to_string();
             if email.is_empty() {
                 return Err("Email is empty".to_string());
             }
+
+            let mut state = storage::load_state()?;
+            let profile_id = state
+                .bindings
+                .iter()
+                .find(|b| b.path == path)
+                .map(|b| b.profile_id.clone())
+                .ok_or_else(|| format!("No binding for {}", path))?;
+            // Resolved before the mutable borrow: the profile is read from the
+            // same state the binding lives in.
+            let profile = profile_by_id(&state, &profile_id)?;
+
+            let binding = state
+                .bindings
+                .iter_mut()
+                .find(|b| b.path == path)
+                .expect("looked up a moment ago");
             if !binding.extra_allowed_emails.contains(&email) {
                 binding.extra_allowed_emails.push(email);
             }
-            let binding = binding.clone();
-            let profile = profile_by_id(&state, &binding.profile_id)?;
-            let result = repos::apply_binding(&binding, &profile)?;
+            let result = repos::apply_binding(binding, &profile)?;
             storage::save_state(&state)?;
             Ok(result)
         })

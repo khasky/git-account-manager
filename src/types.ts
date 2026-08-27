@@ -85,6 +85,9 @@ export interface RepoBinding {
   extra_allowed_emails: string[];
   /** Deliberately set apart from its folder's defaults. */
   overrides_root: boolean;
+  /** What `origin` was before the alias replaced it. Owned by the backend,
+   *  which carries it across saves so unpinning restores the real address. */
+  original_remote_url?: string | null;
 }
 
 export interface GuardSettings {
