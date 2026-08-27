@@ -1,0 +1,56 @@
+name: Mirror to GitLab
+
+# One-way push mirror to gitlab.com/khasky/emojery. GitHub is the only source
+# of truth: the push is a force + prune, so anything created directly on the
+# GitLab side is overwritten or deleted on the next run. GitLab's own pull
+# mirroring would do this without a workflow, but it is a Premium feature.
+#
+# Needs a GITLAB_TOKEN repository secret - a GitLab project access token with
+# the Maintainer role and the write_repository scope. If `main` is protected on
+# GitLab, the token needs force-push rights there or the push is rejected with
+# "pre-receive hook declined".
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  delete:
+  schedule:
+    # Safety net: catches anything the event triggers missed (a run that failed
+    # while the token was expired, a manual ref change).
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-gitlab
+  # Two mirror pushes must not race; a cancelled one can leave the remote
+  # half-updated, so queue instead of cancelling.
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Push mirror
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # A bare mirror clone, not actions/checkout: the push needs every branch
+      # and tag, and checkout gives a single-ref working tree.
+      - name: Clone source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git clone --mirror "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" src.git
+
+      # Explicit refspecs rather than `git push --mirror`: GitHub advertises
+      # refs/pull/*, and --mirror would copy every pull-request ref into the
+      # GitLab repo. Branches and tags only.
+      - name: Push to GitLab
+        working-directory: src.git
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          git push --prune \
+            "https://oauth2:${GITLAB_TOKEN}@gitlab.com/khasky/emojery.git" \
+            '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
