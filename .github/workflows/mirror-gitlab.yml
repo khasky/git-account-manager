@@ -52,5 +52,5 @@ jobs:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
         run: |
           git push --prune \
-            "https://oauth2:${GITLAB_TOKEN}@gitlab.com/khasky/emojery.git" \
+            "https://oauth2:${GITLAB_TOKEN}@gitlab.com/khasky/git-account-manager.git" \
             '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
