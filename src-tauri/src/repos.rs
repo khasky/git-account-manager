@@ -547,11 +547,14 @@ fn install_hook(dir: &str) -> Result<String, String> {
     Ok("installed".to_string())
 }
 
+/// Removes only a guard this app wrote. It has to resolve the path the same way
+/// `install_hook` does — under husky the guard lives one directory above the
+/// hooks path, and looking in the hooks path itself would leave it behind,
+/// refusing pushes for a binding that no longer exists.
 pub fn remove_hook(dir: &str) -> Result<(), String> {
-    let Some(hooks_dir) = git::repo_hooks_dir(dir) else {
+    let Some(path) = pre_push_path(dir) else {
         return Ok(());
     };
-    let path = hooks_dir.join("pre-push");
     if path.exists()
         && std::fs::read_to_string(&path)
             .unwrap_or_default()
@@ -1302,6 +1305,15 @@ mod tests {
             "husky's runner must be left alone"
         );
         assert_eq!(hook_state(&path).0, "installed");
+
+        // Releasing the repository has to find the guard where it was put, or it
+        // outlives the binding and keeps refusing pushes.
+        remove_hook(&path).unwrap();
+        assert!(!ours.exists(), "guard must be removed from husky's slot");
+        assert!(
+            runners.join("pre-push").exists(),
+            "husky's own runner is not ours to delete"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
