@@ -10,9 +10,10 @@
 # so every rename is mirrored into latest.json - an updater pointing at a URL
 # that no longer resolves is worse than an inconsistent filename.
 #
-# The updater's own payloads (*.nsis.zip, *.app.tar.gz) and the detached
-# signatures are left alone: nobody downloads them by hand, and the macOS ones
-# carry no architecture token to rename them by.
+# The macOS updater payloads (*.app.tar.gz) are renamed too: they carry an
+# architecture token and the version comes from the tag, so nothing stopped them
+# following the pattern. The *.nsis.zip payload and the detached signatures are
+# left alone - the signatures are dropped in the next job anyway.
 #
 # Usage: rename-release-assets.sh            (needs GH_TOKEN, REPO, TAG)
 #        rename-release-assets.sh --self-test
@@ -27,6 +28,8 @@ classify() {
   local name=$1 version=$2 os ext suffix arch
 
   case "$name" in
+    # Longest extension first: *.app.tar.gz would otherwise never be reached.
+    *.app.tar.gz) os=mac; ext=app.tar.gz; suffix="" ;;
     *.msi) os=win; ext=msi; suffix="" ;;
     *-setup.exe) os=win; ext=exe; suffix="-setup" ;;
     *.dmg) os=mac; ext=dmg; suffix="" ;;
@@ -57,6 +60,8 @@ self_test() {
     "Git.Account.Manager_0.1.7_amd64.AppImage|Git-Account-Manager-0.1.7-linux-x64.AppImage"
     "Git.Account.Manager_0.1.7_amd64.deb|Git-Account-Manager-0.1.7-linux-x64.deb"
     "Git-Account-Manager-0.1.7-1.x86_64.rpm|Git-Account-Manager-0.1.7-linux-x64.rpm"
+    "Git.Account.Manager_aarch64.app.tar.gz|Git-Account-Manager-0.1.7-mac-arm64.app.tar.gz"
+    "Git.Account.Manager_x64.app.tar.gz|Git-Account-Manager-0.1.7-mac-x64.app.tar.gz"
   )
   for case in "${cases[@]}"; do
     got=$(classify "${case%%|*}" 0.1.7) || got="<error>"
@@ -67,6 +72,8 @@ self_test() {
   done
 
   # Anything unrecognized must fail loudly rather than pass through unrenamed.
+  # An .app.tar.gz with no architecture token still has to fail: the pattern
+  # cannot be built without one, and a silent skip would leave it behind.
   for bad in "Git.Account.Manager_0.1.7_x64-setup.nsis.zip" "Git.Account.Manager.app.tar.gz" "latest.json"; do
     if classify "$bad" 0.1.7 2>/dev/null; then
       echo "FAIL $bad: classified, expected an error" >&2
@@ -87,7 +94,7 @@ renames=$(mktemp)
 
 while IFS=$'\t' read -r asset_id name; do
   case "$name" in
-    latest.json | *.sig | *.nsis.zip | *.app.tar.gz) continue ;;
+    latest.json | *.sig | *.nsis.zip) continue ;;
   esac
 
   new=$(classify "$name" "$version")

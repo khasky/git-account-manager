@@ -63,8 +63,8 @@ Git-Account-Manager-<version>-mac-x64.dmg
 Git-Account-Manager-<version>-linux-x64.AppImage
 Git-Account-Manager-<version>-linux-x64.deb
 Git-Account-Manager-<version>-linux-x64.rpm
-Git.Account.Manager_aarch64.app.tar.gz
-Git.Account.Manager_x64.app.tar.gz
+Git-Account-Manager-<version>-mac-arm64.app.tar.gz
+Git-Account-Manager-<version>-mac-x64.app.tar.gz
 latest.json
 ```
 
@@ -74,22 +74,29 @@ Tauri has no artifact-name template, so `scripts/rename-release-assets.sh` renam
 bash scripts/rename-release-assets.sh --self-test
 ```
 
-The two `.app.tar.gz` archives keep Tauri's names and are not clutter: they are the only format the macOS updater can install, since it replaces the `.app` bundle in place and cannot mount a DMG. Windows and Linux update straight from the `.msi`/`-setup.exe` and the AppImage, which is why they need no extra payload.
+The two `.app.tar.gz` archives are not clutter: they are the only format the macOS updater can install, since it replaces the `.app` bundle in place and cannot mount a DMG. Renaming them is safe because the updater reads their URL out of `latest.json`, which the same step rewrites, and the signature covers the bytes rather than the asset name. Windows and Linux update straight from the `.msi`/`-setup.exe` and the AppImage, which is why they need no extra payload.
 
 The detached `.sig` files are deleted in the step after the rename. Every signature the updater verifies is embedded in `latest.json`, which is what it reads; the loose files were downloaded by nobody and only padded the list.
 
 ## Release notes
 
-`finalize-release` generates the notes through the dedicated endpoint and writes them into the body:
+`finalize-release` slices the version's section out of `CHANGELOG.md` and writes it into the body:
 
 ```bash
-notes=$(gh api --method POST "repos/$REPO/releases/generate-notes" -f tag_name="$TAG" -q .body)
-gh api --method PATCH "repos/$REPO/releases/$id" -f body="$notes"
+node scripts/release-notes.mjs "${TAG#v}" release-notes.md
+gh release edit "$TAG" --repo "$REPO" --notes-file release-notes.md
 ```
 
-Two calls rather than one for a reason worth remembering: `generate_release_notes` is accepted only by *Create a release*. Passing it to *Update a release* is silently dropped and still answers `200`, so the step goes green while tauri-action's placeholder body survives — the failure mode is a release that looks fine in CI and wrong on the page.
+It does **not** use GitHub's `generate-notes`, which builds its "What's Changed" list from the pull requests in the tag range. Every commit here lands on `main` as a direct push, so that list is always empty and the endpoint returns nothing but a compare link — which is what `v0.2.0` shipped with before this was changed. `CHANGELOG.md` is written by `commit-and-tag-version` from the commits themselves and needs no pull requests to say anything.
 
-The body is the changelog GitHub derives from the commit range. `CHANGELOG.md` in the repo is the version written by `pnpm release`; the two are generated independently and are not expected to match word for word.
+The extraction is covered by `scripts/lib/release-notes.test.mjs`: that a shorter version cannot claim a longer one's section (`0.1.3` vs `0.1.30`), that the compare link is lifted out of the heading and re-appended as a footer, and that a version carrying only hidden commit types says so instead of pointing at an equally silent file.
+
+Rewrite the body of a release that was published before this — or one whose job failed after the build:
+
+```bash
+node scripts/release-notes.mjs 0.2.0 release-notes.md
+gh release edit v0.2.0 --notes-file release-notes.md
+```
 
 ## Signing and the updater
 
