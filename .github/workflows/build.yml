@@ -254,17 +254,21 @@ jobs:
               echo "dropped $name"
             done
 
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      # GitHub's own generate-notes builds its list from the pull requests in the
+      # tag range, and everything here lands on `main` as a direct push - so it
+      # returned a bare compare link and v0.2.0 shipped with an empty body.
+      # CHANGELOG.md, written by commit-and-tag-version from those same commits,
+      # already holds the text the page was missing.
       - name: Generate release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          release=$(gh api "repos/$REPO/releases/tags/$TAG")
-          id=$(echo "$release" | jq -r '.id')
-          # `generate_release_notes` exists only on Create a release; Update a
-          # release silently drops it and answers 200, leaving tauri-action's
-          # placeholder body in place. Generate the notes first, then write them.
-          notes=$(gh api --method POST "repos/$REPO/releases/generate-notes" \
-            -f tag_name="$TAG" -q .body)
-          gh api --method PATCH "repos/$REPO/releases/$id" -f body="$notes"
+          node scripts/release-notes.mjs "${TAG#v}" release-notes.md
+          gh release edit "$TAG" --repo "$REPO" --notes-file release-notes.md

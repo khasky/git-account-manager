@@ -30,6 +30,8 @@ export default defineConfig(async () => ({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}"],
+    // The release-notes helper lives in scripts/, not src/: it is build
+    // tooling, and its test belongs next to it rather than in the app.
+    include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.mjs"],
   },
 }));
