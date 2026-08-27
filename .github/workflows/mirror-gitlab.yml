@@ -12,7 +12,7 @@ name: Mirror to GitLab
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
     tags: ["**"]
   delete:
   schedule:
