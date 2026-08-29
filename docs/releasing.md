@@ -21,6 +21,20 @@ A `workflow_dispatch` run builds all four platforms with the release config and 
 
 **A dependency bump that touches `@tauri-apps/*` or the `tauri` crate counts as a platform dependency changing.** Those two halves are one product and the CLI refuses to build when they disagree on major/minor, so a bump that lands on only one side breaks `build` and nothing else. `smoke` now gates the pair on every push through `scripts/check-tauri-parity.mjs` (`pnpm check:tauri`, covered by `scripts/lib/tauri-parity.test.mjs`), which catches that specific drift before a tag exists. It does not cover the rest of `build` — bundling, signing, the three non-Windows targets — so the rehearsal above still applies.
 
+## The first release
+
+The very first tag takes `--first-release`: it skips the bump and tags the version already in `package.json`, while still writing the changelog and creating the release commit:
+
+```bash
+pnpm release --first-release --dry-run
+pnpm release --first-release
+git push --follow-tags origin main
+```
+
+Because no earlier tag exists, this first `CHANGELOG.md` section spans the entire commit history: every `feat`, `fix`, `perf`, `refactor`, and `revert` commit appears, while `docs`, `style`, `test`, `build`, `ci`, and `chore` stay hidden. The `--dry-run` above prints that section without writing anything; to trim it, edit `CHANGELOG.md` and `git commit --amend` before pushing. A `CHANGELOG.md` committed by hand before this point is not a problem either — the `prechangelog` hook (`scripts/clear-changelog-seed.mjs`) empties a seed-only file so its header cannot end up duplicated.
+
+The flag must not be reused — a second run would tag a version that already exists.
+
 ## A normal release
 
 ```bash
@@ -37,8 +51,6 @@ Override the derived version when it is wrong — a release that is really a maj
 pnpm release --release-as minor
 pnpm release --release-as 1.0.0
 ```
-
-`--first-release` belongs to the very first tag: it skips the bump and tags the version already in `package.json`. It must not be reused — a second run would tag a version that already exists.
 
 ## What the tag triggers
 
