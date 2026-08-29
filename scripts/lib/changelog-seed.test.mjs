@@ -5,8 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { isSeedOnly } from "./changelog-seed.mjs";
 
-const seed =
-  "# Changelog\n\nAll notable changes to Git Account Manager are documented here.\n";
+const seed = "# Changelog\n\nAll notable changes are documented here.\n";
 
 describe("isSeedOnly", () => {
   it("reports a hand-written header that no release has been added to yet", () => {
