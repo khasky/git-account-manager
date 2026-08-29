@@ -19,6 +19,8 @@ gh workflow run "Build & Release" --ref main
 
 A `workflow_dispatch` run builds all four platforms with the release config and keeps the installers as CI artifacts without publishing anything. Failing there costs a rerun; failing on a tag leaves a half-published release to clean up.
 
+**A dependency bump that touches `@tauri-apps/*` or the `tauri` crate counts as a platform dependency changing.** Those two halves are one product and the CLI refuses to build when they disagree on major/minor, so a bump that lands on only one side breaks `build` and nothing else. `smoke` now gates the pair on every push through `scripts/check-tauri-parity.mjs` (`pnpm check:tauri`, covered by `scripts/lib/tauri-parity.test.mjs`), which catches that specific drift before a tag exists. It does not cover the rest of `build` — bundling, signing, the three non-Windows targets — so the rehearsal above still applies.
+
 ## A normal release
 
 ```bash
@@ -45,7 +47,7 @@ Pushing the tag starts [`.github/workflows/build.yml`](../.github/workflows/buil
 | Job | Runs on | Does |
 | --- | --- | --- |
 | `pr-title` | pull requests | validates the title a squash merge will use as the commit message |
-| `smoke` | pushes and PRs, never tags | typecheck, `cargo fmt`/`clippy`/`test` on Linux and Windows |
+| `smoke` | pushes and PRs, never tags | Tauri version parity, typecheck, `cargo fmt`/`clippy`/`test` on Linux and Windows |
 | `build` | `v*` tags, `workflow_dispatch` | bundles Windows, Linux, macOS ARM and macOS Intel; on a tag, publishes the release |
 | `finalize-release` | `v*` tags, after all four builds | renames installers, drops `.sig` assets, writes the release notes |
 

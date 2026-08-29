@@ -56,6 +56,7 @@
     "preview:web": "vite preview",
     "lint": "biome check",
     "lint:fix": "biome check --write",
+    "check:tauri": "node scripts/check-tauri-parity.mjs",
     "screenshots": "node scripts/screenshots/capture.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -41,6 +41,7 @@ PRs land as a **squash merge**, so `main` keeps a linear history where 1 PR is 1
 A pull request runs the `smoke` job on Linux and Windows. Both platforms are built because a fair amount of the Rust side sits behind `#[cfg(windows)]` or `#[cfg(unix)]`. Reproduce it locally with:
 
 ```bash
+pnpm check:tauri                                                            # the tauri crate and @tauri-apps/api must share a major/minor
 pnpm build:web                                                              # tsc --noEmit plus the Vite build
 cargo fmt --check --manifest-path src-tauri/Cargo.toml
 cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings

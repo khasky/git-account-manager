@@ -81,6 +81,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      # `tauri build` makes this same comparison, and only the tag-only `build`
+      # job reaches it - so a drifted pair surfaced as a failed release instead
+      # of as a failed push. Runs before the Rust steps to fail fast.
+      - name: Check Tauri version parity
+        run: pnpm check:tauri
+
       - name: Rust cache
         uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
