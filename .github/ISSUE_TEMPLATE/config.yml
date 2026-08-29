@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the README first
+    url: https://github.com/khasky/git-account-manager#troubleshooting
+    about: Installation, the Repositories tab, and the Troubleshooting section cover the common cases.
+  - name: Report a security vulnerability
+    url: https://github.com/khasky/git-account-manager/security/advisories/new
+    about: Please report security issues privately, not as public issues.
+  - name: Support the project
+    url: https://github.com/sponsors/khasky
+    about: If Git Account Manager is useful to you, you can support its development.
