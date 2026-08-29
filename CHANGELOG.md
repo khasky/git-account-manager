@@ -2,6 +2,8 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.0.1](https://github.com/khasky/git-account-manager/compare/v1.0.0...v1.0.1) (2026-08-29)
+
 ## 1.0.0 (2026-08-29)
 
 
