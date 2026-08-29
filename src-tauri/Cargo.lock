@@ -1618,7 +1618,7 @@ dependencies = [
 
 [[package]]
 name = "git-account-manager"
-version = "1.0.2"
+version = "1.0.0"
 dependencies = [
  "apple-native-keyring-store",
  "base64 0.22.1",
