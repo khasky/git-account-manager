@@ -54,7 +54,7 @@ Installers are not built for a pull request — bundling needs the signing secre
 
 ## What CI runs, and when
 
-One workflow, [`.github/workflows/build.yml`](.github/workflows/build.yml), with jobs gated on what triggered it:
+CI is one workflow, [`.github/workflows/build.yml`](.github/workflows/build.yml), with jobs gated on what triggered it. (`mirror.yml`, the other file there, gates nothing: it pushes copies of the repository to the mirror hosts.)
 
 | Job | Runs on | Does |
 | --- | --- | --- |
