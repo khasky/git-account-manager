@@ -318,7 +318,18 @@ export default function PlatformSection({
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => onChange({ sshSource: "generate" })}
+            onClick={() =>
+              // Leaving the browsed key behind would let a path the account
+              // never attached reach the profile it is saved into. This
+              // branch is only reachable while nothing is attached yet, so
+              // there is nothing here worth keeping.
+              onChange({
+                sshSource: "generate",
+                selectedKey: "",
+                sshPrivateKeyPath: "",
+                sshPublicKeyPath: "",
+              })
+            }
             className={`rounded-md px-2 py-1 text-xs ${state.sshSource === "generate" ? "bg-blue-600 text-white" : "bg-subtle text-fg-3"}`}
           >
             {m.form.generateUpload}
