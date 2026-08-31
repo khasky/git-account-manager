@@ -43,6 +43,8 @@ export interface PlatformUser {
   email?: string;
   noreply_email?: string;
   avatar_url?: string;
+  /** Present when `username` is a fallback the platform could not confirm. */
+  username_notice?: string;
 }
 
 export interface OAuthSettings {

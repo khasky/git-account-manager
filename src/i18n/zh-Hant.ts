@@ -187,6 +187,7 @@ export const zhHant: Messages = {
     signCommits: `用此金鑰簽署提交`,
     signCommitsHint: `將金鑰註冊為簽署金鑰並開啟 commit.gpgsign。「Verified」標記還需要 Git 信箱已在帳號中確認。`,
     signingFailed: `金鑰已上傳，但未啟用簽署：{error}。重新連接 {platform} 以授予新權限。`,
+    usernameNotice: `無法讀取帳號登入名稱（{error}），因此「{username}」是顯示名稱。請帶上 read:workspace:bitbucket scope 重新建立 Atlassian API 權杖並重新連接。`,
     disconnect: `中斷連接`,
     defaultIdentity: `預設 Git 身分`,
     defaultIdentityHint1: `由於兩個平台都已連接，請選擇用於 <code>git config --global user.name</code> 和 <code>user.email</code> 的身分。`,

@@ -187,6 +187,7 @@ export const ko: Messages = {
     signCommits: `이 키로 커밋에 서명`,
     signCommitsHint: `키를 서명용으로 등록하고 commit.gpgsign을 켭니다. "Verified" 배지는 Git 이메일이 계정에서 확인되어 있어야 합니다.`,
     signingFailed: `키는 업로드되었지만 서명이 활성화되지 않았습니다: {error}. 새 권한을 부여하려면 {platform}을(를) 다시 연결하세요.`,
+    usernameNotice: `계정 로그인 이름을 읽지 못했습니다({error}). "{username}"은(는) 표시 이름입니다. read:workspace:bitbucket 스코프로 Atlassian API 토큰을 다시 만들고 다시 연결하세요.`,
     disconnect: `연결 해제`,
     defaultIdentity: `기본 Git 신원`,
     defaultIdentityHint1: `두 플랫폼이 모두 연결되어 있으므로 <code>git config --global user.name</code> 및 <code>user.email</code>에 사용할 신원을 선택하세요.`,

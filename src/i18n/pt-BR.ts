@@ -187,6 +187,7 @@ export const ptBR: Messages = {
     signCommits: `Assinar os commits com esta chave`,
     signCommitsHint: `Registra a chave para assinatura e ativa commit.gpgsign. O selo "Verified" também exige o e-mail do Git confirmado na conta.`,
     signingFailed: `A chave foi enviada, mas a assinatura não foi ativada: {error}. Reconecte o {platform} para conceder a nova permissão.`,
+    usernameNotice: `Não foi possível ler o login da conta ({error}), então "{username}" é o nome exibido. Recrie o token de API da Atlassian com o scope read:workspace:bitbucket e conecte-se novamente.`,
     disconnect: `Desconectar`,
     defaultIdentity: `Identidade Git padrão`,
     defaultIdentityHint1: `Como ambas as plataformas estão conectadas, escolha qual identidade usar para <code>git config --global user.name</code> e <code>user.email</code>.`,

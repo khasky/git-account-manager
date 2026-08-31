@@ -187,6 +187,7 @@ export const ja: Messages = {
     signCommits: `この鍵でコミットに署名する`,
     signCommitsHint: `鍵を署名用に登録し、commit.gpgsign を有効にします。「Verified」バッジには、Git のメールがアカウントで確認済みである必要もあります。`,
     signingFailed: `鍵はアップロードされましたが、署名は有効になりませんでした: {error}。新しい権限を付与するため {platform} を再接続してください。`,
+    usernameNotice: `アカウントのログイン名を取得できませんでした ({error})。「{username}」は表示名です。read:workspace:bitbucket スコープを付けて Atlassian API トークンを作り直し、再接続してください。`,
     disconnect: `切断`,
     defaultIdentity: `既定の Git アイデンティティ`,
     defaultIdentityHint1: `両方のプラットフォームが接続されているため、<code>git config --global user.name</code> と <code>user.email</code> に使用するアイデンティティを選択してください。`,

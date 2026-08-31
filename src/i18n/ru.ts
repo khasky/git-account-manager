@@ -187,6 +187,7 @@ export const ru: Messages = {
     signCommits: `Подписывать коммиты этим ключом`,
     signCommitsHint: `Регистрирует ключ для подписи и включает commit.gpgsign. Для отметки «Verified» email коммита должен быть подтверждён в аккаунте.`,
     signingFailed: `Ключ загружен, но подпись не включена: {error}. Переподключи {platform}, чтобы выдать новое разрешение.`,
+    usernameNotice: `Логин аккаунта прочитать не удалось ({error}), поэтому «{username}» — это отображаемое имя. Пересоздай Atlassian API-токен со scope read:workspace:bitbucket и подключись заново.`,
     disconnect: `Отключить`,
     defaultIdentity: `Git-идентичность по умолчанию`,
     defaultIdentityHint1: `Поскольку подключены обе платформы, выберите, какую идентичность использовать для <code>git config --global user.name</code> и <code>user.email</code>.`,

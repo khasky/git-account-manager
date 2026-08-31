@@ -106,6 +106,7 @@ async fn verify_github(client: &Client, token: &str) -> Result<PlatformUser, Str
         email,
         noreply_email: Some(noreply),
         avatar_url: user.avatar_url,
+        username_notice: None,
     })
 }
 
@@ -156,6 +157,7 @@ async fn verify_gitlab(client: &Client, token: &str) -> Result<PlatformUser, Str
         email: user.email,
         noreply_email: noreply,
         avatar_url: user.avatar_url,
+        username_notice: None,
     })
 }
 
@@ -458,31 +460,49 @@ fn pick_workspace_slug(memberships: Vec<BitbucketWorkspaceAccess>, uuid: &str) -
 /// `bitbucket.org/khasky`. Using it produced a profile link that 404s and an SSH
 /// key filename naming someone else.
 ///
-/// Needs `read:workspace:bitbucket`, which tokens issued before this existed do
-/// not carry; a token without it fails here and the caller falls back to the
-/// nickname, which is what it always used.
-async fn bitbucket_workspace_slug(client: &Client, token: &str, uuid: &str) -> Option<String> {
+/// Needs `read:workspace:bitbucket`. An Atlassian token's scopes are fixed when
+/// it is created, so a token issued before this was asked for answers 403 here
+/// for good — which is why the failure is reported rather than swallowed.
+async fn bitbucket_workspace_slug(
+    client: &Client,
+    token: &str,
+    uuid: &str,
+) -> Result<String, String> {
     let resp = client
         .get("https://api.bitbucket.org/2.0/user/workspaces?pagelen=100")
         .header("Authorization", basic_auth(token))
         .send()
         .await
-        .ok()?;
+        .map_err(|e| format!("request failed: {}", e))?;
 
-    if !resp.status().is_success() {
-        return None;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("HTTP {}", status.as_u16()));
     }
 
-    let list: BitbucketWorkspaceAccessList = resp.json().await.ok()?;
-    pick_workspace_slug(list.values, uuid)
+    let list: BitbucketWorkspaceAccessList = resp
+        .json()
+        .await
+        .map_err(|e| format!("unreadable response: {}", e))?;
+
+    pick_workspace_slug(list.values, uuid).ok_or_else(|| "no workspace matches the account".into())
 }
 
 async fn verify_bitbucket(client: &Client, token: &str) -> Result<PlatformUser, String> {
     let user = bitbucket_get_user(client, token).await?;
-    let username = bitbucket_workspace_slug(client, token, &user.uuid)
-        .await
-        .or_else(|| user.nickname.clone())
-        .unwrap_or_else(|| user.uuid.clone());
+
+    // Falling back to the nickname keeps the account connectable, but the name
+    // it produces is wrong everywhere it is later used — the profile link, the
+    // generated key filename, the `hasconfig` include pattern — so the reason
+    // travels with it instead of being dropped here.
+    let (username, notice) = match bitbucket_workspace_slug(client, token, &user.uuid).await {
+        Ok(slug) => (slug, None),
+        Err(reason) => (
+            user.nickname.clone().unwrap_or_else(|| user.uuid.clone()),
+            Some(reason),
+        ),
+    };
+
     let avatar_url = user.links.and_then(|l| l.avatar).and_then(|a| a.href);
     let email = fetch_bitbucket_primary_email(client, token).await;
 
@@ -493,6 +513,7 @@ async fn verify_bitbucket(client: &Client, token: &str) -> Result<PlatformUser, 
         // Bitbucket has no GitHub/GitLab-style noreply commit email.
         noreply_email: None,
         avatar_url,
+        username_notice: notice,
     })
 }
 

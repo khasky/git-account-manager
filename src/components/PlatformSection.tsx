@@ -35,6 +35,8 @@ export interface PlatformState {
   signCommits: boolean;
   /** Why the key this account uses is not registered for signing. */
   signingError: string;
+  /** Why the handle shown is a fallback the platform could not confirm. */
+  usernameNotice: string;
   deviceCode: DeviceCodeResponse | null;
 }
 
@@ -57,6 +59,7 @@ export function emptyPlatform(): PlatformState {
     // "Verified" badge, and a key that can sign costs nothing extra to make.
     signCommits: true,
     signingError: "",
+    usernameNotice: "",
     deviceCode: null,
   };
 }
@@ -409,6 +412,15 @@ export default function PlatformSection({
           </button>
         )}
       </div>
+
+      {state.connected && state.usernameNotice && (
+        <p className="mb-3 text-xs text-danger-fg">
+          {fmt(m.form.usernameNotice, {
+            username: state.username,
+            error: state.usernameNotice,
+          })}
+        </p>
+      )}
 
       {!state.connected ? (
         renderConnect()

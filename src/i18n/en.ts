@@ -193,6 +193,7 @@ export const en = {
     signCommits: `Sign commits with this key`,
     signCommitsHint: `Registers the key for signing and sets commit.gpgsign. The "Verified" badge also needs the Git email confirmed on the account.`,
     signingFailed: `The key was uploaded, but signing was not enabled: {error}. Reconnect {platform} to grant the new permission.`,
+    usernameNotice: `Could not read the account login ({error}), so "{username}" is its display name. Recreate the Atlassian API token with the read:workspace:bitbucket scope and connect again.`,
     disconnect: `Disconnect`,
     defaultIdentity: `Default Git Identity`,
     defaultIdentityHint1: `Since both platforms are connected, choose which identity to use for <code>git config --global user.name</code> and <code>user.email</code>.`,

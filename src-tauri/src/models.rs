@@ -324,6 +324,11 @@ pub struct PlatformUser {
     pub email: Option<String>,
     pub noreply_email: Option<String>,
     pub avatar_url: Option<String>,
+    /// Why `username` is a fallback rather than the account's real name. Set
+    /// only when the platform could not be asked, so the form can say so
+    /// instead of presenting a wrong name as fact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username_notice: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

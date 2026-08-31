@@ -319,6 +319,7 @@ export default function ProfileForm({
     name?: string;
     email?: string;
     noreply_email?: string;
+    username_notice?: string;
   }): Partial<PlatformState> {
     const noreply = user.noreply_email || "";
     const pubEmail = user.email || "";
@@ -327,6 +328,7 @@ export default function ProfileForm({
       connected: true,
       deviceCode: null,
       username: user.username,
+      usernameNotice: user.username_notice || "",
       gitName: user.name || user.username,
       gitEmail: noreply || pubEmail || importedEmail,
       publicEmail: pubEmail,

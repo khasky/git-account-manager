@@ -187,6 +187,7 @@ export const zhHans: Messages = {
     signCommits: `用此密钥签名提交`,
     signCommitsHint: `将密钥注册为签名密钥并开启 commit.gpgsign。"Verified" 标记还要求 Git 邮箱已在账号中确认。`,
     signingFailed: `密钥已上传，但未启用签名：{error}。重新连接 {platform} 以授予新权限。`,
+    usernameNotice: `无法读取账号登录名（{error}），因此“{username}”是显示名。请带上 read:workspace:bitbucket scope 重新创建 Atlassian API 令牌并重新连接。`,
     disconnect: `断开连接`,
     defaultIdentity: `默认 Git 身份`,
     defaultIdentityHint1: `由于两个平台都已连接，请选择用于 <code>git config --global user.name</code> 和 <code>user.email</code> 的身份。`,

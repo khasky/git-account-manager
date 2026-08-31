@@ -187,6 +187,7 @@ export const uk: Messages = {
     signCommits: `Підписувати коміти цим ключем`,
     signCommitsHint: `Реєструє ключ для підпису й вмикає commit.gpgsign. Для позначки «Verified» email коміту має бути підтверджений в акаунті.`,
     signingFailed: `Ключ завантажено, але підпис не ввімкнено: {error}. Перепідключи {platform}, щоб надати новий дозвіл.`,
+    usernameNotice: `Логін акаунта прочитати не вдалося ({error}), тому «{username}» — це відображуване ім'я. Перестворі Atlassian API-токен зі scope read:workspace:bitbucket і підключись знову.`,
     disconnect: `Відключити`,
     defaultIdentity: `Git-ідентичність за замовчуванням`,
     defaultIdentityHint1: `Оскільки підключено обидві платформи, виберіть, яку ідентичність використовувати для <code>git config --global user.name</code> та <code>user.email</code>.`,

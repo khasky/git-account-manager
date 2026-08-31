@@ -187,6 +187,7 @@ export const fr: Messages = {
     signCommits: `Signer les commits avec cette clé`,
     signCommitsHint: `Enregistre la clé pour la signature et active commit.gpgsign. Le badge « Verified » exige aussi que l'e-mail Git soit confirmé sur le compte.`,
     signingFailed: `La clé a été envoyée, mais la signature n'a pas été activée : {error}. Reconnectez {platform} pour accorder la nouvelle autorisation.`,
+    usernameNotice: `Impossible de lire l'identifiant du compte ({error}), donc « {username} » est son nom affiché. Recréez le jeton d'API Atlassian avec le scope read:workspace:bitbucket et reconnectez-vous.`,
     disconnect: `Déconnecter`,
     defaultIdentity: `Identité Git par défaut`,
     defaultIdentityHint1: `Comme les deux plateformes sont connectées, choisissez quelle identité utiliser pour <code>git config --global user.name</code> et <code>user.email</code>.`,
