@@ -155,7 +155,7 @@ export const ja: Messages = {
       help: `Bitbucket には <a>スコープ付き Atlassian API トークン</a> が必要です。「Create API token with scopes」を使用してください（スコープなしのトークンは動作しません）。`,
       emailPlaceholder: `Atlassian アカウントのメール`,
       tokenPlaceholder: `API トークン`,
-      scopesHint: `スコープを選択: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket`,
+      scopesHint: `スコープを選択: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket`,
       errCreds: `Atlassian のメールと API トークンの両方を入力してください。`,
     },
     editTitle: `プロフィールを編集`,

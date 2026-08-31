@@ -333,6 +333,25 @@ struct BitbucketEmail {
     is_primary: bool,
 }
 
+/// `/2.0/user/workspaces` answers with membership records, not with the
+/// workspaces themselves — the workspace sits one level down, next to the
+/// permission the account holds on it.
+#[derive(Deserialize)]
+struct BitbucketWorkspaceAccessList {
+    values: Vec<BitbucketWorkspaceAccess>,
+}
+
+#[derive(Deserialize)]
+struct BitbucketWorkspaceAccess {
+    workspace: BitbucketWorkspace,
+}
+
+#[derive(Deserialize)]
+struct BitbucketWorkspace {
+    uuid: String,
+    slug: String,
+}
+
 #[derive(Deserialize)]
 struct BitbucketKeyList {
     values: Vec<BitbucketKey>,
@@ -361,9 +380,49 @@ async fn bitbucket_get_user(client: &Client, token: &str) -> Result<BitbucketUse
         .map_err(|e| e.to_string())
 }
 
+/// The personal workspace is the one carrying the account's own uuid; its slug
+/// is what `bitbucket.org/<slug>` resolves to.
+fn pick_workspace_slug(memberships: Vec<BitbucketWorkspaceAccess>, uuid: &str) -> Option<String> {
+    memberships
+        .into_iter()
+        .map(|m| m.workspace)
+        .find(|w| w.uuid == uuid)
+        .map(|w| w.slug)
+}
+
+/// Bitbucket's URL-facing name for an account.
+///
+/// `nickname` is a display name: Atlassian's own schema says it "cannot be used
+/// in place of username in URLs and queries, as nickname is not guaranteed to be
+/// unique" — an account displaying "Ian Khasky" still lives at
+/// `bitbucket.org/khasky`. Using it produced a profile link that 404s and an SSH
+/// key filename naming someone else.
+///
+/// Needs `read:workspace:bitbucket`, which tokens issued before this existed do
+/// not carry; a token without it fails here and the caller falls back to the
+/// nickname, which is what it always used.
+async fn bitbucket_workspace_slug(client: &Client, token: &str, uuid: &str) -> Option<String> {
+    let resp = client
+        .get("https://api.bitbucket.org/2.0/user/workspaces?pagelen=100")
+        .header("Authorization", basic_auth(token))
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let list: BitbucketWorkspaceAccessList = resp.json().await.ok()?;
+    pick_workspace_slug(list.values, uuid)
+}
+
 async fn verify_bitbucket(client: &Client, token: &str) -> Result<PlatformUser, String> {
     let user = bitbucket_get_user(client, token).await?;
-    let username = user.nickname.clone().unwrap_or_else(|| user.uuid.clone());
+    let username = bitbucket_workspace_slug(client, token, &user.uuid)
+        .await
+        .or_else(|| user.nickname.clone())
+        .unwrap_or_else(|| user.uuid.clone());
     let avatar_url = user.links.and_then(|l| l.avatar).and_then(|a| a.href);
     let email = fetch_bitbucket_primary_email(client, token).await;
 
@@ -526,6 +585,52 @@ mod tests {
             normalize_key(local),
             normalize_key("ssh-ed25519 DIFFERENTBODY me@laptop")
         );
+    }
+
+    /// Two failures at once, and both are silent — a parse error falls back to
+    /// the nickname, which is the wrong name this whole lookup exists to
+    /// replace.
+    ///
+    /// The body is the shape `/2.0/user/workspaces` documents: membership
+    /// records with the workspace nested inside, not workspaces at the top
+    /// level. And an account belongs to every workspace it was invited to, in no
+    /// useful order — only the uuid tells the personal one apart, so picking the
+    /// first entry would name a colleague's organisation.
+    #[test]
+    fn the_personal_workspace_is_read_out_of_the_membership_list() {
+        let body = r#"{
+          "pagelen": 25, "page": 1, "size": 2,
+          "values": [
+            {
+              "administrator": false,
+              "type": "workspace_access",
+              "workspace": {
+                "type": "workspace_base",
+                "uuid": "{team}",
+                "slug": "acme-corp",
+                "links": {"self": {"href": "https://api.bitbucket.org/2.0/workspaces/acme-corp"}}
+              }
+            },
+            {
+              "administrator": true,
+              "type": "workspace_access",
+              "workspace": {
+                "type": "workspace_base",
+                "uuid": "{me}",
+                "slug": "khasky",
+                "links": {"self": {"href": "https://api.bitbucket.org/2.0/workspaces/khasky"}}
+              }
+            }
+          ]
+        }"#;
+
+        let list: BitbucketWorkspaceAccessList =
+            serde_json::from_str(body).expect("the documented response must parse");
+        assert_eq!(
+            pick_workspace_slug(list.values, "{me}").as_deref(),
+            Some("khasky")
+        );
+        assert_eq!(pick_workspace_slug(vec![], "{me}"), None);
     }
 
     /// The delete path builds `<endpoint>/<id>`, so the endpoint has to be the

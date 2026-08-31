@@ -161,7 +161,7 @@ export const en = {
       help: `Bitbucket needs an <a>Atlassian API token with scopes</a> — use the "Create API token with scopes" button (a plain token won't work).`,
       emailPlaceholder: `Atlassian account email`,
       tokenPlaceholder: `API token`,
-      scopesHint: `Select scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket.`,
+      scopesHint: `Select scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket.`,
       errCreds: `Enter both your Atlassian email and API token.`,
     },
     editTitle: `Edit Profile`,

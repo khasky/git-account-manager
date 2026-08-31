@@ -155,7 +155,7 @@ export const uk: Messages = {
       help: `Bitbucket потрібен <a>Atlassian API token зі scopes</a> — натисни «Create API token with scopes» (токен без scopes не працює).`,
       emailPlaceholder: `Email акаунта Atlassian`,
       tokenPlaceholder: `API-токен`,
-      scopesHint: `Вибери scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket.`,
+      scopesHint: `Вибери scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket.`,
       errCreds: `Вкажіть і email Atlassian, і API-токен.`,
     },
     editTitle: `Редагувати профіль`,

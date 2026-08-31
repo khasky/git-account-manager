@@ -155,7 +155,7 @@ export const zhHans: Messages = {
       help: `Bitbucket 需要带 scopes 的 <a>Atlassian API 令牌</a>——请使用“Create API token with scopes”（无 scopes 的令牌无法使用）。`,
       emailPlaceholder: `Atlassian 账户邮箱`,
       tokenPlaceholder: `API 令牌`,
-      scopesHint: `选择 scopes：read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket`,
+      scopesHint: `选择 scopes：read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket`,
       errCreds: `请输入 Atlassian 邮箱和 API 令牌。`,
     },
     editTitle: `编辑配置文件`,

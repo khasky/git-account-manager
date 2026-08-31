@@ -155,7 +155,7 @@ export const zhHant: Messages = {
       help: `Bitbucket 需要帶 scopes 的 <a>Atlassian API 權杖</a>——請使用「Create API token with scopes」（無 scopes 的權杖無法使用）。`,
       emailPlaceholder: `Atlassian 帳戶電子郵件`,
       tokenPlaceholder: `API 權杖`,
-      scopesHint: `選擇 scopes：read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket`,
+      scopesHint: `選擇 scopes：read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket`,
       errCreds: `請輸入 Atlassian 電子郵件和 API 權杖。`,
     },
     editTitle: `編輯設定檔`,

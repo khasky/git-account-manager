@@ -155,7 +155,7 @@ export const es: Messages = {
       help: `Bitbucket necesita un <a>token de API de Atlassian con scopes</a>: usa «Create API token with scopes» (un token simple no funciona).`,
       emailPlaceholder: `Correo de la cuenta de Atlassian`,
       tokenPlaceholder: `Token de API`,
-      scopesHint: `Selecciona los scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket.`,
+      scopesHint: `Selecciona los scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket.`,
       errCreds: `Introduce tu correo de Atlassian y el token de API.`,
     },
     editTitle: `Editar perfil`,
