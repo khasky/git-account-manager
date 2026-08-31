@@ -187,23 +187,24 @@ fn keys_endpoint(platform: Platform) -> &'static str {
     }
 }
 
-pub async fn delete_ssh_key_from_platform(
-    platform: Platform,
-    token: &str,
-    pub_key_content: &str,
+/// GitHub verifies a signature against a list of its own, separate from the
+/// authentication keys in `/user/keys`. A key present only in the second list
+/// pushes fine and still leaves every commit Unverified.
+const GITHUB_SIGNING_KEYS: &str = "https://api.github.com/user/ssh_signing_keys";
+
+/// Removes a key from one `{id, key}` collection, matching on the key body.
+///
+/// Shared by the authentication and the signing lists: both are read, matched
+/// and deleted the same way, and only the URL differs.
+async fn delete_from_key_collection(
+    client: &Client,
+    collection: &str,
+    auth_header: &str,
+    github: bool,
+    local: &str,
 ) -> Result<(), String> {
-    let client = client();
-    let local = normalize_key(pub_key_content);
-
-    if platform == Platform::Bitbucket {
-        return delete_bitbucket_key(client, token, &local).await;
-    }
-
-    let url = keys_endpoint(platform);
-    let auth_header = format!("Bearer {}", token);
-
-    let mut req = client.get(url).header("Authorization", &auth_header);
-    if platform == Platform::Github {
+    let mut req = client.get(collection).header("Authorization", auth_header);
+    if github {
         req = req.header("Accept", "application/vnd.github+json");
     }
 
@@ -222,11 +223,11 @@ pub async fn delete_ssh_key_from_platform(
 
     for remote in &keys {
         if normalize_key(&remote.key) == local {
-            let delete_url = format!("{}/{}", url, remote.id);
+            let delete_url = format!("{}/{}", collection, remote.id);
             let mut del = client
                 .delete(&delete_url)
-                .header("Authorization", &auth_header);
-            if platform == Platform::Github {
+                .header("Authorization", auth_header);
+            if github {
                 del = del.header("Accept", "application/vnd.github+json");
             }
             let del_resp = del
@@ -235,17 +236,76 @@ pub async fn delete_ssh_key_from_platform(
                 .map_err(|e| format!("Failed to delete key: {}", e))?;
             // A key that is already gone is the state the caller wanted.
             if !del_resp.status().is_success() && del_resp.status().as_u16() != 404 {
-                return Err(format!(
-                    "Failed to delete key from {}: HTTP {}",
-                    platform.label(),
-                    del_resp.status()
-                ));
+                return Err(format!("Failed to delete key: HTTP {}", del_resp.status()));
             }
             return Ok(());
         }
     }
 
     Ok(())
+}
+
+pub async fn delete_ssh_key_from_platform(
+    platform: Platform,
+    token: &str,
+    pub_key_content: &str,
+) -> Result<(), String> {
+    let client = client();
+    let local = normalize_key(pub_key_content);
+
+    if platform == Platform::Bitbucket {
+        return delete_bitbucket_key(client, token, &local).await;
+    }
+
+    let auth_header = format!("Bearer {}", token);
+    let github = platform == Platform::Github;
+
+    delete_from_key_collection(
+        client,
+        keys_endpoint(platform),
+        &auth_header,
+        github,
+        &local,
+    )
+    .await?;
+
+    // The signing list is GitHub's alone, and a key can sit in it whether or not
+    // this profile ever asked to sign — an account reconnected with the switch
+    // off would otherwise leave the key behind after a disconnect that promised
+    // to remove it. Absent from the list, this is a no-op.
+    if github {
+        delete_from_key_collection(client, GITHUB_SIGNING_KEYS, &auth_header, true, &local).await?;
+    }
+
+    Ok(())
+}
+
+/// Registers a key as one the platform will verify signatures against.
+///
+/// GitHub keeps that list apart and needs the extra call. GitLab registers new
+/// keys as `auth_and_signing` unless told otherwise, and Bitbucket validates
+/// against the single key list it has, so for both the key uploaded for
+/// authentication already signs and there is nothing left to do.
+pub async fn upload_signing_key(
+    platform: Platform,
+    token: &str,
+    title: &str,
+    key_content: &str,
+) -> Result<(), String> {
+    if platform != Platform::Github {
+        return Ok(());
+    }
+
+    let resp = client()
+        .post(GITHUB_SIGNING_KEYS)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .json(&serde_json::json!({ "title": title, "key": key_content }))
+        .send()
+        .await
+        .map_err(|e| format!("GitHub API request failed: {}", e))?;
+
+    accept_key_upload(resp, Platform::Github).await
 }
 
 pub async fn upload_ssh_key(

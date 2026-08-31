@@ -482,6 +482,7 @@ pub fn apply_binding(binding: &mut RepoBinding, profile: &Profile) -> Result<Bin
         .ok_or_else(|| format!("Profile has no {} account", binding.platform.label()))?;
 
     git::set_repo_identity(&binding.path, &account.git_name, &account.git_email)?;
+    git::set_repo_signing(&binding.path, account.signing_key())?;
 
     let allowed = allowed_emails(binding, profile);
     git::repo_config_replace_all(&binding.path, "gam.allowedEmail", &allowed)?;
@@ -897,6 +898,7 @@ mod tests {
                 git_email: "1+octo@users.noreply.github.com".to_string(),
                 ssh_private_key_path: String::new(),
                 ssh_public_key_path: String::new(),
+                sign_commits: false,
                 token: None,
             }),
             gitlab: None,

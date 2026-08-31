@@ -58,6 +58,9 @@ function platformFromAccount(acc?: PlatformAccount): PlatformState {
     sshSource: "existing",
     selectedKey: acc.ssh_private_key_path,
     keyUploaded: true,
+    // A profile saved before signing existed has the field absent, and turning
+    // it on behind the user's back would start signing commits it never signed.
+    signCommits: acc.sign_commits === true,
   };
 }
 
@@ -451,11 +454,13 @@ export default function ProfileForm({
         profileId,
         username: section.username,
         email: section.gitEmail || "git@git-account-manager",
+        sign: section.signCommits,
       });
       update(platform, {
         sshPrivateKeyPath: pair.private_key_path,
         sshPublicKeyPath: pair.public_key_path,
         keyUploaded: true,
+        signingError: pair.signing_error || "",
       });
       setSshKeys(await api.listSshKeys());
     } catch (e) {
@@ -469,15 +474,39 @@ export default function ProfileForm({
     update(platform, { error: { kind: "none" } });
     try {
       const keyContent = await api.readPublicKey(section.sshPublicKeyPath);
-      await api.uploadSshKeyToPlatform({
+      const signingError = await api.uploadSshKeyToPlatform({
         platform,
         profileId,
         title: `git-account-manager: ${name}`,
         keyContent,
+        sign: section.signCommits,
       });
-      update(platform, { keyUploaded: true });
+      update(platform, { keyUploaded: true, signingError: signingError || "" });
     } catch (e) {
       update(platform, { error: { kind: "message", text: String(e) } });
+    }
+  }
+
+  /** Switching signing on for a key that is already uploaded has to reach the
+   *  platform too: writing `commit.gpgsign` alone produces signed commits the
+   *  platform cannot verify, which reads as a broken feature rather than as a
+   *  missing registration. Re-uploading a key the account already has is a
+   *  no-op the backend recognises. */
+  async function registerForSigning(platform: PlatformId) {
+    const section = sections[platform];
+    if (!section.keyUploaded || !section.sshPublicKeyPath) return;
+    try {
+      const keyContent = await api.readPublicKey(section.sshPublicKeyPath);
+      const signingError = await api.uploadSshKeyToPlatform({
+        platform,
+        profileId,
+        title: `git-account-manager: ${name}`,
+        keyContent,
+        sign: true,
+      });
+      update(platform, { signingError: signingError || "" });
+    } catch (e) {
+      update(platform, { signingError: String(e) });
     }
   }
 
@@ -489,6 +518,7 @@ export default function ProfileForm({
       git_email: s.gitEmail,
       ssh_private_key_path: s.sshPrivateKeyPath,
       ssh_public_key_path: s.sshPublicKeyPath,
+      sign_commits: s.signCommits,
     };
   }
 
@@ -684,7 +714,10 @@ export default function ProfileForm({
               key={platform}
               platform={platform}
               state={sections[platform]}
-              onChange={(patch) => update(platform, patch)}
+              onChange={(patch) => {
+                update(platform, patch);
+                if (patch.signCommits === true) registerForSigning(platform);
+              }}
               onConnect={connectors[platform]}
               onCancelAuth={cancelAuthFor[platform]}
               countdown={countdown[platform]}

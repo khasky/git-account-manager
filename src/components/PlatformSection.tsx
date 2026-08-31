@@ -32,6 +32,9 @@ export interface PlatformState {
   selectedKey: string;
   error: SectionError;
   keyUploaded: boolean;
+  signCommits: boolean;
+  /** Why the key this account uses is not registered for signing. */
+  signingError: string;
   deviceCode: DeviceCodeResponse | null;
 }
 
@@ -50,6 +53,10 @@ export function emptyPlatform(): PlatformState {
     selectedKey: "",
     error: { kind: "none" },
     keyUploaded: false,
+    // On for anything connected from here on: a signed commit is what earns the
+    // "Verified" badge, and a key that can sign costs nothing extra to make.
+    signCommits: true,
+    signingError: "",
     deviceCode: null,
   };
 }
@@ -385,6 +392,7 @@ export default function PlatformSection({
 
   const nameId = `git-name-${platform}`;
   const emailId = `git-email-${platform}`;
+  const signId = `sign-commits-${platform}`;
   const hasChoices = state.noreplyEmail || state.publicEmail || importedEmail;
 
   return (
@@ -479,6 +487,35 @@ export default function PlatformSection({
           <div>
             <p className="mb-1 block text-xs text-fg-4">{m.form.sshKey}</p>
             {renderKeySection()}
+          </div>
+
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <label
+                htmlFor={signId}
+                className="block text-xs font-medium text-fg-3"
+              >
+                {m.form.signCommits}
+              </label>
+              <p className="mt-0.5 text-xs text-fg-5">
+                {m.form.signCommitsHint}
+              </p>
+              {state.signingError && (
+                <p className="mt-1 text-xs text-danger-fg">
+                  {fmt(m.form.signingFailed, {
+                    error: state.signingError,
+                    platform: label,
+                  })}
+                </p>
+              )}
+            </div>
+            <input
+              id={signId}
+              type="checkbox"
+              checked={state.signCommits}
+              onChange={(e) => onChange({ signCommits: e.target.checked })}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600"
+            />
           </div>
 
           {renderError()}

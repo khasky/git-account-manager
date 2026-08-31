@@ -8,6 +8,9 @@ export interface PlatformAccount {
   git_email: string;
   ssh_private_key_path: string;
   ssh_public_key_path: string;
+  /** Sign this account's commits with its own SSH key. Absent in profiles saved
+   *  before signing existed, which the backend reads as off. */
+  sign_commits?: boolean;
 }
 
 export interface Profile {
@@ -29,6 +32,9 @@ export interface SshKeyInfo {
 export interface SshKeyPair {
   private_key_path: string;
   public_key_path: string;
+  /** Set when the key was created and uploaded but could not be registered for
+   *  signing — the key works, the "Verified" badge will not appear. */
+  signing_error?: string;
 }
 
 export interface PlatformUser {

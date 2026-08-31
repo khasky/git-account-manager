@@ -15,6 +15,67 @@ pub fn set_global_identity(name: &str, email: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The keys that turn SSH commit signing on, and the values they need.
+///
+/// `gpg.format = ssh` is what makes `user.signingkey` a path to a public key
+/// rather than a GPG key id; without it Git looks the value up in a keyring and
+/// fails. Tags are signed alongside commits because a platform verifies both,
+/// and a repository that signs only half of its objects is harder to reason
+/// about than one that signs neither.
+fn signing_values(pub_key_path: &str) -> [(&'static str, String); 4] {
+    [
+        ("gpg.format", "ssh".to_string()),
+        ("user.signingkey", pub_key_path.replace('\\', "/")),
+        ("commit.gpgsign", "true".to_string()),
+        ("tag.gpgsign", "true".to_string()),
+    ]
+}
+
+/// Keys removed when signing is switched off. Leaving `commit.gpgsign = true`
+/// behind would keep signing with a key the profile no longer names.
+const SIGNING_KEYS: [&str; 4] = [
+    "gpg.format",
+    "user.signingkey",
+    "commit.gpgsign",
+    "tag.gpgsign",
+];
+
+/// Turns signing on for one repository, or off when `pub_key_path` is `None`.
+pub fn set_repo_signing(dir: &str, pub_key_path: Option<&str>) -> Result<(), String> {
+    match pub_key_path {
+        Some(path) => {
+            for (key, value) in signing_values(path) {
+                repo_config_set_local(dir, key, &value)?;
+            }
+            Ok(())
+        }
+        None => {
+            for key in SIGNING_KEYS {
+                run_git_optional(&["-C", dir, "config", "--local", "--unset-all", key])?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// The machine-wide half of the same switch, for the active profile.
+pub fn set_global_signing(pub_key_path: Option<&str>) -> Result<(), String> {
+    match pub_key_path {
+        Some(path) => {
+            for (key, value) in signing_values(path) {
+                run_git(&["config", "--global", key, &value])?;
+            }
+            Ok(())
+        }
+        None => {
+            for key in SIGNING_KEYS {
+                run_git_optional(&["config", "--global", "--unset-all", key])?;
+            }
+            Ok(())
+        }
+    }
+}
+
 pub fn get_global_identity() -> Result<GitIdentity, String> {
     let name = run_git(&["config", "--global", "user.name"]).unwrap_or_default();
     let email = run_git(&["config", "--global", "user.email"]).unwrap_or_default();

@@ -64,14 +64,18 @@ export const generateAndUploadKey = (args: {
   profileId: string;
   username: string;
   email: string;
+  sign: boolean;
 }) => invoke<SshKeyPair>("generate_and_upload_key", args);
 
+/** Resolves to the reason signing could not be enabled, or null when the key is
+ *  registered for everything that was asked of it. */
 export const uploadSshKeyToPlatform = (args: {
   platform: PlatformId;
   profileId: string;
   title: string;
   keyContent: string;
-}) => invoke<void>("upload_ssh_key_to_platform", args);
+  sign: boolean;
+}) => invoke<string | null>("upload_ssh_key_to_platform", args);
 
 export const removeSshKeyFromPlatform = (args: {
   platform: PlatformId;

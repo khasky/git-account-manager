@@ -98,8 +98,26 @@ pub struct PlatformAccount {
     pub git_email: String,
     pub ssh_private_key_path: String,
     pub ssh_public_key_path: String,
+    /// Sign this account's commits with its own SSH key. Off by default so a
+    /// profile written before this existed keeps committing exactly as it did;
+    /// the form turns it on for accounts connected from here on.
+    #[serde(default)]
+    pub sign_commits: bool,
     #[serde(default, skip_serializing)]
     pub token: Option<String>,
+}
+
+impl PlatformAccount {
+    /// The public key Git signs with, or `None` when this account does not sign.
+    /// An account whose key was never generated cannot sign: pointing
+    /// `user.signingkey` at an empty path makes every commit fail instead.
+    pub fn signing_key(&self) -> Option<&str> {
+        if self.sign_commits && !self.ssh_public_key_path.is_empty() {
+            Some(self.ssh_public_key_path.as_str())
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,13 +160,17 @@ impl Profile {
         slugify(&self.name)
     }
 
-    /// The identity the machine-wide config and the tray header show: the
+    /// The account the machine-wide config and the tray header speak for: the
     /// profile's chosen platform, or its first connected one when it has no
     /// choice recorded.
-    pub fn active_identity(&self) -> Option<(&str, &str)> {
+    pub fn active_account(&self) -> Option<&PlatformAccount> {
         self.default_platform
             .and_then(|p| self.account(p))
             .or_else(|| PLATFORMS.iter().find_map(|p| self.account(*p)))
+    }
+
+    pub fn active_identity(&self) -> Option<(&str, &str)> {
+        self.active_account()
             .map(|a| (a.git_name.as_str(), a.git_email.as_str()))
     }
 }
@@ -287,6 +309,12 @@ pub struct SshKeyInfo {
 pub struct SshKeyPair {
     pub private_key_path: String,
     pub public_key_path: String,
+    /// Why the key was not registered for signing, when that was asked for and
+    /// failed. Carried instead of returned as an error because by then the key
+    /// exists and authenticates: failing the whole call would leave it on disk
+    /// and on the account with nothing in the profile pointing at it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -445,8 +473,25 @@ mod tests {
             git_email: email.to_string(),
             ssh_private_key_path: String::new(),
             ssh_public_key_path: String::new(),
+            sign_commits: false,
             token: None,
         }
+    }
+
+    /// `user.signingkey` pointing at nothing makes every commit in the
+    /// repository fail, so an account with the switch on but no key yet must
+    /// still report that it does not sign.
+    #[test]
+    fn an_account_without_a_key_does_not_sign() {
+        let mut acc = account("octo@example.com");
+        acc.sign_commits = true;
+        assert_eq!(acc.signing_key(), None);
+
+        acc.ssh_public_key_path = "C:/Users/a/.ssh/id_ed25519.pub".to_string();
+        assert_eq!(acc.signing_key(), Some("C:/Users/a/.ssh/id_ed25519.pub"));
+
+        acc.sign_commits = false;
+        assert_eq!(acc.signing_key(), None);
     }
 
     /// What the tray header and the machine-wide identity are read from.

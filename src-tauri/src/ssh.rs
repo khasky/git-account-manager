@@ -39,6 +39,7 @@ pub fn generate_key(email: &str, key_name: &str) -> Result<SshKeyPair, String> {
     Ok(SshKeyPair {
         private_key_path: private_path.to_string_lossy().to_string(),
         public_key_path: public_path.to_string_lossy().to_string(),
+        signing_error: None,
     })
 }
 

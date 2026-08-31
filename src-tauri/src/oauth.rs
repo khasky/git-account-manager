@@ -15,7 +15,14 @@ pub async fn github_device_start(client_id: &str) -> Result<DeviceCodeResponse, 
         .header("Accept", "application/json")
         .form(&[
             ("client_id", client_id),
-            ("scope", "read:user user:email admin:public_key"),
+            // `write:ssh_signing_key` reaches the list GitHub verifies commit
+            // signatures against, which `admin:public_key` does not cover. A
+            // token issued before it was asked for keeps working for everything
+            // else; only registering a signing key fails, and says so.
+            (
+                "scope",
+                "read:user user:email admin:public_key write:ssh_signing_key",
+            ),
         ])
         .send()
         .await

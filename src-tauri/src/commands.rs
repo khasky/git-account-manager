@@ -59,6 +59,9 @@ fn sync_machine(state: &AppState) -> Result<(), String> {
             if let Some((name, email)) = active.active_identity() {
                 git::set_global_identity(name, email)?;
             }
+            // Follows the identity: signing with the profile that just stopped
+            // being active would produce a signature the new author cannot own.
+            git::set_global_signing(active.active_account().and_then(|a| a.signing_key()))?;
         }
     }
 
@@ -184,6 +187,7 @@ pub async fn generate_and_upload_key(
     profile_id: String,
     username: String,
     email: String,
+    sign: bool,
 ) -> Result<SshKeyPair, String> {
     let token = secrets::get_token(&profile_id, platform)?;
     let slug = slugify(&username);
@@ -200,10 +204,16 @@ pub async fn generate_and_upload_key(
         ts
     );
 
-    let pair = ssh::generate_key(&email, &key_name)?;
+    let mut pair = ssh::generate_key(&email, &key_name)?;
     let pub_key = ssh::read_public_key(&pair.public_key_path)?;
     let title = format!("git-account-manager: {} ({})", username, platform.label());
     platform::upload_ssh_key(platform, &token, &title, &pub_key).await?;
+
+    if sign {
+        pair.signing_error = platform::upload_signing_key(platform, &token, &title, &pub_key)
+            .await
+            .err();
+    }
 
     Ok(pair)
 }
@@ -214,9 +224,19 @@ pub async fn upload_ssh_key_to_platform(
     profile_id: String,
     title: String,
     key_content: String,
-) -> Result<(), String> {
+    sign: bool,
+) -> Result<Option<String>, String> {
     let token = secrets::get_token(&profile_id, platform)?;
-    platform::upload_ssh_key(platform, &token, &title, &key_content).await
+    platform::upload_ssh_key(platform, &token, &title, &key_content).await?;
+
+    if !sign {
+        return Ok(None);
+    }
+    Ok(
+        platform::upload_signing_key(platform, &token, &title, &key_content)
+            .await
+            .err(),
+    )
 }
 
 // -- accounts ---------------------------------------------------------------
