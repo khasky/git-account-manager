@@ -151,6 +151,21 @@ export default function PlatformSection({
     return <p className="text-xs text-danger-fg">{state.error.text}</p>;
   }
 
+  /** Bitbucket offers no noreply address, so the address that hides a private
+   *  one has to be set up on the account first. Shown before connecting and
+   *  again next to the email field, which is where its absence is noticed. */
+  function renderEmailPrivacy() {
+    if (platform !== "bitbucket") return null;
+    return (
+      <p className="text-xs text-fg-5">
+        {rich(m.form.bitbucket.emailPrivacy, {
+          onLink: () =>
+            openUrl("https://bitbucket.org/account/settings/email/"),
+        })}
+      </p>
+    );
+  }
+
   function renderConnect() {
     if (credentials) {
       return (
@@ -180,6 +195,7 @@ export default function PlatformSection({
             className="field-sm"
           />
           <p className="text-xs text-fg-5">{m.form.bitbucket.scopesHint}</p>
+          {renderEmailPrivacy()}
           <button
             type="button"
             onClick={onConnect}
@@ -457,6 +473,7 @@ export default function PlatformSection({
                 className="field-sm"
               />
             )}
+            <div className="mt-1.5">{renderEmailPrivacy()}</div>
           </div>
 
           <div>
