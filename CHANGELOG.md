@@ -2,6 +2,19 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.0.1](https://github.com/khasky/git-account-manager/compare/v1.0.0...v1.0.1) (2026-08-31)
+
+
+### Features
+
+* **git:** sign commits with the profile's SSH key ([4a2c059](https://github.com/khasky/git-account-manager/commit/4a2c059611e6940da84b571d60c352eb5ed6f761))
+* **ui:** name the SSH key modes and explain Bitbucket email privacy ([b9ce311](https://github.com/khasky/git-account-manager/commit/b9ce3119babc981346dabec663ec22a4bf313a42))
+
+
+### Bug Fixes
+
+* **platform:** name a Bitbucket account by its workspace slug ([02cb81a](https://github.com/khasky/git-account-manager/commit/02cb81abe0e9a93d1bfd8005189ff4ff9e926d70))
+
 ## 1.0.0 (2026-08-30)
 
 
