@@ -57,10 +57,6 @@ jobs:
             remote: bitbucket.org/khasky/git-account-manager.git
             user: x-token-auth
             secret: BITBUCKET_TOKEN
-          - host: Gitea
-            remote: gitea.com/khasky/git-account-manager.git
-            user: khasky
-            secret: GITEA_TOKEN
     steps:
       # A bare mirror clone, not actions/checkout: the push needs every branch
       # and tag, and checkout gives a single-ref working tree.
