@@ -2,6 +2,14 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.0.2](https://github.com/khasky/git-account-manager/compare/v1.0.1...v1.0.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* **platform:** report why a Bitbucket account keeps its display name ([99ca82c](https://github.com/khasky/git-account-manager/commit/99ca82c2f3f3394234174a2d2673f39fb74dafc7))
+* **ui:** offer only an attached key for deletion on disconnect ([30f9021](https://github.com/khasky/git-account-manager/commit/30f90213bb905206511d48897d0710e444d80c57))
+
 ## [1.0.1](https://github.com/khasky/git-account-manager/compare/v1.0.0...v1.0.1) (2026-08-31)
 
 
