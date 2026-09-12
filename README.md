@@ -149,7 +149,8 @@ The history check is the one that catches a mistake that already happened, on th
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Drop the global Git identity**          | Removes global `user.name` / `user.email` and sets `user.useConfigOnly`. An unbound repository then fails with *Author identity unknown* instead of borrowing the active profile's address. |
 | **Maintain includeIf rules**              | Generates a delimited region in `~/.gitconfig` with `gitdir` rules (understood by libgit2, so TortoiseGit sees them) and `hasconfig:remote.*.url` rules (Git CLI 2.36+, and they follow the repository wherever it is cloned). Everything outside the region is preserved and the file is backed up once. |
-| **Active profile owns the bare SSH hosts** | On by default. While on, any repository without an SSH alias uses the active profile's key. Turn it off once repositories are pinned to aliases.                          |
+
+The active profile always owns the bare `github.com` / `gitlab.com` / `bitbucket.org` hosts, so a repository without an SSH alias still pushes with a key; a repository pinned to an alias keeps its own key whichever profile is active. The Settings page lists which profile answers on each host, and a host the active profile has no account on is marked as refusing `git@<host>:` remotes.
 
 ## Installation
 

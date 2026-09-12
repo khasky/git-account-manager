@@ -242,11 +242,6 @@ export default function SettingsPage({ onBack }: Props) {
                 label: m.settings.guard.manageIncludes,
                 hint: m.settings.guard.manageIncludesHint,
               },
-              {
-                key: "own_bare_ssh_hosts" as const,
-                label: m.settings.guard.ownBareHosts,
-                hint: m.settings.guard.ownBareHostsHint,
-              },
             ].map((row) => (
               <div
                 key={row.key}
@@ -285,6 +280,16 @@ export default function SettingsPage({ onBack }: Props) {
                     {guardStatus.includes_managed ? m.repos.on : m.repos.off}
                   </dd>
                 </div>
+                {guardStatus.ssh_hosts.map(({ host, profile }) => (
+                  <div key={host} className="flex justify-between gap-4">
+                    <dt className="text-fg-4">{host}</dt>
+                    <dd
+                      className={`text-right ${profile ? "text-fg-3" : "text-danger-fg"}`}
+                    >
+                      {profile ?? m.repos.hostNoKey}
+                    </dd>
+                  </div>
+                ))}
               </dl>
             )}
           </div>

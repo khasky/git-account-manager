@@ -226,7 +226,7 @@ pub struct RepoBinding {
 
 /// Machine-wide guard rails. All default to off so an existing install keeps
 /// its current behaviour until the user opts in.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GuardSettings {
     /// Remove global `user.name`/`user.email` and set `user.useConfigOnly`, so a
     /// repository without its own identity fails loudly instead of borrowing
@@ -237,24 +237,10 @@ pub struct GuardSettings {
     /// under a known root start with the right identity.
     #[serde(default)]
     pub manage_gitconfig_includes: bool,
-    /// Let the active profile own the bare `github.com` / `gitlab.com` /
-    /// `bitbucket.org` SSH hosts. Turn off once repositories use aliases.
-    #[serde(default = "default_true")]
-    pub own_bare_ssh_hosts: bool,
 }
 
 fn default_true() -> bool {
     true
-}
-
-impl Default for GuardSettings {
-    fn default() -> Self {
-        Self {
-            unset_global_identity: false,
-            manage_gitconfig_includes: false,
-            own_bare_ssh_hosts: true,
-        }
-    }
 }
 
 fn default_github_client_id() -> String {

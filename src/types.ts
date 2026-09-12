@@ -101,7 +101,6 @@ export interface RepoBinding {
 export interface GuardSettings {
   unset_global_identity: boolean;
   manage_gitconfig_includes: boolean;
-  own_bare_ssh_hosts: boolean;
 }
 
 export interface RepoState {
@@ -186,6 +185,8 @@ export interface GuardStatus {
   use_config_only: boolean;
   includes_managed: boolean;
   gitconfig_path: string;
+  /** Whose key answers on each bare host; `profile` is null where none does. */
+  ssh_hosts: { host: string; profile: string | null }[];
   ok: boolean;
 }
 

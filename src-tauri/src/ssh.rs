@@ -1,4 +1,6 @@
-use crate::models::{Profile, SshKeyInfo, SshKeyPair, MANAGED_FOOTER, MANAGED_HEADER, PLATFORMS};
+use crate::models::{
+    Platform, Profile, SshKeyInfo, SshKeyPair, MANAGED_FOOTER, MANAGED_HEADER, PLATFORMS,
+};
 use crate::proc::hidden_command;
 use crate::repos::host_alias;
 use std::fs;
@@ -144,14 +146,25 @@ pub fn probe_host(host: &str) -> Result<String, String> {
     Ok(text)
 }
 
+/// Which profile's key answers on each platform's bare host. `None` is a host
+/// the active profile has no account on: a remote addressed as `git@<host>:`
+/// is refused there, since no other block matches.
+pub fn bare_host_owners(profiles: &[Profile]) -> Vec<(Platform, Option<&Profile>)> {
+    let active = profiles.iter().find(|p| p.is_active);
+    PLATFORMS
+        .iter()
+        .map(|&platform| (platform, active.filter(|p| p.account(platform).is_some())))
+        .collect()
+}
+
 /// Writes the managed region of `~/.ssh/config`.
 ///
-/// With `own_bare_hosts` the active profile also claims the bare `github.com` /
-/// `gitlab.com` / `bitbucket.org` hosts, which is convenient but means every
-/// repository without an alias follows whichever profile is active. Turn it off
-/// once repositories are pinned to `<platform>-<slug>` aliases: the key then
-/// depends on the repository, not on the app's current state.
-pub fn update_ssh_config(profiles: &[Profile], own_bare_hosts: bool) -> Result<(), String> {
+/// The active profile owns the bare `github.com` / `gitlab.com` /
+/// `bitbucket.org` hosts, so a repository without an alias still has a key;
+/// a repository pinned to a `<platform>-<slug>` alias keeps its own key no
+/// matter which profile is active, because its block names the key directly
+/// with `IdentitiesOnly`.
+pub fn update_ssh_config(profiles: &[Profile]) -> Result<(), String> {
     let dir = ssh_dir()?;
     let config_path = dir.join("config");
     let existing = fs::read_to_string(&config_path).unwrap_or_default();
@@ -160,14 +173,10 @@ pub fn update_ssh_config(profiles: &[Profile], own_bare_hosts: bool) -> Result<(
 
     let mut entries: Vec<String> = Vec::new();
 
-    let active = profiles.iter().find(|p| p.is_active);
-
-    if let (true, Some(profile)) = (own_bare_hosts, active) {
-        for platform in PLATFORMS {
-            if let Some(account) = profile.account(platform) {
-                let host = platform.canonical_host();
-                entries.push(host_entry(host, host, &account.ssh_private_key_path));
-            }
+    for (platform, owner) in bare_host_owners(profiles) {
+        if let Some(account) = owner.and_then(|p| p.account(platform)) {
+            let host = platform.canonical_host();
+            entries.push(host_entry(host, host, &account.ssh_private_key_path));
         }
     }
 
@@ -252,4 +261,68 @@ fn host_entry(host: &str, hostname: &str, identity_file: &str) -> String {
         "Host {}\n  HostName {}\n  User git\n  IdentityFile {}\n  IdentitiesOnly yes\n",
         host, hostname, identity
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::PlatformAccount;
+
+    fn account() -> PlatformAccount {
+        PlatformAccount {
+            username: "octo".to_string(),
+            git_name: "Octo".to_string(),
+            git_email: "octo@example.com".to_string(),
+            ssh_private_key_path: String::new(),
+            ssh_public_key_path: String::new(),
+            sign_commits: false,
+            token: None,
+        }
+    }
+
+    fn profile(name: &str, is_active: bool, github: bool) -> Profile {
+        Profile {
+            id: name.to_string(),
+            name: name.to_string(),
+            default_platform: None,
+            github: github.then(account),
+            gitlab: Some(account()),
+            bitbucket: None,
+            is_active,
+        }
+    }
+
+    /// The failure this guards against: a repository whose origin is the bare
+    /// `git@github.com:` address with no `Host github.com` block to answer it,
+    /// which ssh reports as "Permission denied (publickey)".
+    #[test]
+    fn the_active_profile_owns_every_bare_host_it_has_an_account_on() {
+        let profiles = vec![profile("work", false, true), profile("home", true, true)];
+        let owners = bare_host_owners(&profiles);
+        let owner_of = |wanted: Platform| {
+            owners
+                .iter()
+                .find(|(p, _)| *p == wanted)
+                .and_then(|(_, o)| o.map(|p| p.name.as_str()))
+        };
+        assert_eq!(owner_of(Platform::Github), Some("home"));
+        assert_eq!(owner_of(Platform::Gitlab), Some("home"));
+        assert_eq!(owner_of(Platform::Bitbucket), None);
+    }
+
+    #[test]
+    fn a_host_the_active_profile_lacks_has_no_owner() {
+        let profiles = vec![profile("work", false, true), profile("home", true, false)];
+        let github = bare_host_owners(&profiles)
+            .into_iter()
+            .find(|(p, _)| *p == Platform::Github)
+            .and_then(|(_, o)| o);
+        assert!(github.is_none());
+    }
+
+    #[test]
+    fn no_active_profile_leaves_every_host_unowned() {
+        let profiles = vec![profile("work", false, true)];
+        assert!(bare_host_owners(&profiles).iter().all(|(_, o)| o.is_none()));
+    }
 }

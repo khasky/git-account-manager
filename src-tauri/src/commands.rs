@@ -52,7 +52,7 @@ pub fn save_profile(app: tauri::AppHandle, mut profile: Profile) -> Result<(), S
 /// region in line with the stored state. With the global-identity fuse enabled
 /// no machine-wide identity is written at all — repositories carry their own.
 fn sync_machine(state: &AppState) -> Result<(), String> {
-    ssh::update_ssh_config(&state.profiles, state.guard.own_bare_ssh_hosts)?;
+    ssh::update_ssh_config(&state.profiles)?;
 
     if !state.guard.unset_global_identity {
         if let Some(active) = state.profiles.iter().find(|p| p.is_active) {
@@ -562,7 +562,7 @@ pub async fn doctor() -> Result<DoctorReport, String> {
         let state = storage::with_lock(storage::load_state)?;
         let repos = repos::inspect_all(&state.bindings, &state.profiles);
         Ok(DoctorReport {
-            guard: guard::status(&state.guard),
+            guard: guard::status(&state.guard, &state.profiles),
             repos,
         })
     })

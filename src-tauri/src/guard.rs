@@ -15,6 +15,7 @@ use crate::models::{
     GuardSettings, Platform, PlatformAccount, Profile, RepoRoot, MANAGED_FOOTER, MANAGED_HEADER,
     PLATFORMS,
 };
+use crate::ssh;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -89,6 +90,14 @@ fn identity_file_body(account: &PlatformAccount) -> String {
     )
 }
 
+/// Whose key a bare SSH host answers with; `profile` is `None` where nothing
+/// does, so the page can say a `git@<host>:` remote is refused there.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshHostOwner {
+    pub host: String,
+    pub profile: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuardStatus {
     pub global_name: String,
@@ -96,10 +105,11 @@ pub struct GuardStatus {
     pub use_config_only: bool,
     pub includes_managed: bool,
     pub gitconfig_path: String,
+    pub ssh_hosts: Vec<SshHostOwner>,
     pub ok: bool,
 }
 
-pub fn status(settings: &GuardSettings) -> GuardStatus {
+pub fn status(settings: &GuardSettings, profiles: &[Profile]) -> GuardStatus {
     let identity = git::get_global_identity().unwrap_or(git::GitIdentity {
         name: String::new(),
         email: String::new(),
@@ -122,6 +132,13 @@ pub fn status(settings: &GuardSettings) -> GuardStatus {
         use_config_only,
         includes_managed,
         gitconfig_path: posix(&path),
+        ssh_hosts: ssh::bare_host_owners(profiles)
+            .into_iter()
+            .map(|(platform, owner)| SshHostOwner {
+                host: platform.canonical_host().to_string(),
+                profile: owner.map(|p| p.name.clone()),
+            })
+            .collect(),
         ok: identity_ok && includes_ok,
     }
 }
