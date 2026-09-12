@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decidedByEvidence } from "./repoEvidence";
-import { buildRepoPlan } from "./repoPlan";
+import { buildRepoPlan, underAnyRoot } from "./repoPlan";
 import type { DiscoveredRepo, RepoBinding, RepoRoot } from "./types";
 
 function root(path: string): RepoRoot {
@@ -147,6 +147,20 @@ describe("buildRepoPlan", () => {
     });
 
     expect(plan.bindings[0].platform).toBe("gitlab");
+  });
+});
+
+describe("underAnyRoot", () => {
+  // The doctor list is filtered with this after a folder is removed from the
+  // draft: a row under the removed folder must go, a row under a remaining
+  // folder must stay, and no folders at all means no rows at all.
+  it("keeps only repositories inside a remaining folder", () => {
+    const roots = [root("/repos/a")];
+    expect(underAnyRoot("/repos/a/one", roots)).toBe(true);
+    expect(underAnyRoot("/repos/a", roots)).toBe(true);
+    expect(underAnyRoot("/repos/b/one", roots)).toBe(false);
+    expect(underAnyRoot("/repos/ab/one", roots)).toBe(false);
+    expect(underAnyRoot("/repos/a/one", [])).toBe(false);
   });
 });
 

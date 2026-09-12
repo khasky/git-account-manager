@@ -21,6 +21,14 @@ interface Draft {
  * drive, a folder that failed to walk — keeps its binding: losing a push guard
  * because the disk was not mounted is the one outcome this must never produce.
  */
+/** Whether a repository sits inside one of the draft's folders. A sibling
+ *  folder sharing a prefix ("/repos/a" beside "/repos/ab") is not a parent. */
+export function underAnyRoot(path: string, roots: RepoRoot[]): boolean {
+  return roots.some(
+    (root) => path === root.path || path.startsWith(`${root.path}/`),
+  );
+}
+
 export function buildRepoPlan({
   profileId,
   roots,
@@ -52,9 +60,7 @@ export function buildRepoPlan({
     .filter(
       (b) =>
         (scanned.has(b.path) && !keep.has(b.path)) ||
-        !roots.some(
-          (root) => b.path === root.path || b.path.startsWith(`${root.path}/`),
-        ),
+        !underAnyRoot(b.path, roots),
     )
     .map((b) => b.path);
 

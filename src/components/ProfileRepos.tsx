@@ -10,6 +10,7 @@ import {
 import * as api from "../api";
 import { fmt, useI18n } from "../i18n";
 import { decidedByEvidence } from "../repoEvidence";
+import { underAnyRoot } from "../repoPlan";
 import type {
   DiscoveredRepo,
   PlatformId,
@@ -316,8 +317,11 @@ export default function ProfileRepos({
         </ul>
       )}
 
+      {/* The report describes what is bound on disk; a folder removed in this
+          draft still holds bindings until Save, so its rows are hidden here
+          rather than shown as problems the user has already dealt with. */}
       <RepoDoctor
-        problems={statuses.filter((s) => !s.ok)}
+        problems={statuses.filter((s) => !s.ok && underAnyRoot(s.path, roots))}
         busy={busy}
         blocked={blocked}
         note={note}
