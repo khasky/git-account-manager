@@ -7,13 +7,18 @@ name: Mirror
 # Each host reads its own repository secret holding an access token with write
 # access to that host's repo. A host whose secret is empty is skipped, so a
 # mirror is enabled by creating its secret and retired by deleting it - the
-# workflow itself only changes when a host is added or removed from the matrix.
+# workflow itself only changes when a host is added or removed from the table
+# in the Push step.
 #
 # If the default branch is protected on the mirror, the token needs force-push
 # rights there or the push is rejected with "pre-receive hook declined".
 #
 # Only git refs travel: release assets stay on GitHub, which is why the README
 # still points installers at the GitHub Releases page alone.
+#
+# One job for every host, not a matrix: Actions bills each job rounded up to a
+# whole minute, and a push takes seconds. Three matrix jobs plus the archive
+# request cost a 4-minute floor per run for well under one minute of work.
 
 on:
   push:
@@ -37,50 +42,37 @@ concurrency:
 
 jobs:
   mirror:
-    name: ${{ matrix.host }}
+    name: Mirror
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      # One unreachable host must not stop the others.
-      fail-fast: false
-      matrix:
-        include:
-          - host: GitLab
-            remote: gitlab.com/khasky/git-account-manager.git
-            user: oauth2
-            secret: GITLAB_TOKEN
-          - host: Codeberg
-            remote: codeberg.org/khasky/git-account-manager.git
-            user: khasky
-            secret: CODEBERG_TOKEN
-          - host: Bitbucket
-            remote: bitbucket.org/khasky/git-account-manager.git
-            user: x-token-auth
-            secret: BITBUCKET_TOKEN
+    timeout-minutes: 15
     steps:
       # A bare mirror clone, not actions/checkout: the push needs every branch
       # and tag, and checkout gives a single-ref working tree.
+      # The token travels through http.extraheader via GIT_CONFIG_* env, not the
+      # remote URL: a credential in the URL shows up in the process argv (readable by
+      # any other process on the runner) and is persisted into src.git/config. The env
+      # route keeps it out of both, and GIT_CONFIG_* is not written to any repo config.
       - name: Clone source
         env:
           GH_TOKEN: ${{ github.token }}
-        run: git clone --mirror "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" src.git
+        run: |
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.extraheader
+          export GIT_CONFIG_VALUE_0="Authorization: Basic $(printf '%s' "x-access-token:${GH_TOKEN}" | base64 -w0)"
+          git clone --mirror "https://github.com/${GITHUB_REPOSITORY}.git" src.git
 
       # Explicit refspecs rather than `git push --mirror`: GitHub advertises
       # refs/pull/*, and --mirror would copy every pull-request ref over.
       # Branches and tags only.
+      # Every host is tried even after one fails - an unreachable host must
+      # not stop the others - and the step goes red at the end if any did.
       - name: Push
         working-directory: src.git
         env:
-          MIRROR_HOST: ${{ matrix.host }}
-          MIRROR_REMOTE: ${{ matrix.remote }}
-          MIRROR_SECRET: ${{ matrix.secret }}
-          MIRROR_USER: ${{ matrix.user }}
-          MIRROR_TOKEN: ${{ secrets[matrix.secret] }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          BITBUCKET_TOKEN: ${{ secrets.BITBUCKET_TOKEN }}
         run: |
-          if [ -z "$MIRROR_TOKEN" ]; then
-            echo "::notice::${MIRROR_SECRET} is not set - skipping ${MIRROR_HOST}"
-            exit 0
-          fi
           # `--prune` carries a branch missing from the source over as a deletion.
           # If `main` is not in the clone, skip rather than propagate that: the
           # next event or the nightly cron re-syncs.
@@ -88,22 +80,41 @@ jobs:
             echo "::warning::'main' missing from the source clone - skipping this run"
             exit 0
           fi
-          git push --prune \
-            "https://${MIRROR_USER}:${MIRROR_TOKEN}@${MIRROR_REMOTE}" \
-            '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
+          failed=0
+          # host | remote | user | secret name
+          while IFS='|' read -r host remote user secret; do
+            token="${!secret}"
+            if [ -z "$token" ]; then
+              echo "::notice::${secret} is not set - skipping ${host}"
+              continue
+            fi
+            echo "::group::${host}"
+            # Credentials through http.extraheader (GIT_CONFIG_* env), never the remote
+            # URL: a token in the URL is visible in the process argv on the runner. The
+            # header carries the same user:token pair the URL used to.
+            if ! GIT_CONFIG_COUNT=1 \
+              GIT_CONFIG_KEY_0=http.extraheader \
+              GIT_CONFIG_VALUE_0="Authorization: Basic $(printf '%s' "${user}:${token}" | base64 -w0)" \
+              git push --prune "https://${remote}" \
+                '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'; then
+              echo "::error::push to ${host} failed"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done <<'HOSTS'
+          GitLab|gitlab.com/khasky/git-account-manager.git|oauth2|GITLAB_TOKEN
+          Codeberg|codeberg.org/khasky/git-account-manager.git|khasky|CODEBERG_TOKEN
+          Bitbucket|bitbucket.org/khasky/git-account-manager.git|x-token-auth|BITBUCKET_TOKEN
+          HOSTS
+          exit "$failed"
 
-  archive:
-    name: Software Heritage
-    # Archival rather than a mirror: asks the archive to re-crawl this repo, so
-    # a copy survives even if GitHub does not. Anonymous requests are rate
-    # limited per IP; SWH_TOKEN raises the quota when set.
-    if: github.event_name != 'delete'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    # A throttled or down archive is not a reason to redden the mirror run.
-    continue-on-error: true
-    steps:
-      - name: Request a save
+      # Archival rather than a mirror: asks the archive to re-crawl this repo, so
+      # a copy survives even if GitHub does not. Anonymous requests are rate
+      # limited per IP; SWH_TOKEN raises the quota when set.
+      # A throttled or down archive is not a reason to redden the mirror run.
+      - name: Request a Software Heritage save
+        if: github.event_name != 'delete'
+        continue-on-error: true
         env:
           SWH_TOKEN: ${{ secrets.SWH_TOKEN }}
         run: |
