@@ -7,6 +7,7 @@
 //! what TortoiseGit commits through), and the IDEs.
 
 use crate::git;
+use crate::hooks;
 use crate::models::{Platform, Profile, RepoBinding, RepoRoot, PLATFORMS};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -150,21 +151,20 @@ pub struct DiscoveredRepo {
     pub reason: String,
     pub candidate_profile_ids: Vec<String>,
     pub bound: bool,
-    /// Switches resolved here rather than in the caller, so the folder-default
-    /// rule has one implementation. See `effective_switches`.
-    pub install_hook: bool,
+    /// Resolved here rather than in the caller, so the folder-default rule has
+    /// one implementation. See `effective_pin`.
     pub pin_remote_alias: bool,
     pub overrides_root: bool,
 }
 
-/// The switches a repository starts with. A folder's defaults reach everything
+/// The switch a repository starts with. A folder's default reaches everything
 /// inside it, except a repository the user deliberately set apart — that
-/// exception survives a later edit of the folder's defaults, which is the whole
+/// exception survives a later edit of the folder's default, which is the whole
 /// reason the flag is stored rather than inferred from a value comparison.
-pub fn effective_switches(root: &RepoRoot, existing: Option<&RepoBinding>) -> (bool, bool) {
+pub fn effective_pin(root: &RepoRoot, existing: Option<&RepoBinding>) -> bool {
     match existing {
-        Some(binding) if binding.overrides_root => (binding.install_hook, binding.pin_remote_alias),
-        _ => (root.install_hook, root.pin_remote_alias),
+        Some(binding) if binding.overrides_root => binding.pin_remote_alias,
+        _ => root.pin_remote_alias,
     }
 }
 
@@ -218,7 +218,7 @@ pub fn scan(
             }
             let (profile_id, platform, reason, candidates) = suggest(&remote, profiles, Some(root));
             let existing = bindings.iter().find(|b| b.path == dir);
-            let (install_hook, pin_remote_alias) = effective_switches(root, existing);
+            let pin_remote_alias = effective_pin(root, existing);
             let name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -226,7 +226,6 @@ pub fn scan(
             found.push(DiscoveredRepo {
                 bound: existing.is_some(),
                 overrides_root: existing.is_some_and(|b| b.overrides_root),
-                install_hook,
                 pin_remote_alias,
                 path: dir,
                 name,
@@ -343,8 +342,6 @@ pub fn reach(profile: &Profile, platform: Platform, owner: &str, repo: &str) -> 
 pub struct BindResult {
     pub identity: String,
     pub remote_url: Option<String>,
-    /// `installed` | `kept-existing` | `unavailable` | `off`
-    pub hook: String,
 }
 
 pub fn allowed_emails(binding: &RepoBinding, profile: &Profile) -> Vec<String> {
@@ -403,9 +400,7 @@ pub fn mark_pre_existing_exceptions(roots: &[RepoRoot], bindings: &mut [RepoBind
         let Some(root) = roots.iter().find(|r| is_inside(&r.path, &binding.path)) else {
             continue;
         };
-        if binding.install_hook != root.install_hook
-            || binding.pin_remote_alias != root.pin_remote_alias
-        {
+        if binding.pin_remote_alias != root.pin_remote_alias {
             binding.overrides_root = true;
         }
     }
@@ -473,9 +468,11 @@ pub fn apply_plan(
 
 /// Writes a binding to its repository.
 ///
-/// Both switches undo themselves: clearing one puts back what was there rather
-/// than merely stopping short of writing it again, or a repository would keep a
-/// guard and an alias the user had just turned off.
+/// The switch undoes itself: clearing it puts back what was there rather than
+/// merely stopping short of writing it again, or a repository would keep an
+/// alias the user had just turned off. The allow-list is not written here: it
+/// reaches the repository through the includeIf region (`guard.rs`), so what
+/// an older version put into `.git/config` is cleared, along with its hook.
 pub fn apply_binding(binding: &mut RepoBinding, profile: &Profile) -> Result<BindResult, String> {
     let account = profile
         .account(binding.platform)
@@ -484,8 +481,8 @@ pub fn apply_binding(binding: &mut RepoBinding, profile: &Profile) -> Result<Bin
     git::set_repo_identity(&binding.path, &account.git_name, &account.git_email)?;
     git::set_repo_signing(&binding.path, account.signing_key())?;
 
-    let allowed = allowed_emails(binding, profile);
-    git::repo_config_replace_all(&binding.path, "gam.allowedEmail", &allowed)?;
+    git::repo_config_replace_all(&binding.path, "gam.allowedEmail", &[])?;
+    remove_legacy_hook(&binding.path)?;
 
     let alias = host_alias(binding.platform, profile);
     let current = git::repo_remote_url(&binding.path, "origin");
@@ -517,31 +514,16 @@ pub fn apply_binding(binding: &mut RepoBinding, profile: &Profile) -> Result<Bin
         }
     }
 
-    let hook = if binding.install_hook {
-        install_hook(&binding.path)?
-    } else {
-        remove_hook(&binding.path)?;
-        "off".to_string()
-    };
-
     Ok(BindResult {
         identity: account.git_email.clone(),
         remote_url: rewritten,
-        hook,
     })
 }
 
-/// Writes the guard into whichever hooks directory this repository actually
-/// uses. A `pre-push` that belongs to another tool is left alone — silently
-/// replacing husky's hook would trade one broken guarantee for another.
-/// Where this repository's `pre-push` guard belongs.
-///
-/// husky points `core.hooksPath` at `.husky/_`, and every file in there is one of
-/// husky's own runners: each looks for a same-named file in the parent directory
-/// and executes it. Writing into `_` would fight husky over that file, while the
-/// parent is exactly the slot husky exists to call — so the guard installs there
-/// and both hooks run, ours and whatever the project set husky up for.
-fn pre_push_path(dir: &str) -> Option<PathBuf> {
+/// Where an older version put its `pre-push` guard, so it can be taken back
+/// out. Under husky that was the parent of the `.husky/_` runners directory,
+/// a tracked folder; the guard now lives outside every repository (`hooks.rs`).
+fn legacy_pre_push_path(dir: &str) -> Option<PathBuf> {
     let hooks_dir = git::repo_hooks_dir(dir)?;
     let is_husky_runner_dir = hooks_dir.file_name().is_some_and(|name| name == "_")
         && (hooks_dir.join("h").exists() || hooks_dir.join("husky.sh").exists());
@@ -553,37 +535,9 @@ fn pre_push_path(dir: &str) -> Option<PathBuf> {
     Some(target.join("pre-push"))
 }
 
-fn install_hook(dir: &str) -> Result<String, String> {
-    let Some(path) = pre_push_path(dir) else {
-        return Ok("unavailable".to_string());
-    };
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-
-    if path.exists() {
-        let existing = std::fs::read_to_string(&path).unwrap_or_default();
-        if !existing.contains(HOOK_MARKER) {
-            return Ok("kept-existing".to_string());
-        }
-    }
-
-    std::fs::write(&path, PRE_PUSH_HOOK).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
-    }
-    Ok("installed".to_string())
-}
-
-/// Removes only a guard this app wrote. It has to resolve the path the same way
-/// `install_hook` does — under husky the guard lives one directory above the
-/// hooks path, and looking in the hooks path itself would leave it behind,
-/// refusing pushes for a binding that no longer exists.
-pub fn remove_hook(dir: &str) -> Result<(), String> {
-    let Some(path) = pre_push_path(dir) else {
+/// Removes only a guard this app wrote, from wherever the older version put it.
+pub fn remove_legacy_hook(dir: &str) -> Result<(), String> {
+    let Some(path) = legacy_pre_push_path(dir) else {
         return Ok(());
     };
     if path.exists()
@@ -598,67 +552,8 @@ pub fn remove_hook(dir: &str) -> Result<(), String> {
 
 pub fn clear_binding(dir: &str) -> Result<(), String> {
     git::repo_config_replace_all(dir, "gam.allowedEmail", &[])?;
-    remove_hook(dir)
+    remove_legacy_hook(dir)
 }
-
-const PRE_PUSH_HOOK: &str = r#"#!/bin/sh
-# git-account-manager: pre-push identity guard
-#
-# Refuses a push carrying commits whose author or committer email this
-# repository does not allow. The list lives in the repository's own config
-# (`gam.allowedEmail`); with no list the hook does nothing.
-
-allowed=$(git config --get-all gam.allowedEmail)
-[ -z "$allowed" ] && exit 0
-
-zero=0000000000000000000000000000000000000000
-status=0
-
-# One `git log` for a whole range, not one `git show` per commit: pushing a
-# branch of a few hundred commits used to spawn a few hundred processes, and on
-# Windows each one is a visible cost. The loop reads from a here-document
-# rather than a pipe so that `status` set inside it survives — a piped `while`
-# runs in a subshell and its assignments are lost.
-check_range() {
-	commits=$(git log --format='%h %ae %ce' "$@")
-	while read -r short author committer; do
-		[ -z "$short" ] && continue
-		for email in "$author" "$committer"; do
-			[ -z "$email" ] && continue
-			ok=0
-			for candidate in $allowed; do
-				if [ "$email" = "$candidate" ]; then
-					ok=1
-					break
-				fi
-			done
-			if [ "$ok" -eq 0 ]; then
-				echo "git-account-manager: refusing to push $short - <$email> is not allowed in this repository" >&2
-				status=1
-			fi
-			# An ordinary commit authors and commits under one address; naming
-			# it twice would print the same refusal twice.
-			[ "$author" = "$committer" ] && break
-		done
-	done <<EOF
-$commits
-EOF
-}
-
-while read -r _local_ref local_sha _remote_ref remote_sha; do
-	[ "$local_sha" = "$zero" ] && continue
-	if [ "$remote_sha" = "$zero" ]; then
-		check_range "$local_sha" --not --remotes
-	else
-		check_range "$remote_sha..$local_sha"
-	fi
-done
-
-if [ "$status" -ne 0 ]; then
-	echo "git-account-manager: fix the commits or add the address in the app, then push again" >&2
-fi
-exit $status
-"#;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoCheck {
@@ -705,7 +600,11 @@ const INSPECT_CONCURRENCY: usize = 8;
 /// A single repository costs roughly eight Git processes and they are slow to
 /// spawn on Windows; the repositories do not depend on each other, so running
 /// them one after another made the report take the sum rather than the slowest.
-pub fn inspect_all(bindings: &[RepoBinding], profiles: &[Profile]) -> Vec<RepoStatus> {
+pub fn inspect_all(
+    bindings: &[RepoBinding],
+    profiles: &[Profile],
+    guard_commits: bool,
+) -> Vec<RepoStatus> {
     let pairs: Vec<(&RepoBinding, &Profile)> = bindings
         .iter()
         .filter_map(|b| {
@@ -721,7 +620,9 @@ pub fn inspect_all(bindings: &[RepoBinding], profiles: &[Profile]) -> Vec<RepoSt
         std::thread::scope(|scope| {
             let handles: Vec<_> = chunk
                 .iter()
-                .map(|(binding, profile)| scope.spawn(move || inspect(binding, profile)))
+                .map(|(binding, profile)| {
+                    scope.spawn(move || inspect(binding, profile, guard_commits))
+                })
                 .collect();
             for handle in handles {
                 if let Ok(status) = handle.join() {
@@ -733,7 +634,7 @@ pub fn inspect_all(bindings: &[RepoBinding], profiles: &[Profile]) -> Vec<RepoSt
     out
 }
 
-pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
+pub fn inspect(binding: &RepoBinding, profile: &Profile, guard_commits: bool) -> RepoStatus {
     let dir = binding.path.clone();
     let name = Path::new(&dir)
         .file_name()
@@ -790,13 +691,15 @@ pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
         .collect();
     checks.push(check("history", offending.is_empty(), offending.join(", ")));
 
-    let (hook_detail, hook_path) = hook_state(&dir);
+    // The guard is machine-wide; what can defeat it in one repository is a
+    // local `core.hooksPath`, which git prefers over the global one.
+    let guard_state = hooks::repo_guard_state(&dir);
     let mut hooks_check = check(
         "hooks",
-        !binding.install_hook || hook_detail == "installed",
-        hook_detail,
+        !guard_commits || guard_state == "global",
+        guard_state,
     );
-    hooks_check.hint = hook_path;
+    hooks_check.hint = git::repo_config_get_local(&dir, "core.hooksPath").unwrap_or_default();
     checks.push(hooks_check);
 
     let ok = checks.iter().all(|c| c.ok);
@@ -813,27 +716,6 @@ pub fn inspect(binding: &RepoBinding, profile: &Profile) -> RepoStatus {
         checks,
         ok,
     }
-}
-
-/// The state of the guard plus the file it was read from, so a report can name
-/// what to open instead of leaving the user to work out where hooks live here.
-fn hook_state(dir: &str) -> (String, String) {
-    let Some(path) = pre_push_path(dir) else {
-        return ("unavailable".to_string(), String::new());
-    };
-    let shown = path.to_string_lossy().replace('\\', "/");
-    if !path.exists() {
-        return ("missing".to_string(), shown);
-    }
-    let state = if std::fs::read_to_string(&path)
-        .unwrap_or_default()
-        .contains(HOOK_MARKER)
-    {
-        "installed"
-    } else {
-        "kept-existing"
-    };
-    (state.to_string(), shown)
 }
 
 #[cfg(test)]
@@ -912,42 +794,39 @@ mod tests {
             path: path.to_string(),
             profile_id: "p1".to_string(),
             platform: Platform::Github,
-            install_hook: true,
             pin_remote_alias: false,
         }
     }
 
-    fn binding_at(path: &str, install_hook: bool, pin_alias: bool, overrides: bool) -> RepoBinding {
+    fn binding_at(path: &str, pin_alias: bool, overrides: bool) -> RepoBinding {
         RepoBinding {
             path: path.to_string(),
             profile_id: "p1".to_string(),
             platform: Platform::Github,
             pin_remote_alias: pin_alias,
-            install_hook,
             extra_allowed_emails: vec![],
             overrides_root: overrides,
             original_remote_url: None,
         }
     }
 
-    /// Editing a folder's defaults must reach the repositories that follow it and
+    /// Editing a folder's default must reach the repositories that follow it and
     /// must not touch the one the user deliberately set apart.
     #[test]
     fn folder_defaults_reach_everything_except_a_deliberate_exception() {
         let mut root = root_at("/tmp/roots");
 
-        assert_eq!(effective_switches(&root, None), (true, false));
+        assert!(!effective_pin(&root, None));
 
-        let inherits = binding_at("/tmp/roots/a", false, true, false);
-        assert_eq!(effective_switches(&root, Some(&inherits)), (true, false));
+        let inherits = binding_at("/tmp/roots/a", true, false);
+        assert!(!effective_pin(&root, Some(&inherits)));
 
-        let exception = binding_at("/tmp/roots/b", false, true, true);
-        assert_eq!(effective_switches(&root, Some(&exception)), (false, true));
+        let exception = binding_at("/tmp/roots/b", true, true);
+        assert!(effective_pin(&root, Some(&exception)));
 
-        root.install_hook = false;
         root.pin_remote_alias = true;
-        assert_eq!(effective_switches(&root, Some(&inherits)), (false, true));
-        assert_eq!(effective_switches(&root, Some(&exception)), (false, true));
+        assert!(effective_pin(&root, Some(&inherits)));
+        assert!(effective_pin(&root, Some(&exception)));
     }
 
     fn git(dir: &str, args: &[&str]) {
@@ -1067,9 +946,9 @@ mod tests {
         // `drop` is already bound, so releasing it has something to clear.
         let profiles = vec![profile()];
         let mut roots = vec![root_at(&dir.to_string_lossy().replace('\\', "/"))];
-        let mut bindings = vec![binding_at(&drop, true, false, false)];
+        let mut bindings = vec![binding_at(&drop, false, false)];
         apply_binding(&mut bindings[0], &profiles[0]).unwrap();
-        assert!(git::repo_config_get(&drop, "gam.allowedEmail").is_some());
+        assert!(git::repo_config_get_local(&drop, "user.email").is_some());
 
         let planned_roots = roots.clone();
         let report = apply_plan(
@@ -1080,8 +959,8 @@ mod tests {
                 profile_id: "p1".to_string(),
                 roots: planned_roots,
                 bindings: vec![
-                    binding_at(&keep, true, false, false),
-                    binding_at(&missing, true, false, false),
+                    binding_at(&keep, false, false),
+                    binding_at(&missing, false, false),
                 ],
                 released: vec![drop.clone()],
             },
@@ -1131,9 +1010,10 @@ mod tests {
           "released": ["D:/repos/github/khasky/gone"]
         }"#;
 
+        // `install_hook` is what an older form sent; it must still parse.
         let plan: RepoPlan = serde_json::from_str(sent).expect("form payload must parse");
         assert_eq!(plan.profile_id, "p1");
-        assert!(plan.roots[0].install_hook);
+        assert!(!plan.roots[0].pin_remote_alias);
         assert!(!plan.bindings[0].overrides_root);
         assert_eq!(
             plan.released,
@@ -1141,15 +1021,15 @@ mod tests {
         );
     }
 
-    /// A switch turned off before folders had defaults is a decision, not a
+    /// A switch turned on before folders had defaults is a decision, not a
     /// value waiting to be overwritten.
     #[test]
     fn an_old_binding_that_diverges_becomes_an_exception() {
-        let root = root_at("/tmp/roots"); // install_hook: true, pin: false
+        let root = root_at("/tmp/roots"); // pin: false
         let mut bindings = vec![
-            binding_at("/tmp/roots/off", false, false, false),
-            binding_at("/tmp/roots/same", true, false, false),
-            binding_at("/tmp/elsewhere/other", false, true, false),
+            binding_at("/tmp/roots/on", true, false),
+            binding_at("/tmp/roots/same", false, false),
+            binding_at("/tmp/elsewhere/other", true, false),
         ];
 
         mark_pre_existing_exceptions(std::slice::from_ref(&root), &mut bindings);
@@ -1164,139 +1044,9 @@ mod tests {
             "binding outside the folder is not ours"
         );
 
-        // The folder's own defaults still reach the one that matched.
-        assert_eq!(
-            effective_switches(&root, Some(&bindings[0])),
-            (false, false)
-        );
-        assert_eq!(effective_switches(&root, Some(&bindings[1])), (true, false));
-    }
-
-    /// `sh` is what git runs a hook with. Git for Windows ships one but does not
-    /// always put it on PATH, so the hook's behaviour is proven wherever a shell
-    /// exists and the test says so out loud where one does not — CI's Linux job
-    /// always runs it.
-    fn shell() -> Option<&'static str> {
-        ["sh", "bash", "C:/Program Files/Git/usr/bin/sh.exe"]
-            .into_iter()
-            .find(|candidate| {
-                Command::new(candidate)
-                    .arg("-c")
-                    .arg("exit 0")
-                    .output()
-                    .is_ok()
-            })
-    }
-
-    /// The guard is the last thing between a wrong identity and a public
-    /// repository, so it is checked by running it, not by reading it.
-    #[test]
-    fn the_pre_push_hook_refuses_a_disallowed_address_and_passes_an_allowed_one() {
-        let Some(sh) = shell() else {
-            eprintln!("no POSIX shell on PATH: pre-push hook behaviour not verified here");
-            return;
-        };
-
-        let dir = std::env::temp_dir().join(format!("gam-hook-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.to_string_lossy().replace('\\', "/");
-        Command::new("git")
-            .args(["init", "-q", &path])
-            .output()
-            .unwrap();
-        git(&path, &["config", "user.name", "Octo"]);
-        git(&path, &["config", "user.email", "stranger@example.com"]);
-        git(&path, &["config", "commit.gpgsign", "false"]);
-        git(
-            &path,
-            &["commit", "-q", "--allow-empty", "-m", "wrong identity"],
-        );
-        git(
-            &path,
-            &["config", "--add", "gam.allowedEmail", "octo@example.com"],
-        );
-
-        let head = String::from_utf8(
-            Command::new("git")
-                .args(["-C", &path, "rev-parse", "HEAD"])
-                .output()
-                .unwrap()
-                .stdout,
-        )
-        .unwrap();
-        let head = head.trim();
-        let zero = "0".repeat(40);
-        let refs = format!("refs/heads/main {} refs/heads/main {}\n", head, zero);
-
-        let hook = format!("{}/.git/hooks/pre-push", path);
-        std::fs::write(&hook, PRE_PUSH_HOOK).unwrap();
-
-        let run = |stdin_text: &str| {
-            use std::io::Write as _;
-            let mut child = Command::new(sh)
-                .arg(&hook)
-                .current_dir(&path)
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .expect("hook must start");
-            child
-                .stdin
-                .as_mut()
-                .unwrap()
-                .write_all(stdin_text.as_bytes())
-                .unwrap();
-            child.wait_with_output().unwrap()
-        };
-
-        let refused = run(&refs);
-        let stderr = String::from_utf8_lossy(&refused.stderr).to_string();
-        assert!(
-            !refused.status.success(),
-            "a commit by an unlisted address must not push: {}",
-            stderr
-        );
-        assert!(
-            stderr.contains("stranger@example.com"),
-            "the refusal must name the address: {}",
-            stderr
-        );
-        // Author and committer are the same person here; saying so twice would
-        // be noise, so the message appears once.
-        assert_eq!(
-            stderr.matches("stranger@example.com").count(),
-            1,
-            "one commit, one refusal: {}",
-            stderr
-        );
-
-        // The same push, once the address is allowed.
-        git(
-            &path,
-            &[
-                "config",
-                "--add",
-                "gam.allowedEmail",
-                "stranger@example.com",
-            ],
-        );
-        let accepted = run(&refs);
-        assert!(
-            accepted.status.success(),
-            "an allowed address must push: {}",
-            String::from_utf8_lossy(&accepted.stderr)
-        );
-
-        // A repository with no allow-list is not this app's business.
-        git(&path, &["config", "--unset-all", "gam.allowedEmail"]);
-        assert!(
-            run(&refs).status.success(),
-            "no allow-list means no opinion"
-        );
-
-        let _ = std::fs::remove_dir_all(&dir);
+        // The folder's own default still reaches the one that matched.
+        assert!(effective_pin(&root, Some(&bindings[0])));
+        assert!(!effective_pin(&root, Some(&bindings[1])));
     }
 
     /// Clearing a switch has to undo what setting it did. Leaving the guard on
@@ -1325,7 +1075,7 @@ mod tests {
             git(&path, &["remote", "add", "origin", original]);
 
             let profile = profile();
-            let mut binding = binding_at(&path, true, true, false);
+            let mut binding = binding_at(&path, true, false);
 
             apply_binding(&mut binding, &profile).unwrap();
             assert_eq!(
@@ -1333,9 +1083,7 @@ mod tests {
                 Some("git@github-personal:octo/demo.git")
             );
             assert_eq!(binding.original_remote_url.as_deref(), Some(original));
-            assert_eq!(hook_state(&path).0, "installed");
 
-            binding.install_hook = false;
             binding.pin_remote_alias = false;
             apply_binding(&mut binding, &profile).unwrap();
 
@@ -1344,68 +1092,16 @@ mod tests {
                 Some(original),
                 "the remote must come back as it was, not as a rebuilt guess"
             );
-            assert_eq!(hook_state(&path).0, "missing");
 
             let _ = std::fs::remove_dir_all(&dir);
         }
     }
 
-    /// husky owns every file in `.husky/_` and each one runs its namesake from
-    /// the parent. Installing into `_` would fight husky for the file and report
-    /// a conflict that is not one; the parent slot lets both hooks run.
-    #[test]
-    fn the_guard_installs_into_huskys_hook_slot_rather_than_its_runners() {
-        let dir = std::env::temp_dir().join(format!("gam-husky-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.to_string_lossy().replace('\\', "/");
-
-        Command::new("git")
-            .args(["init", "-q", &path])
-            .output()
-            .unwrap();
-        let runners = dir.join(".husky").join("_");
-        std::fs::create_dir_all(&runners).unwrap();
-        std::fs::write(runners.join("h"), "#!/usr/bin/env sh\n").unwrap();
-        // husky's own runner, which must survive.
-        std::fs::write(
-            runners.join("pre-push"),
-            "#!/usr/bin/env sh\n. \"$(dirname \"$0\")/h\"\n",
-        )
-        .unwrap();
-        git(&path, &["config", "core.hooksPath", ".husky/_"]);
-
-        assert_eq!(install_hook(&path).unwrap(), "installed");
-
-        let ours = dir.join(".husky").join("pre-push");
-        assert!(ours.exists(), "guard must land in the slot husky calls");
-        assert!(std::fs::read_to_string(&ours)
-            .unwrap()
-            .contains(HOOK_MARKER));
-        assert!(
-            !std::fs::read_to_string(runners.join("pre-push"))
-                .unwrap()
-                .contains(HOOK_MARKER),
-            "husky's runner must be left alone"
-        );
-        assert_eq!(hook_state(&path).0, "installed");
-
-        // Releasing the repository has to find the guard where it was put, or it
-        // outlives the binding and keeps refusing pushes.
-        remove_hook(&path).unwrap();
-        assert!(!ours.exists(), "guard must be removed from husky's slot");
-        assert!(
-            runners.join("pre-push").exists(),
-            "husky's own runner is not ours to delete"
-        );
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
     /// The whole path a user takes: a repository with a remote gets bound, and
-    /// the doctor then agrees that it is bound.
+    /// the doctor then agrees that it is bound. What an older version left in
+    /// the repository, a hook and an allow-list in `.git/config`, is taken out.
     #[test]
-    fn binding_writes_identity_allow_list_and_hook() {
+    fn binding_writes_identity_and_clears_what_the_old_version_left() {
         let dir = std::env::temp_dir().join(format!("gam-bind-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -1420,20 +1116,28 @@ mod tests {
             &["remote", "add", "origin", "git@github.com:octo/demo.git"],
         );
 
+        let legacy_hook = dir.join(".git").join("hooks").join("pre-push");
+        std::fs::create_dir_all(legacy_hook.parent().unwrap()).unwrap();
+        std::fs::write(&legacy_hook, format!("#!/bin/sh\n{}\n", HOOK_MARKER)).unwrap();
+        git(
+            &path,
+            &["config", "--add", "gam.allowedEmail", "old@example.com"],
+        );
+
         let profile = profile();
         let mut binding = RepoBinding {
             path: path.clone(),
             profile_id: profile.id.clone(),
             platform: Platform::Github,
             pin_remote_alias: true,
-            install_hook: true,
             extra_allowed_emails: vec!["bot@example.com".to_string()],
             overrides_root: false,
             original_remote_url: None,
         };
 
         let result = apply_binding(&mut binding, &profile).unwrap();
-        assert_eq!(result.hook, "installed");
+        assert!(!legacy_hook.exists(), "the old per-repository hook must go");
+        assert!(git::repo_config_get_local(&path, "gam.allowedEmail").is_none());
         assert_eq!(
             result.remote_url.as_deref(),
             Some("git@github-personal:octo/demo.git")
@@ -1451,12 +1155,22 @@ mod tests {
             ]
         );
 
-        // An empty repository has no history, so every other check must pass.
-        let status = inspect(&binding, &profile);
+        // An empty repository has no history, so every other check must pass;
+        // the guard check is asked about with the guard off, since this
+        // machine's global hooksPath is not the test's to set.
+        let status = inspect(&binding, &profile, false);
         assert!(status.ok, "unexpected failures: {:?}", status.checks);
 
+        // A repository whose own config routes hooks elsewhere escapes the
+        // global guard, and the doctor has to say so.
+        git(&path, &["config", "core.hooksPath", ".husky/_"]);
+        let bypassed = inspect(&binding, &profile, true);
+        let hooks = bypassed.checks.iter().find(|c| c.id == "hooks").unwrap();
+        assert!(!hooks.ok);
+        assert_eq!(hooks.detail, "local-override");
+        assert_eq!(hooks.hint, ".husky/_");
+
         clear_binding(&path).unwrap();
-        assert!(!dir.join(".git/hooks/pre-push").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

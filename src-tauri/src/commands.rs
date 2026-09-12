@@ -15,7 +15,7 @@ use crate::models::{
     Profile, RepoBinding, RepoRoot, SshKeyInfo, SshKeyPair, PLATFORMS,
 };
 use crate::tray::{self, TrayLabels};
-use crate::{gh, guard, oauth, openssh_integration, platform, repos, secrets, ssh, storage};
+use crate::{gh, guard, hooks, oauth, openssh_integration, platform, repos, secrets, ssh, storage};
 
 // -- profiles ---------------------------------------------------------------
 
@@ -76,7 +76,12 @@ fn sync_machine(state: &AppState) -> Result<(), String> {
         }
     }
 
-    guard::apply(&state.guard, &state.profiles, &state.repo_roots)
+    guard::apply(
+        &state.guard,
+        &state.profiles,
+        &state.repo_roots,
+        &state.bindings,
+    )
 }
 
 fn delete_removed_platform_tokens(existing: &Profile, next: &Profile) -> Result<(), String> {
@@ -448,7 +453,12 @@ pub async fn apply_profile_repos(plan: repos::RepoPlan) -> Result<repos::ApplyRe
                 plan,
             )?;
             storage::save_state(&state)?;
-            guard::apply(&state.guard, &state.profiles, &state.repo_roots)?;
+            guard::apply(
+                &state.guard,
+                &state.profiles,
+                &state.repo_roots,
+                &state.bindings,
+            )?;
             Ok(report)
         })
     })
@@ -468,7 +478,11 @@ pub fn save_guard_settings(settings: GuardSettings) -> Result<(), String> {
         if was_fused && !state.guard.unset_global_identity {
             guard::relax_global_identity()?;
         }
-        sync_machine(&state)
+        sync_machine(&state)?;
+        if state.guard.guard_commits {
+            hooks::ensure_in_force()?;
+        }
+        Ok(())
     })
 }
 
@@ -522,6 +536,12 @@ pub async fn fix_repository(path: String) -> Result<repos::BindResult, String> {
             // Re-applying can be what first pins the remote, and the address it
             // replaced is only recoverable if it is written down now.
             storage::save_state(&state)?;
+            guard::apply(
+                &state.guard,
+                &state.profiles,
+                &state.repo_roots,
+                &state.bindings,
+            )?;
             Ok(result)
         })
     })
@@ -576,7 +596,7 @@ pub async fn doctor() -> Result<DoctorReport, String> {
         // Git work that follows takes seconds and touches nothing shared. Holding
         // the lock across both made every other command queue behind the report.
         let state = storage::with_lock(storage::load_state)?;
-        let repos = repos::inspect_all(&state.bindings, &state.profiles);
+        let repos = repos::inspect_all(&state.bindings, &state.profiles, state.guard.guard_commits);
         Ok(DoctorReport {
             guard: guard::status(&state.guard, &state.profiles),
             repos,

@@ -24,7 +24,7 @@ A desktop Git account manager for identity switching across popular code hosting
 
 - **Profiles** — Create, edit, and delete named accounts. Each profile can link **GitHub**, **GitLab**, and **Bitbucket** — any one or several at once.
 - **One-click activation** — Activating a profile updates **global** `git config user.name` / `user.email` and rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** / **bitbucket.org** uses that profile's key.
-- **Repository-scoped identity** — Give a profile its folders and the identity is written into every repository inside them, where every Git client reads it. Add an optional **pre-push guard**, an SSH-alias remote, and a **Doctor** that re-checks each binding. See [Repository-scoped identity](#repository-scoped-identity).
+- **Repository-scoped identity** — Give a profile its folders and the identity is written into every repository inside them, where every Git client reads it. A machine-wide **commit guard** refuses a commit or a push from any other address without a file of the app's inside the repository; add an optional SSH-alias remote, and a **Doctor** re-checks each binding. See [Repository-scoped identity](#repository-scoped-identity).
 - **Default identity** — When several platforms are connected, choose which account supplies the active **git identity** (name/email).
 - **Import from Git** — Start a new profile from the current global Git identity so existing `user.name` / `user.email` settings are not lost.
 - **OAuth sign-in** — **GitHub** via device code flow, **GitLab.com** via browser authorization + PKCE, **Bitbucket** via an Atlassian API token. Client / Application IDs are configurable in Settings (with built-in defaults).
@@ -112,7 +112,7 @@ A machine has no owner; a repository does. An identity kept in the global Git co
 
 ### Binding a repository
 
-Open a profile and add its **folders** under *Folders and repositories*. Each folder carries the switches its repositories start with — the pre-push guard, and whether `origin` is rewritten to the SSH alias — and a single repository can be set apart from them; that exception then survives later edits of the folder's defaults.
+Open a profile and add its **folders** under *Folders and repositories*. Each folder carries the switch its repositories start with, whether `origin` is rewritten to the SSH alias, and a single repository can be set apart from it; that exception then survives later edits of the folder's default.
 
 Nothing is written while you edit. Adding a folder scans it and shows what was found; **Save** applies the whole set at once and reports what it did, so *Cancel* leaves every repository untouched — which is also what lets a profile be given its folders before it exists on disk.
 
@@ -130,15 +130,19 @@ Every repository found is matched against your profiles by evidence, never by gu
 A repository the first two rows settle is selected for you. Anything else — an organisation, a fork, someone else's clone that happens to sit in the folder — is marked and waits for a decision rather than being stamped with this identity. Binding writes:
 
 - `user.name` / `user.email` into the repository's **own** config — the one place the Git CLI, libgit2 (which is what TortoiseGit commits through) and the IDEs all agree on;
-- `gam.allowedEmail`, the addresses this repository accepts;
-- optionally a `pre-push` hook that refuses a push carrying any other address;
 - optionally an `origin` rewritten to the profile's SSH alias, so the key follows the repository instead of the active profile.
 
-The hook is installed into whatever hooks directory the repository actually uses, `core.hooksPath` included. A `pre-push` belonging to another tool is never overwritten — the Doctor reports it instead.
+The addresses a repository accepts (`gam.allowedEmail`) are not written into it: they reach it through the generated `includeIf` region, from a file the app keeps outside every repository.
+
+### Commit guard
+
+The guard is one hooks directory the app owns, outside every repository, and the global `core.hooksPath` pointing at it. Each dispatcher there runs the check where it has a say — `pre-commit` refuses a commit whose author or committer the repository does not allow, before the commit exists; `pre-push` catches commits made before the repository was bound — and then runs the repository's own hook of the same name, so lefthook, a hand-written hook or anything in `.git/hooks` keeps working. Nothing lands in a tracked folder, so nothing of the app's ever rides along with a commit.
+
+What the dispatcher cannot reach is a repository whose local config sets `core.hooksPath` itself (husky does, at `npm install`): local wins over global and the guard never runs there. The Doctor reports that repository as *bypassed* rather than writing into its tracked folders. A global `core.hooksPath` that already points somewhere else is left alone, and enabling the guard says so instead of replacing it.
 
 ### Doctor
 
-Re-reads every bound repository from disk and reports six checks per repository: the folder exists, the effective identity matches, the identity is set **locally** rather than inherited, the remote matches the profile, the recent history carries no foreign address, and the pre-push guard is in place. Nothing is changed until you press **Fix**.
+Re-reads every bound repository from disk and reports six checks per repository: the folder exists, the effective identity matches, the identity is set **locally** rather than inherited, the remote matches the profile, the recent history carries no foreign address, and the commit guard reaches it. Nothing is changed until you press **Fix**.
 
 A profile whose repositories drifted carries a count on its card in the list, so a problem surfaces without opening anything; the checks themselves live in that profile.
 
@@ -150,6 +154,7 @@ The history check is the one that catches a mistake that already happened, on th
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Drop the global Git identity**          | Removes global `user.name` / `user.email` and sets `user.useConfigOnly`. An unbound repository then fails with *Author identity unknown* instead of borrowing the active profile's address. |
 | **Maintain includeIf rules**              | Generates a delimited region in `~/.gitconfig` with `gitdir` rules (understood by libgit2, so TortoiseGit sees them) and `hasconfig:remote.*.url` rules (Git CLI 2.36+, and they follow the repository wherever it is cloned). Everything outside the region is preserved and the file is backed up once. |
+| **Guard commits with a global hook**      | On by default. Points the global `core.hooksPath` at the app's dispatchers (see [Commit guard](#commit-guard)) and keeps the includeIf region, which carries each repository's allow-list, whatever the switch above says. |
 
 The active profile always owns the bare `github.com` / `gitlab.com` / `bitbucket.org` hosts, so a repository without an SSH alias still pushes with a key; a repository pinned to an alias keeps its own key whichever profile is active. The Settings page lists which profile answers on each host, and a host the active profile has no account on is marked as refusing `git@<host>:` remotes.
 

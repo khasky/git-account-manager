@@ -8,7 +8,6 @@ function root(path: string): RepoRoot {
     path,
     profile_id: "p1",
     platform: "github",
-    install_hook: true,
     pin_remote_alias: false,
   };
 }
@@ -27,7 +26,6 @@ function repo(overrides: Partial<DiscoveredRepo> & { path: string }) {
     reason: "owner",
     candidate_profile_ids: [],
     bound: false,
-    install_hook: true,
     pin_remote_alias: false,
     overrides_root: false,
   };
@@ -40,7 +38,6 @@ function binding(path: string, extra: string[] = []): RepoBinding {
     profile_id: "p1",
     platform: "github",
     pin_remote_alias: false,
-    install_hook: true,
     extra_allowed_emails: extra,
     overrides_root: false,
   };

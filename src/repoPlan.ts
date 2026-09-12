@@ -45,7 +45,6 @@ export function buildRepoPlan({
         path: r.path,
         profile_id: profileId,
         platform: r.suggested_platform ?? root?.platform ?? "github",
-        install_hook: r.install_hook,
         pin_remote_alias: r.pin_remote_alias,
         // Addresses the user accepted for this repository are its own record,
         // not something the scan can rediscover, so they survive a re-save.

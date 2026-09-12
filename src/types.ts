@@ -86,8 +86,7 @@ export interface RepoRoot {
   path: string;
   profile_id: string;
   platform: PlatformId;
-  /** Defaults every repository in this folder starts with. */
-  install_hook: boolean;
+  /** Default every repository in this folder starts with. */
   pin_remote_alias: boolean;
 }
 
@@ -97,7 +96,6 @@ export interface RepoBinding {
   profile_id: string;
   platform: PlatformId;
   pin_remote_alias: boolean;
-  install_hook: boolean;
   extra_allowed_emails: string[];
   /** Deliberately set apart from its folder's defaults. */
   overrides_root: boolean;
@@ -109,6 +107,8 @@ export interface RepoBinding {
 export interface GuardSettings {
   unset_global_identity: boolean;
   manage_gitconfig_includes: boolean;
+  /** Route hooks through the app's global dispatchers; implies the includeIf region. */
+  guard_commits: boolean;
 }
 
 export interface RepoState {
@@ -131,8 +131,7 @@ export interface DiscoveredRepo {
   reason: "alias" | "owner" | "ambiguous" | "unknown";
   candidate_profile_ids: string[];
   bound: boolean;
-  /** Folder defaults already applied by the backend. */
-  install_hook: boolean;
+  /** Folder default already applied by the backend. */
   pin_remote_alias: boolean;
   overrides_root: boolean;
 }
@@ -154,7 +153,6 @@ export interface ApplyReport {
 export interface BindResult {
   identity: string;
   remote_url: string | null;
-  hook: "installed" | "kept-existing" | "unavailable" | "off";
 }
 
 export interface RepoCheck {
@@ -195,6 +193,8 @@ export interface GuardStatus {
   gitconfig_path: string;
   /** Whose key answers on each bare host; `profile` is null where none does. */
   ssh_hosts: { host: string; profile: string | null }[];
+  hooks_path: string | null;
+  hooks: "global" | "foreign" | "off";
   ok: boolean;
 }
 

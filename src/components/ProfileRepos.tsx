@@ -131,7 +131,6 @@ export default function ProfileRepos({
         platform: (profile.default_platform ??
           platforms[0] ??
           "github") as PlatformId,
-        install_hook: true,
         pin_remote_alias: false,
       },
     ];
@@ -144,8 +143,8 @@ export default function ProfileRepos({
     setRepos((prev) => prev.filter((r) => r.root_path !== path));
   }
 
-  /** A folder's defaults reach every repository under it that the user has not
-   *  deliberately set apart. Mirrors `repos::effective_switches` in the backend,
+  /** A folder's default reaches every repository under it that the user has not
+   *  deliberately set apart. Mirrors `repos::effective_pin` in the backend,
    *  which resolves the same rule when a scan first materialises these rows. */
   function updateFolder(path: string, next: Partial<RepoRoot>) {
     setRoots((prev) =>
@@ -156,7 +155,6 @@ export default function ProfileRepos({
         r.root_path === path && !r.overrides_root
           ? {
               ...r,
-              install_hook: next.install_hook ?? r.install_hook,
               pin_remote_alias: next.pin_remote_alias ?? r.pin_remote_alias,
             }
           : r,
@@ -181,7 +179,6 @@ export default function ProfileRepos({
         const root = roots.find((x) => x.path === r.root_path);
         return {
           ...r,
-          install_hook: root?.install_hook ?? r.install_hook,
           pin_remote_alias: root?.pin_remote_alias ?? r.pin_remote_alias,
           overrides_root: false,
         };

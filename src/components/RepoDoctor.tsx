@@ -36,11 +36,9 @@ export default function RepoDoctor({
   };
 
   const hookLabel: Record<string, string> = {
-    installed: m.repos.hookInstalled,
-    "kept-existing": m.repos.hookKeptExisting,
-    unavailable: m.repos.hookUnavailable,
+    global: m.repos.hookGlobal,
+    "local-override": m.repos.hookLocalOverride,
     off: m.repos.hookOff,
-    missing: m.repos.hookMissing,
   };
 
   if (problems.length === 0) return null;

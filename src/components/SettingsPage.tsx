@@ -251,6 +251,11 @@ export default function SettingsPage({ onBack }: Props) {
                 label: m.settings.guard.manageIncludes,
                 hint: m.settings.guard.manageIncludesHint,
               },
+              {
+                key: "guard_commits" as const,
+                label: m.settings.guard.guardCommits,
+                hint: m.settings.guard.guardCommitsHint,
+              },
             ].map((row) => (
               <div
                 key={row.key}
@@ -287,6 +292,22 @@ export default function SettingsPage({ onBack }: Props) {
                   <dt className="text-fg-4">{m.repos.includesRegion}</dt>
                   <dd className="text-fg-3">
                     {guardStatus.includes_managed ? m.repos.on : m.repos.off}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-fg-4">{m.repos.hooksPath}</dt>
+                  <dd
+                    className={`text-right break-all ${
+                      guardStatus.hooks === "global" || !guard.guard_commits
+                        ? "text-fg-3"
+                        : "text-danger-fg"
+                    }`}
+                  >
+                    {guardStatus.hooks === "global"
+                      ? m.repos.hookGlobal
+                      : guardStatus.hooks === "foreign"
+                        ? `${m.repos.hookForeign}: ${guardStatus.hooks_path}`
+                        : m.repos.hookOff}
                   </dd>
                 </div>
                 {guardStatus.ssh_hosts.map(({ host, profile }) => (

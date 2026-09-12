@@ -2,6 +2,7 @@ mod commands;
 mod gh;
 mod git;
 mod guard;
+mod hooks;
 mod http;
 mod models;
 mod oauth;

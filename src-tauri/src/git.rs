@@ -100,6 +100,16 @@ pub fn set_use_config_only(enabled: bool) -> Result<(), String> {
     }
 }
 
+/// The global `core.hooksPath`, which routes every repository's hooks through
+/// this app's dispatchers (`hooks.rs`).
+pub fn set_global_hooks_path(dir: &str) -> Result<(), String> {
+    run_git(&["config", "--global", "core.hooksPath", dir]).map(|_| ())
+}
+
+pub fn unset_global_hooks_path() -> Result<(), String> {
+    run_git_optional(&["config", "--global", "--unset", "core.hooksPath"])
+}
+
 pub fn get_global_config(key: &str) -> Option<String> {
     run_git(&["config", "--global", "--get", key])
         .ok()

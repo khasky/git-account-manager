@@ -183,10 +183,6 @@ pub struct RepoRoot {
     pub path: String,
     pub profile_id: String,
     pub platform: Platform,
-    /// Default for the repositories in this folder. Installing the guard is the
-    /// point of adding a folder, so it starts on.
-    #[serde(default = "default_true")]
-    pub install_hook: bool,
     /// Default for the repositories in this folder. Rewriting a remote is
     /// visible from outside the app, so it starts off.
     #[serde(default)]
@@ -205,14 +201,11 @@ pub struct RepoBinding {
     /// key no longer depends on which profile is active.
     #[serde(default)]
     pub pin_remote_alias: bool,
-    /// Install the pre-push identity guard into this repository's hooks path.
-    #[serde(default)]
-    pub install_hook: bool,
-    /// Extra emails the pre-push guard accepts here (bots, co-authors).
+    /// Extra emails the identity guard accepts here (bots, co-authors).
     #[serde(default)]
     pub extra_allowed_emails: Vec<String>,
-    /// Set once the user changes this repository's switches away from its
-    /// folder's defaults. A later change to those defaults then leaves it alone,
+    /// Set once the user changes this repository's switch away from its
+    /// folder's default. A later change to that default then leaves it alone,
     /// so a deliberate exception is not undone by an unrelated edit.
     #[serde(default)]
     pub overrides_root: bool,
@@ -224,9 +217,10 @@ pub struct RepoBinding {
     pub original_remote_url: Option<String>,
 }
 
-/// Machine-wide guard rails. All default to off so an existing install keeps
-/// its current behaviour until the user opts in.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// Machine-wide guard rails. The identity ones default to off so an existing
+/// install keeps its current behaviour until the user opts in; the commit guard
+/// defaults to on because it replaces the per-repository hook it succeeds.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuardSettings {
     /// Remove global `user.name`/`user.email` and set `user.useConfigOnly`, so a
     /// repository without its own identity fails loudly instead of borrowing
@@ -237,10 +231,26 @@ pub struct GuardSettings {
     /// under a known root start with the right identity.
     #[serde(default)]
     pub manage_gitconfig_includes: bool,
+    /// Route every repository's hooks through this app's dispatchers via the
+    /// global `core.hooksPath`, so the identity guard runs on `pre-commit` and
+    /// `pre-push` without a file of ours inside any repository. Implies the
+    /// `includeIf` region, which is where the guard reads its allow-list from.
+    #[serde(default = "default_true")]
+    pub guard_commits: bool,
 }
 
 fn default_true() -> bool {
     true
+}
+
+impl Default for GuardSettings {
+    fn default() -> Self {
+        Self {
+            unset_global_identity: false,
+            manage_gitconfig_includes: false,
+            guard_commits: true,
+        }
+    }
 }
 
 fn default_github_client_id() -> String {

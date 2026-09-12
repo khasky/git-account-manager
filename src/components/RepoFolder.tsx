@@ -96,20 +96,6 @@ export default function RepoFolder({
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="flex items-center gap-1.5 text-xs text-fg-3">
-              {m.repos.installHook}
-              <InfoTip text={m.repos.installHookInfo} />
-            </p>
-            <p className="text-[11px] text-fg-5">{m.repos.installHookHint}</p>
-          </div>
-          <Toggle
-            size="sm"
-            on={root.install_hook}
-            onClick={() => onUpdate({ install_hook: !root.install_hook })}
-          />
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="flex items-center gap-1.5 text-xs text-fg-3">
               {m.repos.pinAlias}
               <InfoTip text={m.repos.pinAliasInfo} />
             </p>
@@ -172,9 +158,9 @@ export default function RepoFolder({
                   {repo.remote_url}
                 </code>
 
-                {/* The same two settings as the folder above, shown here so it
-                    is visible which ones this repository will actually get and
-                    whether they still come from the folder. */}
+                {/* The same setting as the folder above, shown here so it is
+                    visible what this repository will actually get and whether
+                    it still comes from the folder. */}
                 <div className="space-y-1 rounded bg-raised/60 px-2 py-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 text-[11px] text-fg-5">
@@ -193,19 +179,6 @@ export default function RepoFolder({
                       </button>
                     )}
                   </div>
-                  <label className="flex items-center gap-1.5 text-[11px] text-fg-4">
-                    <input
-                      type="checkbox"
-                      checked={repo.install_hook}
-                      onChange={(e) =>
-                        onOverride(repo.path, {
-                          install_hook: e.target.checked,
-                        })
-                      }
-                      className="h-3 w-3 accent-blue-600"
-                    />
-                    {m.repos.installHook}
-                  </label>
                   <label className="flex items-center gap-1.5 text-[11px] text-fg-4">
                     <input
                       type="checkbox"
