@@ -47,6 +47,15 @@ export const ja: Messages = {
     autostartHint: `アプリは最小化されてシステムトレイで起動します`,
     language: `言語`,
     languageHint: `インターフェースの言語を選択`,
+    gh: {
+      title: `GitHub CLI`,
+      intro: `<code>gh</code> は独自のサインイン済みアカウント一覧を持ち、そのうち一つとして動作します。オンにすると、プロフィールの有効化と同時に <code>gh</code> もそのプロフィールの GitHub ログインに切り替わり、<code>gh pr create</code> などが SSH 鍵と同じアカウントで実行されます。`,
+      accounts: `gh のアカウント: {logins}。有効: {active}。`,
+      noAccounts: `gh はインストールされていますが、どのアカウントにもサインインしていません。切り替えるアカウントごとに <code>gh auth login</code> を実行してください。`,
+      notFound: `PATH に <code>gh</code> が見つかりません。プロフィールと一緒にアカウントを切り替えるには <a>GitHub CLI</a> をインストールしてください。`,
+      toggle: `プロフィールと一緒に gh のアカウントを切り替える`,
+      toggleHint: `有効化のたびに <code>gh auth switch --user &lt;login&gt;</code> を実行します。gh がサインインしていないログインはスキップされます。`,
+    },
     tortoise: {
       title: `TortoiseGit とコマンドラインの Git`,
       intro: `TortoiseGit は通常 TortoiseGitPlink を使用しますが、OpenSSH の <code>%USERPROFILE%\\.ssh\\config</code> を同じようには読み込みません。これをオンにすると、TortoiseGit が <code>ssh.exe</code> を使うように設定し、Git のグローバルな <code>core.sshCommand</code> を設定します。これにより、ここで管理する SSH キーとホストが両方の場所で機能します。`,

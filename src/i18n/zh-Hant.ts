@@ -47,6 +47,15 @@ export const zhHant: Messages = {
     autostartHint: `應用程式以最小化方式在系統匣啟動`,
     language: `語言`,
     languageHint: `選擇介面語言`,
+    gh: {
+      title: `GitHub CLI`,
+      intro: `<code>gh</code> 自行維護一份已登入帳戶清單，並以其中一個身分運作。開啟後，啟用設定檔時也會把 <code>gh</code> 切換到該設定檔的 GitHub 登入名稱，這樣 <code>gh pr create</code> 等命令與 SSH 金鑰使用同一帳戶。`,
+      accounts: `gh 中的帳戶：{logins}。目前：{active}。`,
+      noAccounts: `已安裝 gh，但未登入任何帳戶。請對每個要切換的帳戶執行 <code>gh auth login</code>。`,
+      notFound: `PATH 中找不到 <code>gh</code>。安裝 <a>GitHub CLI</a> 後即可隨設定檔切換其帳戶。`,
+      toggle: `隨設定檔切換 gh 帳戶`,
+      toggleHint: `每次啟用時執行 <code>gh auth switch --user &lt;login&gt;</code>。gh 未登入的登入名稱會被略過。`,
+    },
     tortoise: {
       title: `TortoiseGit 和命令列 Git`,
       intro: `TortoiseGit 通常使用 TortoiseGitPlink，它讀取 OpenSSH 的 <code>%USERPROFILE%\\.ssh\\config</code> 的方式不同。開啟此項可讓 TortoiseGit 指向 <code>ssh.exe</code> 並設定 Git 的全域 <code>core.sshCommand</code>，使此處管理的 SSH 金鑰和主機在兩處都能生效。`,

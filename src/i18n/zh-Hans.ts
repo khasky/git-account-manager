@@ -47,6 +47,15 @@ export const zhHans: Messages = {
     autostartHint: `应用以最小化方式在系统托盘启动`,
     language: `语言`,
     languageHint: `选择界面语言`,
+    gh: {
+      title: `GitHub CLI`,
+      intro: `<code>gh</code> 自己维护一份已登录账户列表，并以其中一个身份运行。开启后，激活配置文件时也会把 <code>gh</code> 切换到该配置文件的 GitHub 登录名，这样 <code>gh pr create</code> 等命令与 SSH 密钥使用同一账户。`,
+      accounts: `gh 中的账户：{logins}。当前：{active}。`,
+      noAccounts: `已安装 gh，但未登录任何账户。请对每个要切换的账户运行 <code>gh auth login</code>。`,
+      notFound: `PATH 中找不到 <code>gh</code>。安装 <a>GitHub CLI</a> 后即可随配置文件切换其账户。`,
+      toggle: `随配置文件切换 gh 账户`,
+      toggleHint: `每次激活时运行 <code>gh auth switch --user &lt;login&gt;</code>。gh 未登录的登录名会被跳过。`,
+    },
     tortoise: {
       title: `TortoiseGit 和命令行 Git`,
       intro: `TortoiseGit 通常使用 TortoiseGitPlink，它读取 OpenSSH 的 <code>%USERPROFILE%\\.ssh\\config</code> 的方式不同。开启此项可让 TortoiseGit 指向 <code>ssh.exe</code> 并设置 Git 的全局 <code>core.sshCommand</code>，使此处管理的 SSH 密钥和主机在两处都能生效。`,

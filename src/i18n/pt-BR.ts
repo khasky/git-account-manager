@@ -47,6 +47,15 @@ export const ptBR: Messages = {
     autostartHint: `O app inicia minimizado na bandeja do sistema`,
     language: `Idioma`,
     languageHint: `Escolha o idioma da interface`,
+    gh: {
+      title: `GitHub CLI`,
+      intro: `O <code>gh</code> mantém sua própria lista de contas conectadas e age como uma delas por vez. Com isto ligado, ativar um perfil também faz o <code>gh</code> usar o login do GitHub desse perfil, então <code>gh pr create</code> e afins saem pela mesma conta da chave SSH.`,
+      accounts: `Contas no gh: {logins}. Ativa: {active}.`,
+      noAccounts: `O gh está instalado mas sem sessão em nenhuma conta. Execute <code>gh auth login</code> para cada conta entre as quais você alterna.`,
+      notFound: `<code>gh</code> não foi encontrado no PATH. Instale a <a>GitHub CLI</a> para trocar a conta dela junto com o perfil.`,
+      toggle: `Trocar a conta do gh junto com o perfil`,
+      toggleHint: `Executa <code>gh auth switch --user &lt;login&gt;</code> a cada ativação. Um login sem sessão no gh é ignorado.`,
+    },
     tortoise: {
       title: `TortoiseGit e Git na linha de comando`,
       intro: `O TortoiseGit normalmente usa o TortoiseGitPlink, que não lê seu <code>%USERPROFILE%\\.ssh\\config</code> do OpenSSH da mesma forma. Ative isto para apontar o TortoiseGit para o <code>ssh.exe</code> e definir o <code>core.sshCommand</code> global do Git, para que as chaves SSH e os hosts gerenciados aqui funcionem nos dois lugares.`,

@@ -9,6 +9,7 @@ import * as api from "../api";
 import { fmt, LANGUAGES, type LangCode, rich, useI18n } from "../i18n";
 import { useTheme } from "../ThemeContext";
 import type {
+  GhProbe,
   GuardSettings,
   GuardStatus,
   OpenSshIntegrationProbe,
@@ -39,6 +40,8 @@ export default function SettingsPage({ onBack }: Props) {
   const [githubId, setGithubId] = useState("");
   const [gitlabId, setGitlabId] = useState("");
   const [useOpenSsh, setUseOpenSsh] = useState(false);
+  const [switchGh, setSwitchGh] = useState(true);
+  const [ghProbe, setGhProbe] = useState<GhProbe | null>(null);
   const [openSshProbe, setOpenSshProbe] =
     useState<OpenSshIntegrationProbe | null>(null);
   const [autostart, setAutostart] = useState(false);
@@ -59,8 +62,13 @@ export default function SettingsPage({ onBack }: Props) {
         setGithubId(s.github_client_id);
         setGitlabId(s.gitlab_client_id);
         setUseOpenSsh(Boolean(s.use_openssh_for_git_tools));
+        setSwitchGh(s.switch_gh_account);
       })
       .catch(() => {});
+    api
+      .ghProbe()
+      .then(setGhProbe)
+      .catch(() => setGhProbe({ available: false, logins: [], active: null }));
     api
       .openSshIntegrationProbe()
       .then(setOpenSshProbe)
@@ -132,6 +140,7 @@ export default function SettingsPage({ onBack }: Props) {
         github_client_id: githubId.trim(),
         gitlab_client_id: gitlabId.trim(),
         use_openssh_for_git_tools: useOpenSsh,
+        switch_gh_account: switchGh,
       });
       setOpenSshProbe(await api.openSshIntegrationProbe());
       setSaved(true);
@@ -342,6 +351,39 @@ export default function SettingsPage({ onBack }: Props) {
             ) : null}
           </div>
         ) : null}
+
+        <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
+          <h3 className="font-medium text-fg-2">{m.settings.gh.title}</h3>
+          <p className="text-xs leading-relaxed text-fg-4">
+            {rich(m.settings.gh.intro, { codeClass: "text-fg-3" })}
+          </p>
+          {ghProbe &&
+            (ghProbe.available ? (
+              <p className="text-xs text-fg-5">
+                {ghProbe.logins.length > 0
+                  ? fmt(m.settings.gh.accounts, {
+                      logins: ghProbe.logins.join(", "),
+                      active: ghProbe.active ?? "",
+                    })
+                  : rich(m.settings.gh.noAccounts, { codeClass: "text-fg-4" })}
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                {rich(m.settings.gh.notFound, {
+                  href: "https://cli.github.com/",
+                })}
+              </p>
+            ))}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-fg-3">{m.settings.gh.toggle}</p>
+              <p className="text-xs text-fg-5">
+                {rich(m.settings.gh.toggleHint, { codeClass: "text-fg-4" })}
+              </p>
+            </div>
+            <Toggle on={switchGh} onClick={() => setSwitchGh(!switchGh)} />
+          </div>
+        </div>
 
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
           <h3 className="font-medium text-fg-2">{m.settings.github.title}</h3>

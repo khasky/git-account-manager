@@ -15,7 +15,7 @@ use crate::models::{
     Profile, RepoBinding, RepoRoot, SshKeyInfo, SshKeyPair, PLATFORMS,
 };
 use crate::tray::{self, TrayLabels};
-use crate::{guard, oauth, openssh_integration, platform, repos, secrets, ssh, storage};
+use crate::{gh, guard, oauth, openssh_integration, platform, repos, secrets, ssh, storage};
 
 // -- profiles ---------------------------------------------------------------
 
@@ -54,8 +54,19 @@ pub fn save_profile(app: tauri::AppHandle, mut profile: Profile) -> Result<(), S
 fn sync_machine(state: &AppState) -> Result<(), String> {
     ssh::update_ssh_config(&state.profiles)?;
 
+    let active = state.profiles.iter().find(|p| p.is_active);
+
+    if state.oauth.switch_gh_account {
+        if let Some(login) = active.and_then(|p| p.github.as_ref()).map(|a| &a.username) {
+            // A missing gh, or a login it is not signed in to, is the expected
+            // failure here and must not undo the switch of everything else;
+            // the settings page shows which logins gh knows.
+            let _ = gh::switch_account(login);
+        }
+    }
+
     if !state.guard.unset_global_identity {
-        if let Some(active) = state.profiles.iter().find(|p| p.is_active) {
+        if let Some(active) = active {
             if let Some((name, email)) = active.active_identity() {
                 git::set_global_identity(name, email)?;
             }
@@ -361,6 +372,11 @@ pub fn save_settings(settings: OAuthSettings) -> Result<(), String> {
         storage::save_state(&state)?;
         openssh_integration::apply(state.oauth.use_openssh_for_git_tools)
     })
+}
+
+#[tauri::command]
+pub fn gh_probe() -> gh::GhProbe {
+    gh::probe()
 }
 
 #[tauri::command]

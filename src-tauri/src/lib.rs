@@ -1,4 +1,5 @@
 mod commands;
+mod gh;
 mod git;
 mod guard;
 mod http;
@@ -146,6 +147,7 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::openssh_integration_probe,
+            commands::gh_probe,
             commands::get_git_identity,
             commands::set_tray_labels,
             commands::get_repo_state,

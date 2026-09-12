@@ -47,6 +47,15 @@ export const ko: Messages = {
     autostartHint: `앱이 최소화되어 시스템 트레이에서 시작됩니다`,
     language: `언어`,
     languageHint: `인터페이스 언어를 선택하세요`,
+    gh: {
+      title: `GitHub CLI`,
+      intro: `<code>gh</code>는 자체 로그인 계정 목록을 두고 그중 하나로 동작합니다. 켜 두면 프로필을 활성화할 때 <code>gh</code>도 그 프로필의 GitHub 로그인으로 전환되어 <code>gh pr create</code> 등이 SSH 키와 같은 계정으로 실행됩니다.`,
+      accounts: `gh 계정: {logins}. 활성: {active}.`,
+      noAccounts: `gh가 설치되어 있지만 로그인된 계정이 없습니다. 전환할 계정마다 <code>gh auth login</code>을 실행하세요.`,
+      notFound: `PATH에서 <code>gh</code>를 찾지 못했습니다. 프로필과 함께 계정을 전환하려면 <a>GitHub CLI</a>를 설치하세요.`,
+      toggle: `프로필과 함께 gh 계정 전환`,
+      toggleHint: `활성화할 때마다 <code>gh auth switch --user &lt;login&gt;</code>을 실행합니다. gh에 로그인되지 않은 로그인은 건너뜁니다.`,
+    },
     tortoise: {
       title: `TortoiseGit 및 명령줄 Git`,
       intro: `TortoiseGit은 일반적으로 TortoiseGitPlink를 사용하며, OpenSSH의 <code>%USERPROFILE%\\.ssh\\config</code>를 동일하게 읽지 않습니다. 이 옵션을 켜면 TortoiseGit이 <code>ssh.exe</code>를 사용하도록 하고 Git의 전역 <code>core.sshCommand</code>를 설정하여, 여기서 관리하는 SSH 키와 호스트가 두 곳 모두에서 작동합니다.`,

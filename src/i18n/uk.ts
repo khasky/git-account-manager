@@ -47,6 +47,15 @@ export const uk: Messages = {
     autostartHint: `Застосунок запускається згорнутим у трей`,
     language: `Мова`,
     languageHint: `Виберіть мову інтерфейсу`,
+    gh: {
+      title: `GitHub CLI`,
+      intro: `<code>gh</code> зберігає власний список акаунтів і діє від імені одного з них. Коли ввімкнено, активація профілю перемикає і <code>gh</code> на GitHub-логін цього профілю, тож <code>gh pr create</code> та інші команди йдуть від того самого акаунта, що й SSH-ключ.`,
+      accounts: `Акаунти в gh: {logins}. Активний: {active}.`,
+      noAccounts: `gh встановлено, але він не ввійшов у жоден акаунт. Виконайте <code>gh auth login</code> для кожного акаунта, між якими перемикаєтесь.`,
+      notFound: `<code>gh</code> не знайдено в PATH. Встановіть <a>GitHub CLI</a>, щоб перемикати його акаунт разом із профілем.`,
+      toggle: `Перемикати акаунт gh разом із профілем`,
+      toggleHint: `Виконує <code>gh auth switch --user &lt;login&gt;</code> під час кожної активації. Логін, у який gh не ввійшов, пропускається.`,
+    },
     tortoise: {
       title: `TortoiseGit та Git у командному рядку`,
       intro: `TortoiseGit зазвичай використовує TortoiseGitPlink, який читає ваш OpenSSH <code>%USERPROFILE%\\.ssh\\config</code> інакше. Увімкніть цей параметр, щоб TortoiseGit використовував <code>ssh.exe</code>, і задати глобальний <code>core.sshCommand</code> для Git — тоді керовані тут SSH-ключі та хости працюватимуть в обох місцях.`,

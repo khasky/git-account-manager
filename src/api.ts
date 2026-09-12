@@ -19,6 +19,7 @@ import type {
   DeviceCodeResponse,
   DiscoveredRepo,
   DoctorReport,
+  GhProbe,
   GitIdentity,
   GuardSettings,
   OAuthSettings,
@@ -125,6 +126,8 @@ export const saveSettings = (settings: OAuthSettings) =>
 
 export const openSshIntegrationProbe = () =>
   invoke<OpenSshIntegrationProbe>("openssh_integration_probe");
+
+export const ghProbe = () => invoke<GhProbe>("gh_probe");
 
 export const saveGuardSettings = (settings: GuardSettings) =>
   invoke<void>("save_guard_settings", { settings });

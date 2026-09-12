@@ -259,6 +259,10 @@ pub struct OAuthSettings {
     /// When true (Windows only), write TortoiseGit SSH client registry value and set Git `core.sshCommand` to OpenSSH so `~/.ssh/config` applies everywhere.
     #[serde(default)]
     pub use_openssh_for_git_tools: bool,
+    /// Run `gh auth switch` to the active profile's GitHub login on every
+    /// profile switch, where `gh` is installed and signed in to that login.
+    #[serde(default = "default_true")]
+    pub switch_gh_account: bool,
 }
 
 impl Default for OAuthSettings {
@@ -267,6 +271,7 @@ impl Default for OAuthSettings {
             github_client_id: default_github_client_id(),
             gitlab_client_id: default_gitlab_client_id(),
             use_openssh_for_git_tools: false,
+            switch_gh_account: true,
         }
     }
 }

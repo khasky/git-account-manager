@@ -52,6 +52,14 @@ export interface OAuthSettings {
   gitlab_client_id: string;
   /** Windows: use OpenSSH for TortoiseGit + Git CLI (registry + core.sshCommand). */
   use_openssh_for_git_tools: boolean;
+  /** Run `gh auth switch` to the active profile's GitHub login on every switch. */
+  switch_gh_account: boolean;
+}
+
+export interface GhProbe {
+  available: boolean;
+  logins: string[];
+  active: string | null;
 }
 
 /** Result of `openssh_integration_probe` — Windows-only integration. */
