@@ -89,7 +89,9 @@ export const ko: Messages = {
     },
     guard: {
       title: `신원 가드`,
-      intro: `신원은 위의 폴더가 담당합니다. 여기 남는 것은 컴퓨터 전체에 적용되는 설정입니다. 어디서 만든 커밋이든 그 폴더의 계정과 대조할지 여부입니다.`,
+      intro: `신원은 위의 폴더가 담당합니다. 여기 남는 것은 컴퓨터 전체에 적용되는 설정입니다. 어떤 폴더도 차지하지 않은 곳을 기본 프로필이 맡을지, 그리고 어디서 만든 커밋이든 그 폴더의 계정과 대조할지 여부입니다.`,
+      unsetGlobal: `등록된 폴더에서만 커밋`,
+      unsetGlobalHint: `전역 <code>user.name</code>과 <code>user.email</code>을 제거하고 <code>user.useConfigOnly</code>를 설정합니다. 어떤 폴더 규칙에도 속하지 않는 저장소는 활성 프로필로 커밋하는 대신 <b>Author identity unknown</b>으로 실패합니다.`,
       guardCommits: `전역 훅으로 커밋 보호`,
       guardCommitsHint: `전역 <code>core.hooksPath</code>를 이 앱의 디스패처로 지정합니다. 저장소가 허용하지 않는 주소의 커밋이나 push를 거부한 뒤 저장소 자체의 훅을 실행합니다. 저장소 안에는 아무것도 쓰지 않으며, 허용 주소 목록은 이 설정이 유지하는 includeIf 영역을 통해 전달됩니다.`,
     },
@@ -145,6 +147,7 @@ export const ko: Messages = {
     globalIdentity: `기본 Git 신원`,
     globalNone: `없음`,
     hostNoKey: `키 없음 - 이 계정이 있는 프로필을 활성화하세요`,
+    useConfigOnly: `user.useConfigOnly`,
     includesRegion: `생성된 폴더 규칙`,
     on: `켜짐`,
     off: `꺼짐`,

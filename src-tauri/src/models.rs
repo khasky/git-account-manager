@@ -196,6 +196,11 @@ pub struct RepoRoot {
 /// Machine-wide guard rails.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuardSettings {
+    /// Remove the global `user.name`/`user.email` and set `user.useConfigOnly`,
+    /// so a repository no folder rule claims fails loudly instead of committing
+    /// as whichever profile happens to be active.
+    #[serde(default)]
+    pub unset_global_identity: bool,
     /// Route every repository's hooks through this app's dispatchers via the
     /// global `core.hooksPath`, so the identity guard runs on `pre-commit` and
     /// `pre-push` without a file of ours inside any repository.
@@ -210,6 +215,7 @@ fn default_true() -> bool {
 impl Default for GuardSettings {
     fn default() -> Self {
         Self {
+            unset_global_identity: false,
             guard_commits: true,
         }
     }
@@ -263,12 +269,6 @@ pub struct AppState {
     /// every start.
     #[serde(default)]
     pub migrated_to_folder_rules: bool,
-    /// An older version could remove the global identity and set
-    /// `user.useConfigOnly`, which the folder rules replaced. Read out of the
-    /// stored file rather than kept in it, so releasing the fuse happens once
-    /// and the field is gone from the next save.
-    #[serde(skip)]
-    pub release_identity_fuse: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -441,6 +441,10 @@ mod tests {
         assert!(
             state.guard.guard_commits,
             "a file that never named it is guarded"
+        );
+        assert!(
+            state.guard.unset_global_identity,
+            "a machine that had no default identity must not silently get one back"
         );
 
         // And writes back the same names, so downgrading is not a trap either.

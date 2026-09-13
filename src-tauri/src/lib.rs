@@ -81,13 +81,6 @@ pub fn run() {
                         storage::save_state(&state)?;
                     }
 
-                    // An older version could leave `user.useConfigOnly` armed,
-                    // which stops every repository outside a watched folder from
-                    // committing under the default profile.
-                    if state.release_identity_fuse {
-                        let _ = guard::relax_global_identity();
-                    }
-
                     // The rules live in `~/.gitconfig` and in the hooks
                     // directory, where anything can edit them, so they are
                     // rewritten on every launch rather than only when a profile

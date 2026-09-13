@@ -125,6 +125,8 @@ pub struct GuardStatus {
     /// `global` when the dispatchers are in force, `foreign` when the path is
     /// somebody else's, `off` when nothing is set.
     pub hooks: String,
+    /// `user.useConfigOnly` is set, so git refuses to invent an identity.
+    pub use_config_only: bool,
     pub ok: bool,
 }
 
@@ -133,6 +135,9 @@ pub fn status(settings: &GuardSettings, profiles: &[Profile], roots: &[RepoRoot]
         name: String::new(),
         email: String::new(),
     });
+    let use_config_only = git::get_global_config("user.useConfigOnly")
+        .map(|v| v == "true")
+        .unwrap_or(false);
     let path = gitconfig_path().unwrap_or_default();
     let rules_written = fs::read_to_string(&path)
         .map(|c| c.contains(MANAGED_HEADER))
@@ -146,12 +151,15 @@ pub fn status(settings: &GuardSettings, profiles: &[Profile], roots: &[RepoRoot]
     };
     let hooks_ok = !settings.guard_commits || hooks_state == "global";
     let rules_ok = roots.is_empty() || rules_written;
+    let identity_ok =
+        !settings.unset_global_identity || (identity.email.is_empty() && use_config_only);
 
     GuardStatus {
         global_name: identity.name,
         global_email: identity.email,
         gitconfig_path: posix(&path),
         rules_written,
+        use_config_only,
         ssh_hosts: crate::ssh::bare_host_owners(profiles)
             .into_iter()
             .map(|(platform, owner)| SshHostOwner {
@@ -161,7 +169,7 @@ pub fn status(settings: &GuardSettings, profiles: &[Profile], roots: &[RepoRoot]
             .collect(),
         hooks_path: hooks_status.hooks_path,
         hooks: hooks_state.to_string(),
-        ok: hooks_ok && rules_ok,
+        ok: hooks_ok && rules_ok && identity_ok,
     }
 }
 
@@ -173,12 +181,32 @@ pub fn apply(
     profiles: &[Profile],
     roots: &[RepoRoot],
 ) -> Result<(), String> {
+    if settings.unset_global_identity {
+        git::unset_global_identity()?;
+        git::set_use_config_only(true)?;
+    }
     write_rules(profiles, roots)?;
     hooks::apply(settings.guard_commits)
 }
 
-/// Stops enforcing the identity fuse an older version could set. The identity
-/// itself is not restored here: the active profile's is written on every sync.
+/// Which profile supplies the machine's default identity, for everything no
+/// folder rule claims.
+///
+/// `None` with the fuse armed: no global `user.name`/`user.email` and
+/// `user.useConfigOnly` set means git refuses to commit outside a claimed
+/// folder rather than signing the work with whoever is active.
+pub fn machine_default<'a>(
+    settings: &GuardSettings,
+    profiles: &'a [Profile],
+) -> Option<&'a Profile> {
+    if settings.unset_global_identity {
+        return None;
+    }
+    profiles.iter().find(|p| p.is_active)
+}
+
+/// Stops enforcing the fuse. The identity itself is not restored here: the
+/// active profile's is written by the next sync.
 pub fn relax_global_identity() -> Result<(), String> {
     git::set_use_config_only(false)
 }
@@ -528,6 +556,25 @@ mod tests {
             "a folder whose profile is gone must not keep a rule: {}",
             body
         );
+    }
+
+    /// The fuse is what stops an unclaimed repository from borrowing the active
+    /// profile, so what it does is decide whether the machine has a default
+    /// identity to write at all.
+    #[test]
+    fn the_fuse_leaves_the_machine_without_a_default_identity() {
+        let mut active = profile_named("work");
+        active.is_active = true;
+        let profiles = vec![profile_named("home"), active];
+
+        let mut settings = GuardSettings::default();
+        assert_eq!(
+            machine_default(&settings, &profiles).map(|p| p.name.as_str()),
+            Some("work")
+        );
+
+        settings.unset_global_identity = true;
+        assert!(machine_default(&settings, &profiles).is_none());
     }
 
     /// The whole model rests on git applying one folder rule to a repository

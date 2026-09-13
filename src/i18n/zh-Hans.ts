@@ -89,7 +89,9 @@ export const zhHans: Messages = {
     },
     guard: {
       title: `身份守卫`,
-      intro: `身份由上面的文件夹承担。这里留下的是对整台机器生效的设置：在任何地方做出的提交，是否都要与所在文件夹的账户核对。`,
+      intro: `身份由上面的文件夹承担。这里留下的是对整台机器生效的设置：默认配置文件是否覆盖没有任何文件夹归属的地方，以及在任何地方做出的提交，是否都要与所在文件夹的账户核对。`,
+      unsetGlobal: `仅在已归属的文件夹中提交`,
+      unsetGlobalHint: `删除全局的 <code>user.name</code> 和 <code>user.email</code> 并设置 <code>user.useConfigOnly</code>。没有任何文件夹规则归属的仓库随后会以 <b>Author identity unknown</b> 失败，而不是用激活的配置文件提交。`,
       guardCommits: `用全局钩子保护提交`,
       guardCommitsHint: `将全局 <code>core.hooksPath</code> 指向本应用的调度脚本：它们拒绝来自仓库不允许地址的提交或推送，然后运行仓库自己的钩子。不会向任何仓库内写入内容；允许地址列表通过 includeIf 区域传递，此选项会维护该区域。`,
     },
@@ -145,6 +147,7 @@ export const zhHans: Messages = {
     globalIdentity: `默认 Git 身份`,
     globalNone: `无`,
     hostNoKey: `无密钥 - 请激活拥有此账户的配置文件`,
+    useConfigOnly: `user.useConfigOnly`,
     includesRegion: `生成的文件夹规则`,
     on: `开启`,
     off: `关闭`,

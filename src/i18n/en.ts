@@ -95,7 +95,9 @@ export const en = {
     },
     guard: {
       title: `Identity guard`,
-      intro: `The folders above carry the identity. What is left here is machine-wide: whether a commit made anywhere is checked against the account that owns the folder it is in.`,
+      intro: `The folders above carry the identity. What is left here is machine-wide: whether the default profile covers what no folder claims, and whether a commit made anywhere is checked against the account that owns the folder it is in.`,
+      unsetGlobal: `Commit only in claimed folders`,
+      unsetGlobalHint: `Removes the global <code>user.name</code> and <code>user.email</code> and sets <code>user.useConfigOnly</code>. A repository no folder rule claims then fails with <b>Author identity unknown</b> instead of committing as the active profile.`,
       guardCommits: `Guard commits with a global hook`,
       guardCommitsHint: `Points the global <code>core.hooksPath</code> at this app's dispatchers, which refuse a commit or a push from an address the repository does not allow and then run the repository's own hooks. Nothing is written inside any repository; the allow-list travels through the includeIf region, which this keeps up to date.`,
     },
@@ -151,6 +153,7 @@ export const en = {
     globalIdentity: `Default Git identity`,
     globalNone: `none`,
     hostNoKey: `no key - activate a profile with this account`,
+    useConfigOnly: `user.useConfigOnly`,
     includesRegion: `Generated folder rules`,
     on: `on`,
     off: `off`,

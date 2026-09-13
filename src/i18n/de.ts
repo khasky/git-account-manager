@@ -89,7 +89,9 @@ export const de: Messages = {
     },
     guard: {
       title: `Identitätsschutz`,
-      intro: `Die Identität tragen die Ordner oben. Hier bleibt, was maschinenweit gilt: ob ein Commit, wo auch immer er gemacht wird, gegen das Konto des Ordners geprüft wird, in dem er entsteht.`,
+      intro: `Die Identität tragen die Ordner oben. Hier bleibt, was maschinenweit gilt: ob das Standardprofil abdeckt, was kein Ordner beansprucht, und ob ein Commit, wo auch immer er gemacht wird, gegen das Konto des Ordners geprüft wird, in dem er entsteht.`,
+      unsetGlobal: `Nur in beanspruchten Ordnern committen`,
+      unsetGlobalHint: `Entfernt die globalen <code>user.name</code> und <code>user.email</code> und setzt <code>user.useConfigOnly</code>. Ein Repository, das keine Ordnerregel beansprucht, scheitert dann mit <b>Author identity unknown</b>, statt als aktives Profil zu committen.`,
       guardCommits: `Commits mit einem globalen Hook absichern`,
       guardCommitsHint: `Richtet den globalen <code>core.hooksPath</code> auf die Dispatcher dieser App: Sie weisen einen Commit oder Push von einer Adresse ab, die das Repository nicht erlaubt, und starten danach die eigenen Hooks des Repositorys. In kein Repository wird etwas geschrieben; die Liste erlaubter Adressen kommt über den includeIf-Bereich, den diese Option pflegt.`,
     },
@@ -145,6 +147,7 @@ export const de: Messages = {
     globalIdentity: `Standard-Git-Identität`,
     globalNone: `keine`,
     hostNoKey: `kein Schlüssel - aktiviere ein Profil mit diesem Konto`,
+    useConfigOnly: `user.useConfigOnly`,
     includesRegion: `Generierte Ordnerregeln`,
     on: `an`,
     off: `aus`,

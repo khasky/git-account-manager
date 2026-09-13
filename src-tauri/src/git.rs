@@ -64,6 +64,14 @@ pub fn get_global_identity() -> Result<GitIdentity, String> {
     Ok(GitIdentity { name, email })
 }
 
+/// Drops the machine-wide identity, so Git cannot sign work with whichever
+/// profile was activated last: outside a claimed folder it asks for one.
+pub fn unset_global_identity() -> Result<(), String> {
+    run_git_optional(&["config", "--global", "--unset-all", "user.name"])?;
+    run_git_optional(&["config", "--global", "--unset-all", "user.email"])?;
+    Ok(())
+}
+
 /// `user.useConfigOnly` stops Git from inventing an identity from the machine's
 /// hostname when none is configured.
 pub fn set_use_config_only(enabled: bool) -> Result<(), String> {

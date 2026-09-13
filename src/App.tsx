@@ -197,6 +197,10 @@ function App() {
     setImportPrefill(null);
     setEditingProfile(profile);
     setView("form");
+    // The form reads the doctor for this profile on its own. This is the cheap
+    // check over every folder, so someone about to change one is told first
+    // that another already moved, instead of on the next tick of the timer.
+    checkFolders();
   }
 
   async function handleImportFromGit() {

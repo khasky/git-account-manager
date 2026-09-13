@@ -89,7 +89,9 @@ export const fr: Messages = {
     },
     guard: {
       title: `Garde d'identité`,
-      intro: `L'identité est portée par les dossiers ci-dessus. Il reste ici ce qui vaut pour toute la machine : si un commit fait n'importe où est vérifié contre le compte du dossier où il est fait.`,
+      intro: `L'identité est portée par les dossiers ci-dessus. Il reste ici ce qui vaut pour toute la machine : si le profil par défaut couvre ce qu'aucun dossier ne revendique, et si un commit fait n'importe où est vérifié contre le compte du dossier où il est fait.`,
+      unsetGlobal: `Committer uniquement dans les dossiers revendiqués`,
+      unsetGlobalHint: `Supprime les <code>user.name</code> et <code>user.email</code> globaux et définit <code>user.useConfigOnly</code>. Un dépôt qu'aucune règle de dossier ne revendique échoue alors avec <b>Author identity unknown</b> au lieu de committer sous le profil actif.`,
       guardCommits: `Protéger les commits par un hook global`,
       guardCommitsHint: `Pointe le <code>core.hooksPath</code> global vers les répartiteurs de l'app : ils refusent un commit ou un push venant d'une adresse que le dépôt n'autorise pas, puis lancent les hooks propres au dépôt. Rien n'est écrit dans les dépôts ; la liste des adresses passe par la région includeIf, que cette option maintient.`,
     },
@@ -145,6 +147,7 @@ export const fr: Messages = {
     globalIdentity: `Identité Git par défaut`,
     globalNone: `aucune`,
     hostNoKey: `aucune clé - activez un profil avec ce compte`,
+    useConfigOnly: `user.useConfigOnly`,
     includesRegion: `Règles de dossier générées`,
     on: `activé`,
     off: `désactivé`,

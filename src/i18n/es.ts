@@ -89,7 +89,9 @@ export const es: Messages = {
     },
     guard: {
       title: `Guardia de identidad`,
-      intro: `La identidad la llevan las carpetas de arriba. Aquí queda lo que vale para toda la máquina: si un commit hecho en cualquier sitio se comprueba contra la cuenta de la carpeta en la que se hace.`,
+      intro: `La identidad la llevan las carpetas de arriba. Aquí queda lo que vale para toda la máquina: si el perfil predeterminado cubre lo que ninguna carpeta reclama, y si un commit hecho en cualquier sitio se comprueba contra la cuenta de la carpeta en la que se hace.`,
+      unsetGlobal: `Hacer commits solo en carpetas reclamadas`,
+      unsetGlobalHint: `Elimina los <code>user.name</code> y <code>user.email</code> globales y fija <code>user.useConfigOnly</code>. Un repositorio que ninguna regla de carpeta reclama falla entonces con <b>Author identity unknown</b> en vez de hacer el commit como el perfil activo.`,
       guardCommits: `Proteger los commits con un hook global`,
       guardCommitsHint: `Apunta el <code>core.hooksPath</code> global a los despachadores de esta app: rechazan un commit o un push desde una dirección que el repositorio no permite y luego ejecutan los hooks propios del repositorio. No se escribe nada dentro de ningún repositorio; la lista de direcciones llega por la región includeIf, que esta opción mantiene.`,
     },
@@ -145,6 +147,7 @@ export const es: Messages = {
     globalIdentity: `Identidad Git predeterminada`,
     globalNone: `ninguna`,
     hostNoKey: `sin clave - activa un perfil con esta cuenta`,
+    useConfigOnly: `user.useConfigOnly`,
     includesRegion: `Reglas de carpeta generadas`,
     on: `activado`,
     off: `desactivado`,

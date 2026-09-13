@@ -89,7 +89,9 @@ export const ptBR: Messages = {
     },
     guard: {
       title: `Guarda de identidade`,
-      intro: `A identidade fica com as pastas acima. O que resta aqui vale para a máquina toda: se um commit feito em qualquer lugar é conferido com a conta da pasta em que ele é feito.`,
+      intro: `A identidade fica com as pastas acima. O que resta aqui vale para a máquina toda: se o perfil padrão cobre o que nenhuma pasta reivindica, e se um commit feito em qualquer lugar é conferido com a conta da pasta em que ele é feito.`,
+      unsetGlobal: `Fazer commits apenas em pastas reivindicadas`,
+      unsetGlobalHint: `Remove os <code>user.name</code> e <code>user.email</code> globais e define <code>user.useConfigOnly</code>. Um repositório que nenhuma regra de pasta reivindica falha então com <b>Author identity unknown</b> em vez de fazer o commit como o perfil ativo.`,
       guardCommits: `Proteger commits com um hook global`,
       guardCommitsHint: `Aponta o <code>core.hooksPath</code> global para os despachantes deste app: eles recusam um commit ou push vindo de um endereço que o repositório não permite e depois executam os hooks do próprio repositório. Nada é escrito dentro de repositório algum; a lista de endereços chega pela região includeIf, que esta opção mantém.`,
     },
@@ -145,6 +147,7 @@ export const ptBR: Messages = {
     globalIdentity: `Identidade Git padrão`,
     globalNone: `nenhuma`,
     hostNoKey: `sem chave - ative um perfil com esta conta`,
+    useConfigOnly: `user.useConfigOnly`,
     includesRegion: `Regras de pasta geradas`,
     on: `ligado`,
     off: `desligado`,

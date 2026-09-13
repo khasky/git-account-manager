@@ -93,6 +93,9 @@ export interface RepoRoot {
 }
 
 export interface GuardSettings {
+  /** Leave the machine without a default identity, so a repository no folder
+   *  rule claims refuses to commit instead of borrowing the active profile. */
+  unset_global_identity: boolean;
   /** Route hooks through the app's global dispatchers so commits are checked. */
   guard_commits: boolean;
 }
@@ -175,6 +178,7 @@ export interface GuardStatus {
   ssh_hosts: { host: string; profile: string | null }[];
   hooks_path: string | null;
   hooks: "global" | "foreign" | "off";
+  use_config_only: boolean;
   ok: boolean;
 }
 

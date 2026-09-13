@@ -67,21 +67,15 @@ fn sync_machine(state: &AppState) -> Result<(), String> {
         }
     }
 
-    if let Some(active) = active {
+    // With the fuse armed there is no machine-wide identity to write: a
+    // repository no folder rule claims is meant to refuse the commit.
+    if let Some(active) = guard::machine_default(&state.guard, &state.profiles) {
         if let Some((name, email)) = active.active_identity() {
             git::set_global_identity(name, email)?;
         }
         // Follows the identity: signing with the profile that just stopped
         // being active would produce a signature the new author cannot own.
         git::set_global_signing(active.active_account().and_then(|a| a.signing_key()))?;
-    }
-
-    // An older version could arm `user.useConfigOnly`, which leaves every
-    // repository outside a watched folder refusing to commit under the default
-    // profile — the opposite of what the default is for. Released once, on the
-    // first sync after the setting that armed it is read off the stored file.
-    if state.release_identity_fuse {
-        guard::relax_global_identity()?;
     }
 
     guard::apply(&state.guard, &state.profiles, &state.repo_roots)
@@ -524,8 +518,15 @@ pub async fn save_profile_folders(
 pub fn save_guard_settings(settings: GuardSettings) -> Result<(), String> {
     storage::with_lock(|| {
         let mut state = storage::load_state()?;
+        let was_fused = state.guard.unset_global_identity;
         state.guard = settings;
         storage::save_state(&state)?;
+        // Releasing the fuse is only correct as an explicit switch-off:
+        // `sync_machine` must never undo it on its own, or a `user.useConfigOnly`
+        // set by hand would be wiped on the next profile switch.
+        if was_fused && !state.guard.unset_global_identity {
+            guard::relax_global_identity()?;
+        }
         sync_machine(&state)?;
         if state.guard.guard_commits {
             hooks::ensure_in_force()?;

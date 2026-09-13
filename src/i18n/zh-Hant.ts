@@ -89,7 +89,9 @@ export const zhHant: Messages = {
     },
     guard: {
       title: `身分守衛`,
-      intro: `身分由上面的資料夾承擔。這裡留下的是對整台機器生效的設定：在任何地方做出的提交，是否都要與所在資料夾的帳戶核對。`,
+      intro: `身分由上面的資料夾承擔。這裡留下的是對整台機器生效的設定：預設設定檔是否涵蓋沒有任何資料夾歸屬的地方，以及在任何地方做出的提交，是否都要與所在資料夾的帳戶核對。`,
+      unsetGlobal: `僅在已歸屬的資料夾中提交`,
+      unsetGlobalHint: `刪除全域的 <code>user.name</code> 與 <code>user.email</code> 並設定 <code>user.useConfigOnly</code>。沒有任何資料夾規則歸屬的儲存庫隨後會以 <b>Author identity unknown</b> 失敗，而不是用啟用中的設定檔提交。`,
       guardCommits: `用全域掛鉤保護提交`,
       guardCommitsHint: `將全域 <code>core.hooksPath</code> 指向本應用的調度指令碼：它們拒絕來自儲存庫不允許位址的提交或推送，然後執行儲存庫自己的掛鉤。不會向任何儲存庫內寫入內容；允許位址清單透過 includeIf 區域傳遞，此選項會維護該區域。`,
     },
@@ -145,6 +147,7 @@ export const zhHant: Messages = {
     globalIdentity: `預設 Git 身分`,
     globalNone: `無`,
     hostNoKey: `無金鑰 - 請啟用擁有此帳戶的設定檔`,
+    useConfigOnly: `user.useConfigOnly`,
     includesRegion: `生成的資料夾規則`,
     on: `開啟`,
     off: `關閉`,

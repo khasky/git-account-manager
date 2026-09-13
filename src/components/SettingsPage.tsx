@@ -240,22 +240,34 @@ export default function SettingsPage({ onBack }: Props) {
               {m.settings.guard.intro}
             </p>
 
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm text-fg-3">
-                  {m.settings.guard.guardCommits}
-                </p>
-                <p className="text-xs text-fg-5">
-                  {rich(m.settings.guard.guardCommitsHint, {
-                    codeClass: "text-fg-4",
-                  })}
-                </p>
+            {[
+              {
+                key: "unset_global_identity" as const,
+                label: m.settings.guard.unsetGlobal,
+                hint: m.settings.guard.unsetGlobalHint,
+              },
+              {
+                key: "guard_commits" as const,
+                label: m.settings.guard.guardCommits,
+                hint: m.settings.guard.guardCommitsHint,
+              },
+            ].map((row) => (
+              <div
+                key={row.key}
+                className="flex items-center justify-between gap-4"
+              >
+                <div>
+                  <p className="text-sm text-fg-3">{row.label}</p>
+                  <p className="text-xs text-fg-5">
+                    {rich(row.hint, { codeClass: "text-fg-4" })}
+                  </p>
+                </div>
+                <Toggle
+                  on={guard[row.key]}
+                  onClick={() => toggleGuard(row.key)}
+                />
               </div>
-              <Toggle
-                on={guard.guard_commits}
-                onClick={() => toggleGuard("guard_commits")}
-              />
-            </div>
+            ))}
 
             {guardStatus && (
               <dl className="space-y-1 border-t border-bd pt-3 text-xs">
@@ -263,6 +275,19 @@ export default function SettingsPage({ onBack }: Props) {
                   <dt className="text-fg-4">{m.repos.globalIdentity}</dt>
                   <dd className="text-right text-fg-3">
                     {guardStatus.global_email || m.repos.globalNone}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-fg-4">{m.repos.useConfigOnly}</dt>
+                  <dd
+                    className={
+                      guardStatus.use_config_only ||
+                      !guard.unset_global_identity
+                        ? "text-fg-3"
+                        : "text-danger-fg"
+                    }
+                  >
+                    {guardStatus.use_config_only ? m.repos.on : m.repos.off}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4">

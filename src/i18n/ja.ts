@@ -89,7 +89,9 @@ export const ja: Messages = {
     },
     guard: {
       title: `ID ガード`,
-      intro: `ID は上のフォルダーが持ちます。ここに残るのはマシン全体に効く設定です。どこで作られたコミットも、そのフォルダーの持ち主アカウントと照合するかどうか。`,
+      intro: `ID は上のフォルダーが持ちます。ここに残るのはマシン全体に効く設定です。どのフォルダーも持たない場所を既定のプロフィールが受け持つかどうか、そしてどこで作られたコミットも、そのフォルダーの持ち主アカウントと照合するかどうか。`,
+      unsetGlobal: `登録済みフォルダー内でのみコミットする`,
+      unsetGlobalHint: `グローバルの <code>user.name</code> と <code>user.email</code> を削除し、<code>user.useConfigOnly</code> を設定します。どのフォルダールールにも属さないリポジトリは、アクティブなプロフィールでコミットする代わりに <b>Author identity unknown</b> で失敗します。`,
       guardCommits: `グローバルフックでコミットを保護する`,
       guardCommitsHint: `グローバルの <code>core.hooksPath</code> をこのアプリのディスパッチャーに向けます。リポジトリが許可しないアドレスからのコミットや push を拒否し、その後リポジトリ自身のフックを実行します。リポジトリ内には何も書き込みません。許可アドレスの一覧は includeIf 領域を通じて届き、この設定がそれを維持します。`,
     },
@@ -145,6 +147,7 @@ export const ja: Messages = {
     globalIdentity: `既定の Git ID`,
     globalNone: `なし`,
     hostNoKey: `鍵なし - このアカウントを持つプロフィールを有効にしてください`,
+    useConfigOnly: `user.useConfigOnly`,
     includesRegion: `生成されたフォルダールール`,
     on: `オン`,
     off: `オフ`,

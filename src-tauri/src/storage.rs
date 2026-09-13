@@ -55,13 +55,6 @@ pub fn load_state() -> Result<AppState, String> {
 
     match serde_json::from_str::<AppState>(&content) {
         Ok(mut state) => {
-            // The fuse an older version could arm lives in a field this one no
-            // longer has, so it is read off the raw file. Saving the state drops
-            // the field, which is what makes releasing it happen once.
-            state.release_identity_fuse = serde_json::from_str::<serde_json::Value>(&content)
-                .ok()
-                .and_then(|v| v["guard"]["unset_global_identity"].as_bool())
-                .unwrap_or(false);
             if secrets::migrate_plaintext_tokens(&mut state)? {
                 save_state(&state)?;
             }
