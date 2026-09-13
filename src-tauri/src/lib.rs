@@ -1,9 +1,11 @@
 mod commands;
+mod doctor;
 mod gh;
 mod git;
 mod guard;
 mod hooks;
 mod http;
+mod migrate;
 mod models;
 mod oauth;
 mod openssh_integration;
@@ -62,6 +64,39 @@ pub fn run() {
             if openssh_enabled {
                 let _ = openssh_integration::apply(true);
             }
+
+            // Off the main thread: the clean-up walks every watched folder and
+            // the window must not wait for it.
+            std::thread::spawn(|| {
+                let _ = storage::with_lock(|| {
+                    let mut state = storage::load_state()?;
+
+                    // An install upgraded from the per-repository model still
+                    // carries this app's identity and its hook inside its
+                    // repositories, and a local `user.email` beats the folder
+                    // rule that replaced it. Taken back once.
+                    if !state.migrated_to_folder_rules {
+                        migrate::run(&state);
+                        state.migrated_to_folder_rules = true;
+                        storage::save_state(&state)?;
+                    }
+
+                    // An older version could leave `user.useConfigOnly` armed,
+                    // which stops every repository outside a watched folder from
+                    // committing under the default profile.
+                    if state.release_identity_fuse {
+                        let _ = guard::relax_global_identity();
+                    }
+
+                    // The rules live in `~/.gitconfig` and in the hooks
+                    // directory, where anything can edit them, so they are
+                    // rewritten on every launch rather than only when a profile
+                    // is saved. It is also what first writes them in the shape
+                    // this version reads, on an install that has saved nothing
+                    // since the upgrade.
+                    guard::apply(&state.guard, &state.profiles, &state.repo_roots)
+                });
+            });
 
             use tauri::tray::TrayIconBuilder;
 
@@ -153,13 +188,15 @@ pub fn run() {
             commands::set_tray_labels,
             commands::get_repo_state,
             commands::save_guard_settings,
-            commands::scan_profile_repositories,
-            commands::apply_profile_repos,
-            commands::fix_repository,
-            commands::allow_email_in_repository,
+            commands::scan_profile_folders,
+            commands::save_profile_folders,
             commands::doctor,
-            commands::probe_ssh_alias,
-            commands::verify_repo_access,
+            commands::watch_folders,
+            commands::locate_folder,
+            commands::fix_folder,
+            commands::relink_folder,
+            commands::forget_folder,
+            commands::focus_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

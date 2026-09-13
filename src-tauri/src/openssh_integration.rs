@@ -46,6 +46,24 @@ pub fn ensure_ssh_available() -> Result<(), String> {
     }
 }
 
+/// The ssh a generated `core.sshCommand` should name.
+///
+/// On Windows the one Git ships with is not always on `PATH`, and a command
+/// naming a program that is not there fails every fetch in the repositories the
+/// folder rule covers. Everywhere else the system `ssh` is the right answer.
+pub fn ssh_program() -> String {
+    #[cfg(windows)]
+    {
+        detect_ssh_exe()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|| "ssh".to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        "ssh".to_string()
+    }
+}
+
 pub fn apply(enabled: bool) -> Result<(), String> {
     #[cfg(windows)]
     {

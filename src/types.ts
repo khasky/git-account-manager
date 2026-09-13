@@ -81,86 +81,81 @@ export interface GitIdentity {
   email: string;
 }
 
-/** A folder whose repositories belong to one profile. */
+/** A folder whose repositories all belong to one profile's account. The rule is
+ *  the folder: one generated `includeIf` block covers everything under it. */
 export interface RepoRoot {
   path: string;
   profile_id: string;
   platform: PlatformId;
-  /** Default every repository in this folder starts with. */
-  pin_remote_alias: boolean;
-}
-
-/** One repository pinned to a profile. */
-export interface RepoBinding {
-  path: string;
-  profile_id: string;
-  platform: PlatformId;
-  pin_remote_alias: boolean;
-  extra_allowed_emails: string[];
-  /** Deliberately set apart from its folder's defaults. */
-  overrides_root: boolean;
-  /** What `origin` was before the alias replaced it. Owned by the backend,
-   *  which carries it across saves so unpinning restores the real address. */
-  original_remote_url?: string | null;
+  /** `owner/repo` of what was inside when the folder was last scanned. Owned by
+   *  the backend, which records it on save so a folder that moves is found. */
+  fingerprint: string[];
 }
 
 export interface GuardSettings {
-  unset_global_identity: boolean;
-  manage_gitconfig_includes: boolean;
-  /** Route hooks through the app's global dispatchers; implies the includeIf region. */
+  /** Route hooks through the app's global dispatchers so commits are checked. */
   guard_commits: boolean;
 }
 
 export interface RepoState {
   roots: RepoRoot[];
-  bindings: RepoBinding[];
   guard: GuardSettings;
 }
 
-/** `reason` records how the profile was inferred, never a silent guess. */
-export interface DiscoveredRepo {
+/** One repository a folder rule covers. Read-only: the rule reaches all of them
+ *  equally, so the list is there to be seen, not chosen from. */
+export interface FolderRepo {
   path: string;
+  /** Where it sits under the folder, which is how the hierarchy is drawn. */
+  relative: string;
   name: string;
   root_path: string;
   remote_url: string;
-  host: string;
-  owner: string;
-  repo: string;
-  suggested_profile_id: string | null;
-  suggested_platform: PlatformId | null;
-  reason: "alias" | "owner" | "ambiguous" | "unknown";
-  candidate_profile_ids: string[];
-  bound: boolean;
-  /** Folder default already applied by the backend. */
-  pin_remote_alias: boolean;
-  overrides_root: boolean;
+  full_name: string;
+  /** Its remote points at a different site than the folder's platform. */
+  foreign_host: boolean;
 }
 
-/** Everything the profile form collected, applied when the profile is saved. */
-export interface RepoPlan {
-  profile_id: string;
-  roots: RepoRoot[];
-  bindings: RepoBinding[];
-  released: string[];
+export interface SaveFoldersReport {
+  folders: number;
+  repos: number;
 }
 
-export interface ApplyReport {
-  bound: number;
-  released: number;
-  failed: { path: string; error: string }[];
-}
-
-export interface BindResult {
-  identity: string;
-  remote_url: string | null;
-}
-
-export interface RepoCheck {
-  id: "exists" | "identity" | "local" | "remote" | "history" | "hooks";
+export interface FolderCheck {
+  id: "exists" | "rule" | "identity" | "local" | "guard";
   ok: boolean;
   detail: string;
-  /** Where to look — empty when the detail already says everything. */
-  hint: string;
+}
+
+/** One repository that does not follow its folder's rule. */
+export interface RepoIssue {
+  path: string;
+  relative: string;
+  detail: string;
+}
+
+export interface FolderStatus {
+  path: string;
+  profile_id: string;
+  profile_name: string;
+  platform: PlatformId;
+  expected_email: string;
+  repos: number;
+  checks: FolderCheck[];
+  overrides: RepoIssue[];
+  bypassed: RepoIssue[];
+  moved_to: string | null;
+  ok: boolean;
+}
+
+/** The cheap check the window runs on a timer. */
+export interface FolderWatch {
+  path: string;
+  profile_id: string;
+  profile_name: string;
+  state: "ok" | "missing" | "no-rule" | "guard-off";
+  /** Filled in by the window, from `locateFolder`, only for what it shows. */
+  moved_to?: string | null;
 }
 
 /** A result addressed to the control that produced it, so it can be rendered
@@ -171,26 +166,11 @@ export interface RepoNote {
   text: string;
 }
 
-export interface RepoStatus {
-  path: string;
-  name: string;
-  profile_id: string;
-  profile_name: string;
-  platform: PlatformId;
-  expected_email: string;
-  effective_email: string;
-  remote_url: string;
-  offending_emails: string[];
-  checks: RepoCheck[];
-  ok: boolean;
-}
-
 export interface GuardStatus {
   global_name: string;
   global_email: string;
-  use_config_only: boolean;
-  includes_managed: boolean;
   gitconfig_path: string;
+  rules_written: boolean;
   /** Whose key answers on each bare host; `profile` is null where none does. */
   ssh_hosts: { host: string; profile: string | null }[];
   hooks_path: string | null;
@@ -200,11 +180,5 @@ export interface GuardStatus {
 
 export interface DoctorReport {
   guard: GuardStatus;
-  repos: RepoStatus[];
-}
-
-export interface RepoReach {
-  reachable: boolean;
-  full_name: string;
-  detail: string;
+  folders: FolderStatus[];
 }

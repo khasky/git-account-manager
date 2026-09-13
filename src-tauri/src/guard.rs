@@ -1,11 +1,11 @@
-//! Machine-wide guard rails.
+//! The folder rules: what turns a directory into one account's territory.
 //!
-//! Two things live here. First, turning the global identity from a value into a
-//! fuse: with no global `user.email` and `user.useConfigOnly` set, a repository
-//! that was never bound refuses to commit instead of borrowing the identity of
-//! whichever profile happens to be active. Second, a generated `includeIf`
-//! region in `~/.gitconfig` so a fresh clone under a known root already knows
-//! who it belongs to.
+//! Everything a repository needs is written outside it. One generated
+//! `includeIf "gitdir:"` block per watched folder points at a file holding the
+//! identity, the SSH key to reach the host with, and the address the commit
+//! guard accepts. Git applies it to every repository under the folder at any
+//! depth, including one cloned there after the rule was written, and nothing of
+//! this app's ever lands inside a repository.
 //!
 //! The region is delimited the same way the SSH config region is, and anything
 //! outside it is preserved byte for byte.
@@ -13,11 +13,9 @@
 use crate::git;
 use crate::hooks;
 use crate::models::{
-    GuardSettings, Platform, PlatformAccount, Profile, RepoBinding, RepoRoot, MANAGED_FOOTER,
-    MANAGED_HEADER, PLATFORMS,
+    GuardSettings, Platform, PlatformAccount, Profile, RepoRoot, MANAGED_FOOTER, MANAGED_HEADER,
+    PLATFORMS,
 };
-use crate::repos::allowed_emails;
-use crate::ssh;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -28,7 +26,7 @@ fn gitconfig_path() -> Result<PathBuf, String> {
         .join(".gitconfig"))
 }
 
-fn identities_dir() -> Result<PathBuf, String> {
+pub fn identities_dir() -> Result<PathBuf, String> {
     let dir = dirs::data_dir()
         .ok_or("Cannot find data directory")?
         .join("git-account-manager")
@@ -37,7 +35,7 @@ fn identities_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn identity_file(profile: &Profile, platform: Platform) -> Result<PathBuf, String> {
+pub fn identity_file(profile: &Profile, platform: Platform) -> Result<PathBuf, String> {
     Ok(identities_dir()?.join(format!(
         "{}-{}.gitconfig",
         profile.slug(),
@@ -45,41 +43,12 @@ fn identity_file(profile: &Profile, platform: Platform) -> Result<PathBuf, Strin
     )))
 }
 
-const BINDING_FILE_PREFIX: &str = "binding-";
-
-/// One file per bound repository, carrying the addresses the guard accepts
-/// there. Named by the path so a stale file is recognisable, plus a hash so
-/// two paths that slug alike ("a-b" and "a/b") do not share one.
-fn binding_file(binding: &RepoBinding) -> Result<PathBuf, String> {
-    let path = binding.path.replace('\\', "/");
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in path.bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0100_0000_01b3);
-    }
-    let slug: String = crate::models::slugify(&path).chars().take(48).collect();
-    Ok(identities_dir()?.join(format!(
-        "{}{}-{:016x}.gitconfig",
-        BINDING_FILE_PREFIX, slug, hash
-    )))
+fn posix(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
-fn allow_list_body(emails: &[String]) -> String {
-    let mut body = String::from("[gam]\n");
-    for email in emails {
-        body.push_str(&format!("\tallowedEmail = {}\n", config_value(email)));
-    }
-    body
-}
-
-/// Renders a value the way `git config` will read it back.
-///
-/// Inside a config value a backslash escapes the following character and a
-/// quote opens a quoted run, so a name holding either — `C:\Users`, a nickname
-/// in quotes — written literally produces a file git parses into something
-/// else, or refuses outright. Quoting the whole value and escaping those two is
-/// what git's own writer does. A newline cannot appear in a value at all: it
-/// would end the line and turn the remainder into a second key, so it goes.
+/// Quotes a value the way git's own parser reads it back, so a Windows path's
+/// backslashes survive and a stray newline cannot start a second key.
 fn config_value(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() + 2);
     out.push('"');
@@ -95,35 +64,48 @@ fn config_value(raw: &str) -> String {
     out
 }
 
-fn posix(path: &std::path::Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
-/// The whole content of one generated identity file: who the account is, and —
-/// when it signs — which key signs for it. `gpg.format = ssh` has to travel with
-/// `user.signingkey`, or git reads the path as a GPG key id and every commit in
-/// the including repository fails.
-fn identity_file_body(account: &PlatformAccount) -> String {
-    let signing = match account.signing_key() {
-        Some(key) => format!(
+/// The whole content of one generated identity file: who the account is, which
+/// key signs and which key reaches the host, and the address the commit guard
+/// accepts here.
+///
+/// `gpg.format = ssh` has to travel with `user.signingkey`, or git reads the
+/// path as a GPG key id and every commit in the including repository fails.
+fn identity_file_body(account: &PlatformAccount, ssh_program: &str) -> String {
+    let mut body = String::from("# Generated by git-account-manager. Edits are overwritten.\n");
+    body.push_str(&format!(
+        "[user]\n\tname = {}\n\temail = {}\n",
+        config_value(&account.git_name),
+        config_value(&account.git_email)
+    ));
+    if let Some(key) = account.signing_key() {
+        body.push_str(&format!(
             "\tsigningkey = {}\n[gpg]\n\tformat = ssh\n[commit]\n\tgpgsign = true\n[tag]\n\tgpgsign = true\n",
             config_value(&key.replace('\\', "/"))
-        ),
-        None => String::new(),
-    };
-    // The account's own address is always allowed where its identity applies,
-    // so a repository matched by remote alone is guarded too.
-    format!(
-        "# Generated by git-account-manager. Edits are overwritten.\n[user]\n\tname = {}\n\temail = {}\n{}{}",
-        config_value(&account.git_name),
-        config_value(&account.git_email),
-        signing,
-        allow_list_body(std::slice::from_ref(&account.git_email))
-    )
+        ));
+    }
+    // The key follows the folder, so a repository under it reaches the host as
+    // this account whichever profile is active and whatever `origin` says.
+    // `IdentitiesOnly` stops ssh from offering the agent's other keys, which is
+    // how the wrong account answers on a host both profiles can reach.
+    let private = account.ssh_private_key_path.trim();
+    if !private.is_empty() {
+        body.push_str(&format!(
+            "[core]\n\tsshCommand = {}\n",
+            config_value(&format!(
+                "{} -i \"{}\" -o IdentitiesOnly=yes",
+                ssh_program,
+                private.replace('\\', "/")
+            ))
+        ));
+    }
+    body.push_str(&format!(
+        "[gam]\n\tallowedEmail = {}\n",
+        config_value(&account.git_email)
+    ));
+    body
 }
 
-/// Whose key a bare SSH host answers with; `profile` is `None` where nothing
-/// does, so the page can say a `git@<host>:` remote is refused there.
+/// Whose key answers on a bare SSH host; `profile` is `None` where none does.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshHostOwner {
     pub host: String,
@@ -134,9 +116,9 @@ pub struct SshHostOwner {
 pub struct GuardStatus {
     pub global_name: String,
     pub global_email: String,
-    pub use_config_only: bool,
-    pub includes_managed: bool,
     pub gitconfig_path: String,
+    /// The generated region is in `~/.gitconfig`.
+    pub rules_written: bool,
     pub ssh_hosts: Vec<SshHostOwner>,
     /// What the global `core.hooksPath` points at, if anything.
     pub hooks_path: Option<String>,
@@ -146,22 +128,15 @@ pub struct GuardStatus {
     pub ok: bool,
 }
 
-pub fn status(settings: &GuardSettings, profiles: &[Profile]) -> GuardStatus {
+pub fn status(settings: &GuardSettings, profiles: &[Profile], roots: &[RepoRoot]) -> GuardStatus {
     let identity = git::get_global_identity().unwrap_or(git::GitIdentity {
         name: String::new(),
         email: String::new(),
     });
-    let use_config_only = git::get_global_config("user.useConfigOnly")
-        .map(|v| v == "true")
-        .unwrap_or(false);
     let path = gitconfig_path().unwrap_or_default();
-    let includes_managed = fs::read_to_string(&path)
+    let rules_written = fs::read_to_string(&path)
         .map(|c| c.contains(MANAGED_HEADER))
         .unwrap_or(false);
-
-    let identity_ok =
-        !settings.unset_global_identity || (identity.email.is_empty() && use_config_only);
-    let includes_ok = !settings.manage_gitconfig_includes || includes_managed;
 
     let hooks_status = hooks::status();
     let hooks_state = match (&hooks_status.hooks_path, hooks_status.ours) {
@@ -170,14 +145,14 @@ pub fn status(settings: &GuardSettings, profiles: &[Profile]) -> GuardStatus {
         (None, _) => "off",
     };
     let hooks_ok = !settings.guard_commits || hooks_state == "global";
+    let rules_ok = roots.is_empty() || rules_written;
 
     GuardStatus {
         global_name: identity.name,
         global_email: identity.email,
-        use_config_only,
-        includes_managed,
         gitconfig_path: posix(&path),
-        ssh_hosts: ssh::bare_host_owners(profiles)
+        rules_written,
+        ssh_hosts: crate::ssh::bare_host_owners(profiles)
             .into_iter()
             .map(|(platform, owner)| SshHostOwner {
                 host: platform.canonical_host().to_string(),
@@ -186,51 +161,61 @@ pub fn status(settings: &GuardSettings, profiles: &[Profile]) -> GuardStatus {
             .collect(),
         hooks_path: hooks_status.hooks_path,
         hooks: hooks_state.to_string(),
-        ok: identity_ok && includes_ok && hooks_ok,
+        ok: hooks_ok && rules_ok,
     }
 }
 
-/// Brings the machine in line with the settings.
-///
-/// Only enforces what is switched on. A switched-off option is left alone
-/// rather than actively undone, so the app never reverts a setting the user made
-/// by hand; releasing the fuse is an explicit step (`relax_global_identity`).
+/// Brings the machine in line with the stored folders: the identity files, the
+/// region that points at them, and the hook dispatchers that read the allow-list
+/// out of them.
 pub fn apply(
     settings: &GuardSettings,
     profiles: &[Profile],
     roots: &[RepoRoot],
-    bindings: &[RepoBinding],
 ) -> Result<(), String> {
-    if settings.unset_global_identity {
-        git::unset_global_identity()?;
-        git::set_use_config_only(true)?;
-    }
-
-    // The guard reads its allow-list through the includeIf region, so the
-    // region is maintained whenever the guard is on, whatever the other switch
-    // says.
-    if settings.manage_gitconfig_includes || settings.guard_commits {
-        write_includes(profiles, roots, bindings)?;
-    } else {
-        write_region("")?;
-    }
-
+    write_rules(profiles, roots)?;
     hooks::apply(settings.guard_commits)
 }
 
-/// Stops enforcing the fuse. The identity itself is not restored: the app cannot
-/// know which one was there before, and inventing one is how this whole class of
-/// mistake starts.
+/// Stops enforcing the identity fuse an older version could set. The identity
+/// itself is not restored here: the active profile's is written on every sync.
 pub fn relax_global_identity() -> Result<(), String> {
     git::set_use_config_only(false)
 }
 
-fn write_includes(
-    profiles: &[Profile],
-    roots: &[RepoRoot],
-    bindings: &[RepoBinding],
-) -> Result<(), String> {
-    let mut body = String::new();
+/// Folders inside another folder come last, because git applies the includes in
+/// order and the last `user.email` read is the one that counts. A nested folder
+/// belonging to another profile only wins that way, and storage order is not it.
+fn by_depth_then_path(roots: &[RepoRoot]) -> Vec<&RepoRoot> {
+    let depth = |r: &RepoRoot| {
+        r.path
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .matches('/')
+            .count()
+    };
+    let mut ordered: Vec<&RepoRoot> = roots.iter().collect();
+    ordered.sort_by(|a, b| depth(a).cmp(&depth(b)).then_with(|| a.path.cmp(&b.path)));
+    ordered
+}
+
+/// One spelling for a folder wherever it came from: a file picker, a stored
+/// state file or a relink. Paths are compared as strings all over this app, and
+/// two spellings of one folder are two folders to every one of those checks.
+pub fn normalize_folder(path: &str) -> String {
+    path.replace('\\', "/").trim_end_matches('/').to_string()
+}
+
+/// `gitdir/i:` needs a trailing slash to reach everything underneath, and the
+/// case-insensitive form because Windows hands the same folder back with either
+/// drive-letter case.
+pub fn gitdir_pattern(path: &str) -> String {
+    format!("{}/", normalize_folder(path))
+}
+
+fn write_rules(profiles: &[Profile], roots: &[RepoRoot]) -> Result<(), String> {
+    let ssh = crate::openssh_integration::ssh_program();
+    let mut used: Vec<PathBuf> = Vec::new();
 
     for profile in profiles {
         for platform in PLATFORMS {
@@ -238,82 +223,78 @@ fn write_includes(
                 continue;
             };
             let file = identity_file(profile, platform)?;
-            fs::write(&file, identity_file_body(account)).map_err(|e| e.to_string())?;
+            fs::write(&file, identity_file_body(account, &ssh)).map_err(|e| e.to_string())?;
+            used.push(file);
         }
     }
 
-    // Repository-scoped: the addresses this one repository accepts, extras
-    // included. Files of bindings that no longer exist go first, or a released
-    // repository would keep its allow-list.
-    let dir = identities_dir()?;
-    if let Ok(entries) = fs::read_dir(&dir) {
+    // A deleted profile or a disconnected platform leaves a file no rule points
+    // at any more; a later profile of the same name would otherwise inherit an
+    // identity nobody wrote for it.
+    if let Ok(entries) = fs::read_dir(identities_dir()?) {
         for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with(BINDING_FILE_PREFIX) {
-                let _ = fs::remove_file(entry.path());
+            let path = entry.path();
+            let is_ours = path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("gitconfig"));
+            if is_ours && !used.iter().any(|u| u == &path) {
+                let _ = fs::remove_file(path);
             }
         }
     }
-    for binding in bindings {
-        let Some(profile) = profiles.iter().find(|p| p.id == binding.profile_id) else {
-            continue;
-        };
-        let emails = allowed_emails(binding, profile);
-        if emails.is_empty() {
-            continue;
-        }
-        let file = binding_file(binding)?;
-        fs::write(&file, allow_list_body(&emails)).map_err(|e| e.to_string())?;
-        let repo = binding.path.replace('\\', "/");
-        body.push_str(&format!(
-            "[includeIf \"gitdir/i:{}/\"]\n\tpath = {}\n",
-            repo.trim_end_matches('/'),
-            posix(&file)
-        ));
-    }
 
-    // Folder-scoped: understood by libgit2, so TortoiseGit sees it too.
-    for root in roots {
+    write_region(&rules_body(profiles, roots)?)
+}
+
+/// Every folder's include line, in the order git has to read them.
+///
+/// The doctor decides whether a folder still has its rule by looking for
+/// `rule_line` in the region, so the region is built out of the same function:
+/// two spellings of one line would leave the doctor reporting a rule that is
+/// right there.
+fn rules_body(profiles: &[Profile], roots: &[RepoRoot]) -> Result<String, String> {
+    let mut body = String::new();
+    for root in by_depth_then_path(roots) {
         let Some(profile) = profiles.iter().find(|p| p.id == root.profile_id) else {
             continue;
         };
         if profile.account(root.platform).is_none() {
             continue;
         }
-        let dir = root.path.replace('\\', "/");
-        let dir = dir.trim_end_matches('/');
-        body.push_str(&format!(
-            "[includeIf \"gitdir/i:{}/\"]\n\tpath = {}\n",
-            dir,
-            posix(&identity_file(profile, root.platform)?)
-        ));
+        body.push_str(&rule_line(root, profile)?);
     }
+    Ok(body)
+}
 
-    // Remote-scoped: only modern Git CLI understands `hasconfig`, but it follows
-    // the repository wherever it is cloned, which a folder rule cannot.
-    for profile in profiles {
-        for platform in PLATFORMS {
-            let Some(account) = profile.account(platform) else {
-                continue;
-            };
-            let host = platform.canonical_host();
-            let path = posix(&identity_file(profile, platform)?);
-            for pattern in [
-                format!("git@{}:{}/**", host, account.username),
-                format!("https://{}/{}/**", host, account.username),
-                // `**` only crosses `/` when it follows one, so the namespace
-                // needs its own `*` — `git@host:**` would never match.
-                format!("git@{}:*/**", crate::repos::host_alias(platform, profile)),
-            ] {
-                body.push_str(&format!(
-                    "[includeIf \"hasconfig:remote.*.url:{}\"]\n\tpath = {}\n",
-                    pattern, path
-                ));
-            }
-        }
+/// The one include line a folder is supposed to have. The doctor compares the
+/// region against this rather than parsing it back, so pattern and target are
+/// checked by the same code that writes them.
+pub fn rule_line(root: &RepoRoot, profile: &Profile) -> Result<String, String> {
+    Ok(format!(
+        "[includeIf \"gitdir/i:{}\"]
+	path = {}
+",
+        gitdir_pattern(&root.path),
+        config_value(&posix(&identity_file(profile, root.platform)?))
+    ))
+}
+
+/// The generated region of `~/.gitconfig`, empty when there is none.
+pub fn region_text() -> String {
+    let Ok(path) = gitconfig_path() else {
+        return String::new();
+    };
+    let Ok(existing) = fs::read_to_string(path) else {
+        return String::new();
+    };
+    let (Some(start), Some(end)) = (existing.find(MANAGED_HEADER), existing.find(MANAGED_FOOTER))
+    else {
+        return String::new();
+    };
+    if start > end {
+        return String::new();
     }
-
-    write_region(&body)
+    existing[start..end].to_string()
 }
 
 /// Replaces the managed region in `~/.gitconfig`, appending it at the end so a
@@ -380,6 +361,39 @@ fn strip_region(config: &str) -> String {
 mod tests {
     use super::*;
 
+    fn account(sign: bool) -> PlatformAccount {
+        PlatformAccount {
+            username: "octo".to_string(),
+            git_name: "Octo".to_string(),
+            git_email: "octo@example.com".to_string(),
+            ssh_private_key_path: r"C:\Users\a\.ssh\id_ed25519".to_string(),
+            ssh_public_key_path: r"C:\Users\a\.ssh\id_ed25519.pub".to_string(),
+            sign_commits: sign,
+            token: None,
+        }
+    }
+
+    fn root_at(path: &str) -> RepoRoot {
+        RepoRoot {
+            path: path.to_string(),
+            profile_id: "p1".to_string(),
+            platform: Platform::Github,
+            fingerprint: vec![],
+        }
+    }
+
+    fn read(file: &std::path::Path, key: &str) -> String {
+        let out = std::process::Command::new("git")
+            .args(["config", "-f"])
+            .arg(file)
+            .args(["--get", key])
+            .output()
+            .expect("git must be on PATH");
+        String::from_utf8_lossy(&out.stdout)
+            .trim_end_matches(['\n', '\r'])
+            .to_string()
+    }
+
     #[test]
     fn strips_only_the_managed_region() {
         let config = format!(
@@ -399,137 +413,19 @@ mod tests {
         assert_eq!(strip_region(config), config);
     }
 
-    /// The allow-list file is what the global hook reads through `git config
-    /// --get-all`, so git's own parser is the only judge of its shape. The
-    /// account's address has to come out of the identity file for the same
-    /// reason: a repository matched by remote alone is guarded through it.
+    /// Everything a folder rule delivers lives in this one file, and a block git
+    /// cannot parse leaves every commit under the folder failing far from here —
+    /// so the values are read back with git's own parser rather than compared as
+    /// text. The backslashes of a Windows key path break first.
     #[test]
-    fn the_allow_list_reads_back_through_gits_own_parser() {
-        let dir = std::env::temp_dir().join(format!("gam-allow-{}", std::process::id()));
+    fn the_identity_file_reads_back_as_git_sees_it() {
+        let dir = std::env::temp_dir().join(format!("gam-identity-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-
-        let list = dir.join("binding.gitconfig");
-        fs::write(
-            &list,
-            allow_list_body(&["a@example.com".to_string(), "bot@example.com".to_string()]),
-        )
-        .unwrap();
-        let read = |file: &std::path::Path| {
-            let out = std::process::Command::new("git")
-                .args(["config", "-f"])
-                .arg(file)
-                .args(["--get-all", "gam.allowedEmail"])
-                .output()
-                .expect("git must be on PATH");
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        };
-        assert_eq!(
-            read(&list),
-            "a@example.com
-bot@example.com"
-        );
-
-        let identity = dir.join("identity.gitconfig");
-        fs::write(&identity, identity_file_body(&signing_account(false))).unwrap();
-        assert_eq!(read(&identity), signing_account(false).git_email);
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    /// The generated identity file is written by hand and read by git, so the
-    /// only check that means anything is git's own parser reading back exactly
-    /// what went in. A name carrying a backslash or a quote is ordinary —
-    /// a Windows path pasted into a display name, a nickname in quotes — and
-    /// writing it unescaped produced a value git read differently, or a file it
-    /// refused, which silently left the repository on the wrong identity.
-    #[test]
-    fn a_generated_identity_survives_gits_own_parser() {
-        let dir = std::env::temp_dir().join(format!("gam-cfgval-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-
-        let awkward = [
-            // Escaping alone is what these need: unquoted, git swallowed the
-            // quote characters and read back "Ann The Dev Smith".
-            r#"Ann "The Dev" Smith"#,
-            r"C:\Users\ann",
-            r#"trailing backslash \"#,
-            // These need the surrounding quotes: git trims whitespace around an
-            // unquoted value, and a `#` starts a comment.
-            "  padded  ",
-            "Ann # 2",
-            "plain name",
-            "Работа",
-        ];
-
-        for (i, name) in awkward.iter().enumerate() {
-            let file = dir.join(format!("{}.gitconfig", i));
-            fs::write(&file, format!("[user]\n\tname = {}\n", config_value(name))).unwrap();
-
-            let out = std::process::Command::new("git")
-                .args(["config", "-f"])
-                .arg(&file)
-                .args(["--get", "user.name"])
-                .output()
-                .expect("git must be on PATH");
-            assert!(
-                out.status.success(),
-                "git refused the file written for {:?}: {}",
-                name,
-                String::from_utf8_lossy(&out.stderr)
-            );
-            assert_eq!(
-                String::from_utf8_lossy(&out.stdout).trim_end_matches(['\n', '\r']),
-                *name,
-                "git read back something other than what was written for {:?}",
-                name
-            );
-        }
-
-        // A newline would end the line and turn the rest into another key, so it
-        // is dropped rather than written and misparsed.
-        assert_eq!(config_value("a\nb"), "\"ab\"");
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    fn signing_account(sign: bool) -> PlatformAccount {
-        PlatformAccount {
-            username: "octo".to_string(),
-            git_name: "Octo".to_string(),
-            git_email: "octo@example.com".to_string(),
-            ssh_private_key_path: r"C:\Users\a\.ssh\id_ed25519".to_string(),
-            ssh_public_key_path: r"C:\Users\a\.ssh\id_ed25519.pub".to_string(),
-            sign_commits: sign,
-            token: None,
-        }
-    }
-
-    /// A signing block git cannot parse leaves every commit in the including
-    /// repository failing, and the failure surfaces far from this file — so the
-    /// values are read back with git's own parser rather than compared as text.
-    /// The backslashes of a Windows key path are the part that breaks first.
-    #[test]
-    fn a_signing_identity_reads_back_as_git_sees_it() {
-        let dir = std::env::temp_dir().join(format!("gam-signcfg-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-
-        let read = |file: &std::path::Path, key: &str| -> String {
-            let out = std::process::Command::new("git")
-                .args(["config", "-f"])
-                .arg(file)
-                .args(["--get", key])
-                .output()
-                .expect("git must be on PATH");
-            String::from_utf8_lossy(&out.stdout)
-                .trim_end_matches(['\n', '\r'])
-                .to_string()
-        };
 
         let signing = dir.join("signing.gitconfig");
-        fs::write(&signing, identity_file_body(&signing_account(true))).unwrap();
+        fs::write(&signing, identity_file_body(&account(true), "ssh")).unwrap();
+        assert_eq!(read(&signing, "user.name"), "Octo");
         assert_eq!(read(&signing, "user.email"), "octo@example.com");
         assert_eq!(read(&signing, "gpg.format"), "ssh");
         assert_eq!(
@@ -538,14 +434,224 @@ bot@example.com"
         );
         assert_eq!(read(&signing, "commit.gpgsign"), "true");
         assert_eq!(read(&signing, "tag.gpgsign"), "true");
+        // What carries the key to the host, quoted so a path with a space in it
+        // still reaches ssh as one argument.
+        assert_eq!(
+            read(&signing, "core.sshCommand"),
+            "ssh -i \"C:/Users/a/.ssh/id_ed25519\" -o IdentitiesOnly=yes"
+        );
+        // What the commit guard reads.
+        assert_eq!(read(&signing, "gam.allowedEmail"), "octo@example.com");
 
         // Off means absent, not `false`: an account that does not sign must not
         // override a repository that configured signing for itself.
         let plain = dir.join("plain.gitconfig");
-        fs::write(&plain, identity_file_body(&signing_account(false))).unwrap();
+        fs::write(&plain, identity_file_body(&account(false), "ssh")).unwrap();
         assert_eq!(read(&plain, "user.email"), "octo@example.com");
         assert_eq!(read(&plain, "commit.gpgsign"), "");
         assert_eq!(read(&plain, "user.signingkey"), "");
+
+        // A newline would end the line and turn the rest into another key, so it
+        // is dropped rather than written and misparsed.
+        assert_eq!(config_value("a\nb"), "\"ab\"");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// An account with no key must not claim one: a `core.sshCommand` naming an
+    /// empty `-i` fails every fetch under the folder.
+    #[test]
+    fn an_account_without_a_key_configures_no_ssh_command() {
+        let mut acc = account(false);
+        acc.ssh_private_key_path = String::new();
+        assert!(!identity_file_body(&acc, "ssh").contains("sshCommand"));
+    }
+
+    #[test]
+    fn a_nested_folder_is_written_after_the_folder_it_sits_in() {
+        let roots = vec![
+            root_at("D:/repos/work/team/inner"),
+            root_at("D:/repos"),
+            root_at("D:/repos/work"),
+        ];
+        let ordered: Vec<&str> = by_depth_then_path(&roots)
+            .iter()
+            .map(|r| r.path.as_str())
+            .collect();
+        assert_eq!(
+            ordered,
+            vec!["D:/repos", "D:/repos/work", "D:/repos/work/team/inner"]
+        );
+    }
+
+    /// The pattern has to reach a repository's `.git` directory at any depth,
+    /// and a folder handed back by the file picker may carry a trailing slash
+    /// or backslashes.
+    #[test]
+    fn the_folder_pattern_ends_in_one_slash_whatever_the_path_looked_like() {
+        assert_eq!(gitdir_pattern("D:/repos/work"), "D:/repos/work/");
+        assert_eq!(gitdir_pattern("D:/repos/work/"), "D:/repos/work/");
+        assert_eq!(gitdir_pattern(r"D:\repos\work"), "D:/repos/work/");
+    }
+
+    fn profile_named(id: &str) -> Profile {
+        Profile {
+            id: id.to_string(),
+            name: id.to_string(),
+            default_platform: None,
+            github: Some(account(false)),
+            gitlab: None,
+            bitbucket: None,
+            is_active: false,
+        }
+    }
+
+    /// What the doctor looks for has to be what was written, and a folder whose
+    /// profile or account is gone must leave no rule pointing at an identity
+    /// file nobody maintains.
+    #[test]
+    fn the_region_holds_one_rule_per_folder_in_the_order_git_reads_them() {
+        let mut inner = root_at("D:/repos/work/inner");
+        inner.profile_id = "second".to_string();
+        let mut orphan = root_at("D:/repos/gone");
+        orphan.profile_id = "deleted".to_string();
+        let roots = vec![inner, orphan, root_at("D:/repos/work")];
+
+        let profiles = vec![profile_named("p1"), profile_named("second")];
+        let body = rules_body(&profiles, &roots).unwrap();
+
+        let outer = rule_line(&roots[2], &profiles[0]).unwrap();
+        let nested = rule_line(&roots[0], &profiles[1]).unwrap();
+        assert_eq!(body, format!("{}{}", outer, nested));
+        assert!(
+            !body.contains("D:/repos/gone"),
+            "a folder whose profile is gone must not keep a rule: {}",
+            body
+        );
+    }
+
+    /// The whole model rests on git applying one folder rule to a repository
+    /// several levels down, so it is asked rather than assumed.
+    #[test]
+    fn git_applies_the_generated_rule_to_a_repository_deep_under_the_folder() {
+        let dir = std::env::temp_dir().join(format!("gam-rule-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let repo = dir.join("nested").join("deep").join("demo");
+        fs::create_dir_all(&repo).unwrap();
+        let repo_path = posix(&repo);
+        std::process::Command::new("git")
+            .args(["init", "-q", &repo_path])
+            .output()
+            .expect("git must be on PATH");
+
+        let identity = dir.join("identity.gitconfig");
+        fs::write(&identity, identity_file_body(&account(false), "ssh")).unwrap();
+        let config = dir.join("global.gitconfig");
+        fs::write(
+            &config,
+            format!(
+                "[includeIf \"gitdir/i:{}\"]\n\tpath = {}\n",
+                gitdir_pattern(&posix(&dir)),
+                config_value(&posix(&identity))
+            ),
+        )
+        .unwrap();
+
+        let resolved = |key: &str| {
+            let out = std::process::Command::new("git")
+                .args(["-C", &repo_path, "config", "--get", key])
+                .env("GIT_CONFIG_GLOBAL", &config)
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        assert_eq!(
+            resolved("user.email"),
+            "octo@example.com",
+            "a repository three levels down must still get the folder's identity"
+        );
+        // The key travels the same way the identity does. Without this the
+        // repository pushes with whichever key the active profile owns the bare
+        // host with, which is the failure the folder rule exists to prevent.
+        assert_eq!(
+            resolved("core.sshCommand"),
+            "ssh -i \"C:/Users/a/.ssh/id_ed25519\" -o IdentitiesOnly=yes"
+        );
+        // And so does the address the commit guard accepts here.
+        assert_eq!(resolved("gam.allowedEmail"), "octo@example.com");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The two halves meet here: the folder rule is the only thing that says
+    /// which address is allowed, and the global hook is the only thing that
+    /// reads it. Either one tested alone leaves the seam between them untested,
+    /// and the seam is where a repository commits as the wrong person.
+    #[test]
+    fn the_folder_rule_is_what_the_global_hook_refuses_a_wrong_commit_by() {
+        let Some(sh) = hooks::shell() else {
+            eprintln!("no POSIX shell on PATH: the guard is not exercised here");
+            return;
+        };
+
+        let dir = std::env::temp_dir().join(format!("gam-endtoend-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let repo = dir.join("team").join("demo");
+        fs::create_dir_all(&repo).unwrap();
+        let repo_path = posix(&repo);
+        std::process::Command::new("git")
+            .args(["init", "-q", &repo_path])
+            .output()
+            .expect("git must be on PATH");
+
+        let identity = dir.join("identity.gitconfig");
+        fs::write(&identity, identity_file_body(&account(false), "ssh")).unwrap();
+        // The same line the region carries, pointed at the file this test
+        // wrote rather than the one the real installation keeps.
+        let config = dir.join("global.gitconfig");
+        fs::write(
+            &config,
+            format!(
+                "[includeIf \"gitdir/i:{}\"]\n\tpath = {}\n",
+                gitdir_pattern(&posix(&dir)),
+                config_value(&posix(&identity))
+            ),
+        )
+        .unwrap();
+
+        let hook_dir = dir.join("hooks");
+        hooks::write_scripts(&hook_dir).unwrap();
+
+        let commit_as = |email: &str| {
+            std::process::Command::new("git")
+                .args(["-C", &repo_path, "config", "--local", "user.email", email])
+                .output()
+                .unwrap();
+            std::process::Command::new(sh)
+                .arg(hook_dir.join("pre-commit"))
+                .current_dir(&repo_path)
+                .env("GIT_CONFIG_GLOBAL", &config)
+                .env("GIT_AUTHOR_NAME", "Octo")
+                .env("GIT_COMMITTER_NAME", "Octo")
+                .output()
+                .expect("the hook must start")
+        };
+
+        let refused = commit_as("stranger@example.com");
+        let stderr = String::from_utf8_lossy(&refused.stderr).to_string();
+        assert!(
+            !refused.status.success(),
+            "the folder's rule allows only its own account: {}",
+            stderr
+        );
+        assert!(stderr.contains("stranger@example.com"), "{}", stderr);
+
+        let accepted = commit_as("octo@example.com");
+        assert!(
+            accepted.status.success(),
+            "the account the folder belongs to must commit: {}",
+            String::from_utf8_lossy(&accepted.stderr)
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -8,7 +8,7 @@ A desktop Git account manager for identity switching across popular code hosting
 
 [![License](https://img.shields.io/github/license/khasky/git-account-manager)](LICENSE) [![Version](https://img.shields.io/github/package-json/v/khasky/git-account-manager?color=blue)](./package.json) [![GitHub issues](https://img.shields.io/github/issues/khasky/git-account-manager)](https://github.com/khasky/git-account-manager/issues) [![Downloads](https://img.shields.io/github/downloads/khasky/git-account-manager/total)](https://github.com/khasky/git-account-manager/releases) [![CI](https://github.com/khasky/git-account-manager/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/khasky/git-account-manager/actions/workflows/build.yml) ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg) [![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-ea4aaa.svg?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/khasky) [![Emojery](https://api.emojery.app/badge/github/khasky/git-account-manager.svg)](https://emojery.app/react?t=github/khasky/git-account-manager)
 
-[Features](#features) · [Why GAM?](#why-git-account-manager) · [Repository-scoped identity](#repository-scoped-identity) · [Install](#installation) · [Security Notes](#security-notes) · [Development](#development) · [Troubleshooting](#troubleshooting) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Reporting a vulnerability](#reporting-a-vulnerability) · [Support](#support) · [License](#license)
+[Features](#features) · [Why GAM?](#why-git-account-manager) · [Folder-scoped identity](#folder-scoped-identity) · [Install](#installation) · [Security Notes](#security-notes) · [Development](#development) · [Troubleshooting](#troubleshooting) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Reporting a vulnerability](#reporting-a-vulnerability) · [Support](#support) · [License](#license)
 
 <picture>
   <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark1.webp">
@@ -24,7 +24,7 @@ A desktop Git account manager for identity switching across popular code hosting
 
 - **Profiles** — Create, edit, and delete named accounts. Each profile can link **GitHub**, **GitLab**, and **Bitbucket** — any one or several at once.
 - **One-click activation** — Activating a profile updates **global** `git config user.name` / `user.email` and rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** / **bitbucket.org** uses that profile's key.
-- **Repository-scoped identity** — Give a profile its folders and the identity is written into every repository inside them, where every Git client reads it. A machine-wide **commit guard** refuses a commit or a push from any other address without a file of the app's inside the repository; add an optional SSH-alias remote, and a **Doctor** re-checks each binding. See [Repository-scoped identity](#repository-scoped-identity).
+- **Folder-scoped identity** — Give a profile its folders and every repository inside one, at any depth, gets that account's name, address and SSH key from a generated `includeIf` rule. Nothing is written inside a repository. A machine-wide **commit guard** refuses a commit from any other address, and a **Doctor** watches the folders and says when one moved. See [Folder-scoped identity](#folder-scoped-identity).
 - **Default identity** — When several platforms are connected, choose which account supplies the active **git identity** (name/email).
 - **Import from Git** — Start a new profile from the current global Git identity so existing `user.name` / `user.email` settings are not lost.
 - **OAuth sign-in** — **GitHub** via device code flow, **GitLab.com** via browser authorization + PKCE, **Bitbucket** via an Atlassian API token. Client / Application IDs are configurable in Settings (with built-in defaults).
@@ -72,7 +72,7 @@ It's the only tool here that **generates and uploads an SSH key for you from a G
   <img src="screenshots/dark4.webp" width="760" alt="Default Git identity picker above the folders a profile watches">
 </picture>
 
-<sub><b>Default identity and folders</b> — which account supplies the global identity, and which folders the profile claims.</sub>
+<sub><b>Default identity and folders</b> — which account supplies the machine's default identity, and which folders the profile claims.</sub>
 
 <br><br>
 
@@ -82,7 +82,7 @@ It's the only tool here that **generates and uploads an SSH key for you from a G
   <img src="screenshots/dark5.webp" width="760" alt="Doctor listing repositories whose identity drifted">
 </picture>
 
-<sub><b>Doctor</b> — what drifted in each bound repository, and the two ways to settle it.</sub>
+<sub><b>Doctor</b> — what stopped holding in each folder, and the way to settle it.</sub>
 
 <br><br>
 
@@ -106,57 +106,60 @@ It's the only tool here that **generates and uploads an SSH key for you from a G
 
 </details>
 
-## Repository-scoped identity
+## Folder-scoped identity
 
-A machine has no owner; a repository does. An identity kept in the global Git config follows whichever profile is active, so a commit made at the wrong moment silently carries the wrong address — and the commit object keeps it forever. Folders belong to an account, so that is where they are configured.
+A machine has no owner; a folder does. An identity kept in the global Git config follows whichever profile is active, so a commit made at the wrong moment silently carries the wrong address — and the commit object keeps it forever.
 
-### Binding a repository
+The active profile is the machine's default and covers everything you have not claimed. A **folder** claimed by another profile overrides it for everything underneath, and nothing of this app's is ever written inside a repository.
 
-Open a profile and add its **folders** under *Folders and repositories*. Each folder carries the switch its repositories start with, whether `origin` is rewritten to the SSH alias, and a single repository can be set apart from it; that exception then survives later edits of the folder's default.
+### Folders are the rule
 
-Nothing is written while you edit. Adding a folder scans it and shows what was found; **Save** applies the whole set at once and reports what it did, so *Cancel* leaves every repository untouched — which is also what lets a profile be given its folders before it exists on disk.
+Open a profile and add its **folders** under *Folders and repositories*, choosing which of that profile's platforms each one belongs to. Saving writes one block per folder into a delimited region of `~/.gitconfig`:
 
-Every repository found is matched against your profiles by evidence, never by guesswork:
+```gitconfig
+[includeIf "gitdir/i:D:/repos/work/"]
+	path = "C:/Users/you/AppData/Roaming/git-account-manager/identities/work-github.gitconfig"
+```
 
-| Evidence                                                    | What it proves                                     |
-| ----------------------------------------------------------- | -------------------------------------------------- |
-| The remote uses a `<platform>-<profile>` SSH alias           | Already pinned to that profile                     |
-| The remote namespace matches exactly one account's username  | Personal repository of that account                |
-| **Check access** — `git ls-remote` with that profile's key alone | Organisations and forks, where the namespace cannot answer |
-| **Test SSH alias** — `ssh -T` returns the account greeting   | The alias really reaches the account it is named after |
+and the file it points at carries everything a repository under that folder needs:
 
-**Check access** deliberately skips `~/.ssh/config` (`ssh -F none`) so the answer describes the profile's own key. Asking the platform API instead would answer a different question and answer it wrongly: an OAuth token without the `repo` scope — which this app never requests, because that scope grants write access to every repository you can see — reports every private repository as missing.
+```gitconfig
+[user]
+	name = "Your Name"
+	email = "you@work.example"
+[core]
+	sshCommand = "ssh -i \"C:/Users/you/.ssh/id_ed25519_work\" -o IdentitiesOnly=yes"
+[gam]
+	allowedEmail = "you@work.example"
+```
 
-A repository the first two rows settle is selected for you. Anything else — an organisation, a fork, someone else's clone that happens to sit in the folder — is marked and waits for a decision rather than being stamped with this identity. Binding writes:
+That reaches **every repository under the folder at any depth**, including one cloned there tomorrow, with no scan and no decision to make. `core.sshCommand` is what carries the key, so `origin` keeps the canonical address and still pushes as the right account whichever profile is active. Everything outside the generated region is preserved and `~/.gitconfig` is backed up once.
 
-- `user.name` / `user.email` into the repository's **own** config — the one place the Git CLI, libgit2 (which is what TortoiseGit commits through) and the IDEs all agree on;
-- optionally an `origin` rewritten to the profile's SSH alias, so the key follows the repository instead of the active profile.
+The folder view lists the whole hierarchy a rule covers, indented by depth, so what a folder actually claims is visible before you save it. A repository whose remote points at a different site than the folder's platform is marked: the rule still covers it, and if that is wrong it needs a folder of its own.
 
-The addresses a repository accepts (`gam.allowedEmail`) are not written into it: they reach it through the generated `includeIf` region, from a file the app keeps outside every repository.
+Nothing is written while you edit. *Cancel* leaves the machine untouched, which is also what lets a profile be given its folders before it exists on disk.
+
+A folder belongs to one account: saving a folder another profile already claims is refused by name rather than silently taking it away.
 
 ### Commit guard
 
-The guard is one hooks directory the app owns, outside every repository, and the global `core.hooksPath` pointing at it. Each dispatcher there runs the check where it has a say — `pre-commit` refuses a commit whose author or committer the repository does not allow, before the commit exists; `pre-push` catches commits made before the repository was bound — and then runs the repository's own hook of the same name, so lefthook, a hand-written hook or anything in `.git/hooks` keeps working. Nothing lands in a tracked folder, so nothing of the app's ever rides along with a commit.
+The guard is one hooks directory the app owns, outside every repository, and the global `core.hooksPath` pointing at it. Each dispatcher there runs the check where it has a say — `pre-commit` refuses a commit whose author or committer the repository does not allow, before the commit exists; `pre-push` catches commits made before the folder was claimed — and then runs the repository's own hook of the same name, so lefthook, a hand-written hook or anything in `.git/hooks` keeps working. Nothing lands in a tracked folder, so nothing of the app's ever rides along with a commit.
 
 What the dispatcher cannot reach is a repository whose local config sets `core.hooksPath` itself (husky does, at `npm install`): local wins over global and the guard never runs there. The Doctor reports that repository as *bypassed* rather than writing into its tracked folders. A global `core.hooksPath` that already points somewhere else is left alone, and enabling the guard says so instead of replacing it.
 
 ### Doctor
 
-Re-reads every bound repository from disk and reports six checks per repository: the folder exists, the effective identity matches, the identity is set **locally** rather than inherited, the remote matches the profile, the recent history carries no foreign address, and the commit guard reaches it. Nothing is changed until you press **Fix**.
+Five checks per folder: the folder is still there, its rule is in `~/.gitconfig`, **git itself resolves that identity** inside a repository under it, no repository there overrides the rule with a copy of its own, and the commit guard is in force. The third is the one that proves anything — a rule written but never applied looks fine right up to the commit that carries the wrong address, and only git can say whether it applied. The fourth is the one to act on: a local `user.email` beats the rule, so it would go on naming an address the profile has since changed. **Fix** rewrites the rule and takes those local copies back; a setting the rule does not supply is left alone.
 
-A profile whose repositories drifted carries a count on its card in the list, so a problem surfaces without opening anything; the checks themselves live in that profile.
-
-The history check is the one that catches a mistake that already happened, on the day it happened rather than months later.
+The folders are also checked on a timer while the window is open, so a folder moved or renamed in a file manager surfaces on its own. When one is gone, the app looks for it nearby and recognises it by the repositories it held rather than by its name, which a disk full of folders called `src` cannot settle. A single confident match is offered as **Relink**; two equally good ones are a question, not an answer, and it says so instead of guessing. The window comes forward for a problem that was not already raised, once.
 
 ### Guard rails (Settings)
 
-| Option                                    | What it does                                                                                                                                                            |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Drop the global Git identity**          | Removes global `user.name` / `user.email` and sets `user.useConfigOnly`. An unbound repository then fails with *Author identity unknown* instead of borrowing the active profile's address. |
-| **Maintain includeIf rules**              | Generates a delimited region in `~/.gitconfig` with `gitdir` rules (understood by libgit2, so TortoiseGit sees them) and `hasconfig:remote.*.url` rules (Git CLI 2.36+, and they follow the repository wherever it is cloned). Everything outside the region is preserved and the file is backed up once. |
-| **Guard commits with a global hook**      | On by default. Points the global `core.hooksPath` at the app's dispatchers (see [Commit guard](#commit-guard)) and keeps the includeIf region, which carries each repository's allow-list, whatever the switch above says. |
+| Option                               | What it does                                                                                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Guard commits with a global hook** | On by default. Points the global `core.hooksPath` at the app's dispatchers (see [Commit guard](#commit-guard)), which read the allowed address out of the folder rule. |
 
-The active profile always owns the bare `github.com` / `gitlab.com` / `bitbucket.org` hosts, so a repository without an SSH alias still pushes with a key; a repository pinned to an alias keeps its own key whichever profile is active. The Settings page lists which profile answers on each host, and a host the active profile has no account on is marked as refusing `git@<host>:` remotes.
+The active profile always owns the bare `github.com` / `gitlab.com` / `bitbucket.org` hosts, so a repository no folder claims still pushes with a key. A repository under a folder gets its key from that folder's rule instead, whichever profile is active. The Settings page lists which profile answers on each host, and a host the active profile has no account on is marked as refusing `git@<host>:` remotes.
 
 ## Installation
 
@@ -447,7 +450,6 @@ After you click **Connect with GitLab**, the browser completes authorization and
 ## Roadmap
 
 - **HTTPS / PAT support** — work with HTTPS remotes via a built-in git **credential helper** (not just SSH).
-- **Per-folder identity** — bind a directory to a profile via `includeIf "gitdir:…"`.
 - **CLI** — `gam set <profile>` for terminals, CI, and dotfiles.
 
 ## Contributing

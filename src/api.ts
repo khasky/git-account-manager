@@ -14,11 +14,10 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  ApplyReport,
-  BindResult,
   DeviceCodeResponse,
-  DiscoveredRepo,
   DoctorReport,
+  FolderRepo,
+  FolderWatch,
   GhProbe,
   GitIdentity,
   GuardSettings,
@@ -27,10 +26,9 @@ import type {
   PlatformId,
   PlatformUser,
   Profile,
-  RepoPlan,
-  RepoReach,
   RepoRoot,
   RepoState,
+  SaveFoldersReport,
   SshKeyInfo,
   SshKeyPair,
 } from "./types";
@@ -132,38 +130,44 @@ export const ghProbe = () => invoke<GhProbe>("gh_probe");
 export const saveGuardSettings = (settings: GuardSettings) =>
   invoke<void>("save_guard_settings", { settings });
 
-// -- repositories -----------------------------------------------------------
+// -- folders ----------------------------------------------------------------
 
 export const getRepoState = () => invoke<RepoState>("get_repo_state");
 
 export const doctor = () => invoke<DoctorReport>("doctor");
 
-/** Scans against the profile as it stands in the form, which may not be saved
- *  yet — that is what lets a new profile configure its folders before it
- *  exists on disk. */
-export const scanProfileRepositories = (args: {
+/** The cheap half of the doctor, asked on a timer. */
+export const watchFolders = () => invoke<FolderWatch[]>("watch_folders");
+
+/** Lists what the folders would cover, against the profile as it stands in the
+ *  form — which may not be saved yet, and is what lets a new profile have its
+ *  folders configured before it exists on disk. */
+export const scanProfileFolders = (args: {
   profile: Profile;
   roots: RepoRoot[];
-}) => invoke<DiscoveredRepo[]>("scan_profile_repositories", args);
+}) => invoke<FolderRepo[]>("scan_profile_folders", args);
 
-export const applyProfileRepos = (plan: RepoPlan) =>
-  invoke<ApplyReport>("apply_profile_repos", { plan });
-
-export const fixRepository = (path: string) =>
-  invoke<BindResult>("fix_repository", { path });
-
-export const allowEmailInRepository = (args: { path: string; email: string }) =>
-  invoke<BindResult>("allow_email_in_repository", args);
-
-export const verifyRepoAccess = (args: {
+export const saveProfileFolders = (args: {
   profileId: string;
-  platform: PlatformId;
-  owner: string;
-  repo: string;
-}) => invoke<RepoReach>("verify_repo_access", args);
+  roots: RepoRoot[];
+}) => invoke<SaveFoldersReport>("save_profile_folders", args);
 
-export const probeSshAlias = (host: string) =>
-  invoke<string>("probe_ssh_alias", { host });
+/** Where a folder went. Walks the disk, so it is asked per finding shown. */
+export const locateFolder = (path: string) =>
+  invoke<string | null>("locate_folder", { path });
+
+/** Rewrites one folder's rule and takes back what overrides it. */
+export const fixFolder = (path: string) =>
+  invoke<number>("fix_folder", { path });
+
+export const relinkFolder = (args: { path: string; newPath: string }) =>
+  invoke<void>("relink_folder", args);
+
+export const forgetFolder = (path: string) =>
+  invoke<void>("forget_folder", { path });
+
+/** Brings the window up for a finding nobody went looking for. */
+export const focusWindow = () => invoke<void>("focus_window");
 
 // -- tray -------------------------------------------------------------------
 

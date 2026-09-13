@@ -8,7 +8,7 @@ import { BitbucketIcon, GitHubIcon, GitLabIcon } from "./icons";
 
 interface Props {
   profile: Profile;
-  /** Repositories of this profile the doctor found drifted. */
+  /** Folders of this profile whose rule stopped holding. */
   problemCount: number;
   onActivate: (id: string) => void;
   onEdit: (profile: Profile) => void;

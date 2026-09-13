@@ -108,44 +108,6 @@ pub fn read_public_key(pub_key_path: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Asks a host who it thinks we are. GitHub and GitLab answer `Hi <user>!` and
-/// then close the connection with a non-zero exit, so the greeting — not the
-/// exit code — is the result. This is what proves a host alias really reaches
-/// the account it is named after.
-pub fn probe_host(host: &str) -> Result<String, String> {
-    let target = format!("git@{}", host);
-    let mut cmd = hidden_command("ssh");
-    cmd.args([
-        "-T",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=10",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        &target,
-    ]);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to run ssh: {}", e))?;
-
-    let mut text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stderr = stderr.trim();
-    if !stderr.is_empty() {
-        if !text.is_empty() {
-            text.push('\n');
-        }
-        text.push_str(stderr);
-    }
-
-    if text.is_empty() {
-        return Err(format!("No response from {}", host));
-    }
-    Ok(text)
-}
-
 /// Which profile's key answers on each platform's bare host. `None` is a host
 /// the active profile has no account on: a remote addressed as `git@<host>:`
 /// is refused there, since no other block matches.

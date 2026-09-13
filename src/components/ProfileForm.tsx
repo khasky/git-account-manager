@@ -5,17 +5,15 @@ import { attachedKey } from "../attachedKey";
 import { copySshPublicKey } from "../copySshPublicKey";
 import { fmt, rich, useI18n } from "../i18n";
 import { PLATFORM_LABEL, PLATFORMS } from "../platforms";
-import { buildRepoPlan } from "../repoPlan";
 import type {
-  DiscoveredRepo,
+  FolderRepo,
+  FolderStatus,
   GitIdentity,
   OAuthSettings,
   PlatformAccount,
   PlatformId,
   Profile,
-  RepoBinding,
   RepoRoot,
-  RepoStatus,
   SshKeyInfo,
 } from "../types";
 import ConfirmDialog, { type DialogAction } from "./ConfirmDialog";
@@ -131,38 +129,37 @@ export default function ProfileForm({
   const [countdown, setCountdown] =
     useState<Record<PlatformId, number>>(noCountdowns);
 
-  // Folders and bindings are held as a draft and written only by Save, so
-  // Cancel leaves no repository touched — and so a profile that does not exist
-  // on disk yet can still have its folders configured before it is created.
+  // The folders are held as a draft and written only by Save, so Cancel leaves
+  // the machine untouched — and so a profile that does not exist on disk yet
+  // can still have its folders configured before it is created.
   const [roots, setRoots] = useState<RepoRoot[]>([]);
-  const [repos, setRepos] = useState<DiscoveredRepo[]>([]);
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [storedBindings, setStoredBindings] = useState<RepoBinding[]>([]);
-  const [statuses, setStatuses] = useState<RepoStatus[]>([]);
-  // The doctor reads every bound repository from disk, so the section announces
-  // itself as loading rather than rendering an empty state it is about to
-  // contradict.
+  const [repos, setRepos] = useState<FolderRepo[]>([]);
+  const [statuses, setStatuses] = useState<FolderStatus[]>([]);
+  // The doctor walks each folder and asks git what it resolves, so the section
+  // announces itself as loading rather than rendering an empty state it is
+  // about to contradict.
   const [reposLoading, setReposLoading] = useState(true);
+
+  const loadDoctor = useCallback(async () => {
+    const report = await api.doctor();
+    setStatuses(report.folders.filter((f) => f.profile_id === profileId));
+  }, [profileId]);
 
   const loadRepoState = useCallback(async () => {
     setReposLoading(true);
     try {
       const state = await api.getRepoState();
       setRoots(state.roots.filter((r) => r.profile_id === profileId));
-      setStoredBindings(
-        state.bindings.filter((b) => b.profile_id === profileId),
-      );
     } finally {
       setReposLoading(false);
     }
 
-    // Reading the folders costs a file read; the doctor reads every bound
-    // repository from disk and takes orders of magnitude longer. Awaiting both
-    // together held the folders back for as long as the slower one, so the
-    // report is fetched afterwards and fills its own list when it lands.
-    const report = await api.doctor();
-    setStatuses(report.repos.filter((r) => r.profile_id === profileId));
-  }, [profileId]);
+    // Reading the folders costs a file read; the doctor walks them and takes
+    // orders of magnitude longer. Awaiting both together held the folders back
+    // for as long as the slower one, so the report is fetched afterwards and
+    // fills its own list when it lands.
+    await loadDoctor();
+  }, [profileId, loadDoctor]);
 
   useEffect(() => {
     loadRepoState().catch(() => {});
@@ -525,9 +522,9 @@ export default function ProfileForm({
     };
   }
 
-  /** The profile as it stands in the form. The repository scan needs this rather
-   *  than the saved copy: an account connected a moment ago is what tells the
-   *  evidence ladder which namespaces belong to this profile. */
+  /** The profile as it stands in the form. The folder scan needs this rather
+   *  than the saved copy: an account connected a moment ago is what decides
+   *  whether a repository under the folder points at a different site. */
   function draftProfile(): Profile {
     return {
       id: profileId,
@@ -556,25 +553,7 @@ export default function ProfileForm({
 
     try {
       await api.saveProfile(p);
-      const report = await api.applyProfileRepos(
-        buildRepoPlan({
-          profileId: p.id,
-          roots,
-          repos,
-          selected,
-          storedBindings,
-        }),
-      );
-      if (report.failed.length > 0) {
-        setError(
-          `${fmt(m.repos.applyPartial, {
-            bound: report.bound,
-            failed: report.failed.length,
-          })}\n${report.failed.map((f) => `${f.path}: ${f.error}`).join("\n")}`,
-        );
-        setSaving(false);
-        return;
-      }
+      await api.saveProfileFolders({ profileId: p.id, roots });
       onSave(p);
     } catch (e) {
       setError(String(e));
@@ -806,11 +785,11 @@ export default function ProfileForm({
               setRoots={setRoots}
               repos={repos}
               setRepos={setRepos}
-              selected={selected}
-              setSelected={setSelected}
               statuses={statuses}
               loading={reposLoading}
-              onFixed={() => loadRepoState().catch(() => {})}
+              // Only the report is re-read: pulling the folders back from
+              // disk here would throw away a folder added in this draft.
+              onFixed={() => loadDoctor().catch(() => {})}
             />
           )}
 

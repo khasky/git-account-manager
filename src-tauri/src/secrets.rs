@@ -237,8 +237,7 @@ mod tests {
             }],
             oauth: Default::default(),
             repo_roots: Vec::new(),
-            bindings: Vec::new(),
-            guard: Default::default(),
+            ..Default::default()
         }
     }
 

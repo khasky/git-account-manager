@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api";
+import FolderAlert from "./components/FolderAlert";
 import {
   GearIcon,
   GitHubIcon,
@@ -18,11 +19,16 @@ import UpdateBanner from "./components/UpdateBanner";
 import { fmt, useI18n } from "./i18n";
 import { PLATFORM_LABEL, PLATFORMS } from "./platforms";
 import { useTheme } from "./ThemeContext";
-import type { GitIdentity, PlatformId, Profile } from "./types";
+import type { FolderWatch, GitIdentity, PlatformId, Profile } from "./types";
 
 type View = "list" | "form" | "settings";
 
 const TOAST_MS = 3000;
+
+/** How often the folders are checked while the window is open. Three file reads
+ *  per folder, so the cost is negligible; the point is that a folder someone
+ *  moved in Explorer surfaces here rather than on the next wrong commit. */
+const WATCH_MS = 60_000;
 
 function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -31,6 +37,12 @@ function App() {
   const [importPrefill, setImportPrefill] = useState<GitIdentity | null>(null);
   const [loading, setLoading] = useState(true);
   const [problems, setProblems] = useState<Record<string, number>>({});
+  const [watched, setWatched] = useState<FolderWatch[]>([]);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertBusy, setAlertBusy] = useState("");
+  // What has already been raised, so a problem the user chose to leave alone
+  // does not reopen the dialog every minute.
+  const announcedRef = useRef<Set<string>>(new Set());
   const [toastMsg, setToastMsg] = useState("");
   const { preference, setPreference } = useTheme();
   const { m } = useI18n();
@@ -56,24 +68,80 @@ function App() {
       setLoading(false);
     }
 
-    // The per-profile card shows how many of its repositories drifted, so the
-    // report is fetched here rather than only inside the form a user might never
-    // open. It reads every bound repository from disk, so it is deliberately not
-    // awaited before the list renders — a count arriving a moment later beats a
-    // window that shows nothing until Git has been asked.
+    // The per-profile card shows how many of its folders stopped holding, so
+    // the report is fetched here rather than only inside the form a user might
+    // never open. It walks each folder, so it is deliberately not awaited
+    // before the list renders — a count arriving a moment later beats a window
+    // that shows nothing until Git has been asked.
     try {
       const report = await api.doctor();
       const counts: Record<string, number> = {};
-      for (const repo of report.repos) {
-        if (!repo.ok) {
-          counts[repo.profile_id] = (counts[repo.profile_id] ?? 0) + 1;
+      for (const folder of report.folders) {
+        if (!folder.ok) {
+          counts[folder.profile_id] = (counts[folder.profile_id] ?? 0) + 1;
         }
       }
       setProblems(counts);
     } catch (e) {
-      console.error("Failed to read repository health:", e);
+      console.error("Failed to read folder health:", e);
     }
   }, []);
+
+  // A folder that stops matching its rule is not something the user goes
+  // looking for, so the window comes forward for it. Only for a problem that
+  // was not already raised: the same one every minute would be noise, and noise
+  // is how a real one gets dismissed unread.
+  const checkFolders = useCallback(async () => {
+    let rows: FolderWatch[];
+    try {
+      rows = await api.watchFolders();
+    } catch (e) {
+      console.error("Failed to check folders:", e);
+      return;
+    }
+    const broken = rows.filter((r) => r.state !== "ok");
+
+    // Where a missing folder went is a disk search, so it is asked per finding
+    // rather than on every tick of the timer that produced the finding.
+    const located = await Promise.all(
+      broken.map(async (folder) =>
+        folder.state === "missing"
+          ? {
+              ...folder,
+              moved_to: await api.locateFolder(folder.path).catch(() => null),
+            }
+          : folder,
+      ),
+    );
+    setWatched(located);
+
+    const keys = located.map((r) => `${r.path}|${r.state}`);
+    const fresh = keys.filter((k) => !announcedRef.current.has(k));
+    announcedRef.current = new Set(keys);
+    if (fresh.length > 0) {
+      setAlertOpen(true);
+      api.focusWindow().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    checkFolders();
+    const timer = setInterval(checkFolders, WATCH_MS);
+    return () => clearInterval(timer);
+  }, [checkFolders]);
+
+  async function runAlertAction(key: string, task: () => Promise<unknown>) {
+    setAlertBusy(key);
+    try {
+      await task();
+      await loadProfiles();
+      await checkFolders();
+    } catch (e) {
+      showToast(fmt(m.app.toastError, { error: String(e) }));
+    } finally {
+      setAlertBusy("");
+    }
+  }
 
   useEffect(() => {
     loadProfiles();
@@ -223,8 +291,32 @@ function App() {
     );
 
   // Every view sits in the same full-height column; only the contents differ.
+  // The folder alert rides along with all of them: a folder that moved is worth
+  // saying whichever page happens to be open.
   const shell = (children: React.ReactNode) => (
-    <div className="flex h-screen flex-col bg-surface text-fg">{children}</div>
+    <div className="flex h-screen flex-col bg-surface text-fg">
+      {children}
+      {alertOpen && (
+        <FolderAlert
+          problems={watched}
+          busy={alertBusy}
+          onRelink={(path, newPath) =>
+            runAlertAction(`relink:${path}`, () =>
+              api.relinkFolder({ path, newPath }),
+            )
+          }
+          onForget={(path) =>
+            runAlertAction(`forget:${path}`, () => api.forgetFolder(path))
+          }
+          onOpenProfile={(profileId) => {
+            const profile = profiles.find((p) => p.id === profileId);
+            setAlertOpen(false);
+            if (profile) handleEdit(profile);
+          }}
+          onDismiss={() => setAlertOpen(false)}
+        />
+      )}
+    </div>
   );
 
   if (view === "form") {

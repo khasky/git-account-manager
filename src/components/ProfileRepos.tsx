@@ -9,15 +9,13 @@ import {
 } from "react";
 import * as api from "../api";
 import { fmt, useI18n } from "../i18n";
-import { decidedByEvidence } from "../repoEvidence";
-import { underAnyRoot } from "../repoPlan";
 import type {
-  DiscoveredRepo,
+  FolderRepo,
+  FolderStatus,
   PlatformId,
   Profile,
   RepoNote,
   RepoRoot,
-  RepoStatus,
 } from "../types";
 import InfoTip from "./InfoTip";
 import RepoDoctor from "./RepoDoctor";
@@ -30,21 +28,21 @@ interface Props {
   platforms: PlatformId[];
   roots: RepoRoot[];
   setRoots: Dispatch<SetStateAction<RepoRoot[]>>;
-  repos: DiscoveredRepo[];
-  setRepos: Dispatch<SetStateAction<DiscoveredRepo[]>>;
-  selected: Record<string, boolean>;
-  setSelected: Dispatch<SetStateAction<Record<string, boolean>>>;
+  repos: FolderRepo[];
+  setRepos: Dispatch<SetStateAction<FolderRepo[]>>;
   /** Doctor rows belonging to this profile. */
-  statuses: RepoStatus[];
+  statuses: FolderStatus[];
   /** The first read of state and doctor is still in flight. */
   loading: boolean;
   onFixed: () => void;
 }
 
-/** The folders this profile owns: adding them, scanning them, and choosing
- *  which of their repositories it claims. Nothing here writes to disk — Save
- *  applies the whole set, which is what lets a profile that does not exist yet
- *  be configured. */
+/** The folders this profile owns. Each one is a rule: everything under it, at
+ *  any depth, gets this account's identity and key from a generated
+ *  `includeIf` block, so nothing is written into a repository and a clone
+ *  landing there tomorrow is covered without being asked about. Nothing is
+ *  applied until Save, which is what lets a profile that does not exist yet be
+ *  configured. */
 export default function ProfileRepos({
   profile,
   platforms,
@@ -52,8 +50,6 @@ export default function ProfileRepos({
   setRoots,
   repos,
   setRepos,
-  selected,
-  setSelected,
   statuses,
   loading,
   onFixed,
@@ -89,28 +85,19 @@ export default function ProfileRepos({
   const scanWith = useCallback(
     async (next: RepoRoot[]) => {
       const found = await run("scan", () =>
-        api.scanProfileRepositories({ profile, roots: next }),
+        api.scanProfileFolders({ profile, roots: next }),
       );
       if (!found) return;
       setRepos(found);
-      setSelected(
-        Object.fromEntries(
-          found.map((r) => [
-            r.path,
-            r.bound || decidedByEvidence(r, profile.id),
-          ]),
-        ),
-      );
       setOpenRoots(Object.fromEntries(next.map((r) => [r.path, true])));
     },
-    [profile, run, setRepos, setSelected],
+    [profile, run, setRepos],
   );
 
   // Opening a profile that already has folders must show what is in them.
   // Without this the summary reads "0 repositories" over a folder holding a
-  // dozen bound ones, which is not a neutral empty state — it is wrong.
-  // Deliberately once per mount: re-running on every roots edit would walk the
-  // disk on each toggle.
+  // dozen, which is not a neutral empty state — it is wrong. Once per mount:
+  // re-running on every roots edit would walk the disk on each keystroke.
   // biome-ignore lint/correctness/useExhaustiveDependencies: one-shot mount scan
   useEffect(() => {
     if (autoScanned.current || roots.length === 0) return;
@@ -121,7 +108,7 @@ export default function ProfileRepos({
   async function addFolder() {
     const picked = await open({ directory: true, multiple: false });
     if (typeof picked !== "string") return;
-    const path = picked.replace(/\\/g, "/");
+    const path = picked.replace(/\\/g, "/").replace(/\/+$/, "");
     if (roots.some((r) => r.path === path)) return;
     const next: RepoRoot[] = [
       ...roots,
@@ -131,7 +118,7 @@ export default function ProfileRepos({
         platform: (profile.default_platform ??
           platforms[0] ??
           "github") as PlatformId,
-        pin_remote_alias: false,
+        fingerprint: [],
       },
     ];
     setRoots(next);
@@ -143,101 +130,43 @@ export default function ProfileRepos({
     setRepos((prev) => prev.filter((r) => r.root_path !== path));
   }
 
-  /** A folder's default reaches every repository under it that the user has not
-   *  deliberately set apart. Mirrors `repos::effective_pin` in the backend,
-   *  which resolves the same rule when a scan first materialises these rows. */
   function updateFolder(path: string, next: Partial<RepoRoot>) {
     setRoots((prev) =>
       prev.map((r) => (r.path === path ? { ...r, ...next } : r)),
     );
-    setRepos((prev) =>
-      prev.map((r) =>
-        r.root_path === path && !r.overrides_root
-          ? {
-              ...r,
-              pin_remote_alias: next.pin_remote_alias ?? r.pin_remote_alias,
-            }
-          : r,
-      ),
-    );
   }
 
-  function overrideRepo(path: string, next: Partial<DiscoveredRepo>) {
-    setRepos((prev) =>
-      prev.map((r) =>
-        r.path === path ? { ...r, ...next, overrides_root: true } : r,
-      ),
-    );
-  }
-
-  /** Hands a repository back to its folder, so a later change to the folder's
-   *  defaults reaches it again. */
-  function followFolder(path: string) {
-    setRepos((prev) =>
-      prev.map((r) => {
-        if (r.path !== path) return r;
-        const root = roots.find((x) => x.path === r.root_path);
-        return {
-          ...r,
-          pin_remote_alias: root?.pin_remote_alias ?? r.pin_remote_alias,
-          overrides_root: false,
-        };
-      }),
-    );
-  }
-
-  async function checkAccess(repo: DiscoveredRepo) {
-    const platform =
-      repo.suggested_platform ?? (platforms.length === 1 ? platforms[0] : null);
-    if (!platform) return;
-    const access = await run(`access:${repo.path}`, () =>
-      api.verifyRepoAccess({
-        profileId: profile.id,
-        platform,
-        owner: repo.owner,
-        repo: repo.repo,
-      }),
-    );
-    if (!access) return;
+  async function fixFolder(path: string) {
+    const cleaned = await run(`fix:${path}`, () => api.fixFolder(path));
+    if (cleaned === null) return;
     setNote({
-      key: `access:${repo.path}`,
-      tone: access.reachable ? "ok" : "bad",
-      text: access.reachable
-        ? fmt(m.repos.accessOk, { full: access.full_name })
-        : fmt(m.repos.accessDenied, {
-            full: access.full_name,
-            detail: access.detail,
-          }),
+      key: `fix:${path}`,
+      tone: "ok",
+      text: fmt(m.repos.fixed, { count: cleaned }),
     });
-  }
-
-  /** Keyed by the repository rather than the host so the answer appears under
-   *  the row that was clicked, even when several share one alias. */
-  async function probeAlias(repo: DiscoveredRepo) {
-    const key = `ssh:${repo.path}`;
-    const answer = await run(key, () => api.probeSshAlias(repo.host));
-    if (answer) setNote({ key, tone: "ok", text: answer });
-  }
-
-  async function fixRepo(path: string) {
-    const done = await run(`fix:${path}`, () => api.fixRepository(path));
-    if (done === null) return;
-    setNote({ key: `fix:${path}`, tone: "ok", text: m.repos.fixed });
     onFixed();
   }
 
-  async function allowEmail(path: string, email: string) {
-    const key = `allow:${path}`;
-    const done = await run(key, () =>
-      api.allowEmailInRepository({ path, email }),
+  async function relinkFolder(path: string, newPath: string) {
+    const done = await run(`relink:${path}`, () =>
+      api.relinkFolder({ path, newPath }),
     );
     if (done === null) return;
-    setNote({ key, tone: "ok", text: fmt(m.repos.allowed, { email }) });
+    setRoots((prev) =>
+      prev.map((r) => (r.path === path ? { ...r, path: newPath } : r)),
+    );
     onFixed();
   }
 
-  // One action at a time: these write to Git repositories, and a second click
-  // while the first is still running would race it over the same files.
+  async function forgetFolder(path: string) {
+    const done = await run(`forget:${path}`, () => api.forgetFolder(path));
+    if (done === null) return;
+    removeFolder(path);
+    onFixed();
+  }
+
+  // One action at a time: these rewrite the machine's Git config, and a second
+  // click while the first is still running would race it over the same file.
   const blocked = busy !== "" || loading;
 
   return (
@@ -286,14 +215,10 @@ export default function ProfileRepos({
             <RepoFolder
               key={root.path}
               root={root}
-              profileId={profile.id}
               platforms={platforms}
               repos={repos.filter((r) => r.root_path === root.path)}
-              selected={selected}
               open={openRoots[root.path] ?? false}
-              busy={busy}
               blocked={blocked}
-              note={note}
               onToggleOpen={() =>
                 setOpenRoots((prev) => ({
                   ...prev,
@@ -302,28 +227,24 @@ export default function ProfileRepos({
               }
               onRemove={() => removeFolder(root.path)}
               onUpdate={(next) => updateFolder(root.path, next)}
-              onSelect={(path, checked) =>
-                setSelected((prev) => ({ ...prev, [path]: checked }))
-              }
-              onOverride={overrideRepo}
-              onFollowFolder={followFolder}
-              onCheckAccess={checkAccess}
-              onProbeAlias={probeAlias}
             />
           ))}
         </ul>
       )}
 
-      {/* The report describes what is bound on disk; a folder removed in this
-          draft still holds bindings until Save, so its rows are hidden here
-          rather than shown as problems the user has already dealt with. */}
+      {/* The report describes the folders as saved; one removed in this draft
+          still has its rule until Save, so its rows are hidden here rather
+          than shown as problems the user has already dealt with. */}
       <RepoDoctor
-        problems={statuses.filter((s) => !s.ok && underAnyRoot(s.path, roots))}
+        problems={statuses.filter(
+          (s) => !s.ok && roots.some((r) => r.path === s.path),
+        )}
         busy={busy}
         blocked={blocked}
         note={note}
-        onFix={fixRepo}
-        onAllowEmail={allowEmail}
+        onFix={fixFolder}
+        onRelink={relinkFolder}
+        onForget={forgetFolder}
       />
 
       {/* Anything not addressed to a row — a failure raised before one was

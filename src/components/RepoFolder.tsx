@@ -1,66 +1,36 @@
+import { treeRow } from "../folderTree";
 import { fmt, useI18n } from "../i18n";
-import { decidedByEvidence } from "../repoEvidence";
-import type { DiscoveredRepo, PlatformId, RepoNote, RepoRoot } from "../types";
+import type { FolderRepo, PlatformId, RepoRoot } from "../types";
 import InfoTip from "./InfoTip";
-import Spinner from "./Spinner";
-import Toggle from "./Toggle";
 
 interface Props {
   root: RepoRoot;
-  profileId: string;
   /** Only the platforms this profile actually connected. */
   platforms: PlatformId[];
-  /** The repositories found under this folder. */
-  repos: DiscoveredRepo[];
-  selected: Record<string, boolean>;
+  /** Every repository found under this folder, in path order. */
+  repos: FolderRepo[];
   open: boolean;
-  busy: string;
-  /** Some action is running: every other one waits its turn. */
   blocked: boolean;
-  note: RepoNote | null;
   onToggleOpen: () => void;
   onRemove: () => void;
   onUpdate: (next: Partial<RepoRoot>) => void;
-  onSelect: (path: string, checked: boolean) => void;
-  onOverride: (path: string, next: Partial<DiscoveredRepo>) => void;
-  onFollowFolder: (path: string) => void;
-  onCheckAccess: (repo: DiscoveredRepo) => void;
-  onProbeAlias: (repo: DiscoveredRepo) => void;
 }
 
-/** One watched folder: where it is, what its repositories inherit, and which of
- *  them this profile will claim on Save. */
+/** One watched folder: where it is, which account it hands out, and the whole
+ *  hierarchy of repositories that will get it. Nothing here is chosen per
+ *  repository — the rule is the folder, and the list says what that means. */
 export default function RepoFolder({
   root,
-  profileId,
   platforms,
   repos,
-  selected,
   open,
-  busy,
   blocked,
-  note,
   onToggleOpen,
   onRemove,
   onUpdate,
-  onSelect,
-  onOverride,
-  onFollowFolder,
-  onCheckAccess,
-  onProbeAlias,
 }: Props) {
   const { m } = useI18n();
-  const chosen = repos.filter((r) => selected[r.path]).length;
-  const pending = repos.filter(
-    (r) => !decidedByEvidence(r, profileId) && !r.bound,
-  ).length;
-
-  const reasonLabel: Record<DiscoveredRepo["reason"], string> = {
-    alias: m.repos.reasonAlias,
-    owner: m.repos.reasonOwner,
-    ambiguous: m.repos.reasonAmbiguous,
-    unknown: m.repos.reasonUnknown,
-  };
+  const foreign = repos.filter((r) => r.foreign_host).length;
 
   return (
     <li className="space-y-2 rounded-md bg-raised p-3">
@@ -73,6 +43,7 @@ export default function RepoFolder({
             onChange={(e) =>
               onUpdate({ platform: e.target.value as PlatformId })
             }
+            disabled={blocked}
             className="select-sm"
           >
             {platforms.map((p) => (
@@ -85,30 +56,11 @@ export default function RepoFolder({
         <button
           type="button"
           onClick={onRemove}
-          className="rounded-md px-2 py-1 text-xs text-fg-4 hover:text-red-500"
+          disabled={blocked}
+          className="rounded-md px-2 py-1 text-xs text-fg-4 hover:text-red-500 disabled:opacity-50"
         >
           {m.repos.remove}
         </button>
-      </div>
-
-      <div className="space-y-1.5 border-t border-bd pt-2">
-        <p className="text-[11px] text-fg-5">{m.repos.folderDefaults}</p>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="flex items-center gap-1.5 text-xs text-fg-3">
-              {m.repos.pinAlias}
-              <InfoTip text={m.repos.pinAliasInfo} />
-            </p>
-            <p className="text-[11px] text-fg-5">{m.repos.pinAliasHint}</p>
-          </div>
-          <Toggle
-            size="sm"
-            on={root.pin_remote_alias}
-            onClick={() =>
-              onUpdate({ pin_remote_alias: !root.pin_remote_alias })
-            }
-          />
-        </div>
       </div>
 
       <button
@@ -119,117 +71,50 @@ export default function RepoFolder({
       >
         <span aria-hidden="true">{open ? "▾" : "▸"}</span>
         <span>
-          {fmt(m.repos.folderSummary, { total: repos.length, chosen })}
-          {pending > 0 && ` · ${fmt(m.repos.pending, { pending })}`}
+          {fmt(m.repos.folderSummary, { total: repos.length })}
+          {foreign > 0 && ` · ${fmt(m.repos.foreignCount, { foreign })}`}
         </span>
       </button>
 
-      {open && repos.length > 0 && (
-        <ul className="space-y-2">
-          {repos.map((repo) => {
-            const needsDecision =
-              !decidedByEvidence(repo, profileId) && !repo.bound;
-            return (
-              <li
-                key={repo.path}
-                className={`space-y-1.5 rounded-md bg-raised-40 p-2 ${
-                  needsDecision ? "ring-1 ring-amber-500/40" : ""
-                }`}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id={`pick-${repo.path}`}
-                    checked={selected[repo.path] ?? false}
-                    onChange={(e) => onSelect(repo.path, e.target.checked)}
-                    className="h-3.5 w-3.5 accent-blue-600"
-                  />
-                  <label
-                    htmlFor={`pick-${repo.path}`}
-                    className="text-xs font-medium text-fg-2"
-                  >
-                    {repo.name}
-                  </label>
-                </div>
-                <p className="text-[11px] text-fg-5">
-                  {reasonLabel[repo.reason]}
-                </p>
-                <code className="block truncate text-[11px] text-fg-4">
-                  {repo.remote_url}
-                </code>
-
-                {/* The same setting as the folder above, shown here so it is
-                    visible what this repository will actually get and whether
-                    it still comes from the folder. */}
-                <div className="space-y-1 rounded bg-raised/60 px-2 py-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1.5 text-[11px] text-fg-5">
-                      {repo.overrides_root
-                        ? m.repos.setApart
-                        : m.repos.followsFolder}
-                      <InfoTip text={m.repos.overrideInfo} />
+      {open &&
+        (repos.length === 0 ? (
+          <p className="text-[11px] text-fg-5">{m.repos.folderEmpty}</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {repos.map((repo) => {
+              const { depth, prefix, label } = treeRow(repo);
+              return (
+                <li
+                  key={repo.path}
+                  className="flex flex-wrap items-baseline gap-x-2 rounded px-1 py-0.5 text-[11px] hover:bg-raised-40"
+                  style={{ paddingLeft: `${depth * 14 + 4}px` }}
+                >
+                  <span className="text-fg-6" aria-hidden="true">
+                    {depth > 0 ? "└" : "•"}
+                  </span>
+                  <span className="text-fg-2">
+                    {prefix && <span className="text-fg-6">{prefix}/</span>}
+                    {label}
+                  </span>
+                  <code className="min-w-0 flex-1 truncate text-right text-fg-5">
+                    {repo.full_name || m.repos.noRemote}
+                  </code>
+                  {repo.foreign_host && (
+                    <span className="text-amber-600 dark:text-amber-400">
+                      {m.repos.foreignHost}
                     </span>
-                    {repo.overrides_root && (
-                      <button
-                        type="button"
-                        onClick={() => onFollowFolder(repo.path)}
-                        className="text-[11px] text-link hover:underline"
-                      >
-                        {m.repos.useFolderDefaults}
-                      </button>
-                    )}
-                  </div>
-                  <label className="flex items-center gap-1.5 text-[11px] text-fg-4">
-                    <input
-                      type="checkbox"
-                      checked={repo.pin_remote_alias}
-                      onChange={(e) =>
-                        onOverride(repo.path, {
-                          pin_remote_alias: e.target.checked,
-                        })
-                      }
-                      className="h-3 w-3 accent-blue-600"
-                    />
-                    {m.repos.pinAlias}
-                  </label>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => onCheckAccess(repo)}
-                    disabled={blocked}
-                    className="inline-flex items-center gap-1 text-[11px] text-link hover:underline disabled:opacity-50"
-                  >
-                    {busy === `access:${repo.path}` && <Spinner />}
-                    {m.repos.verifyAccess}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onProbeAlias(repo)}
-                    disabled={blocked}
-                    className="inline-flex items-center gap-1 text-[11px] text-link hover:underline disabled:opacity-50"
-                  >
-                    {busy === `ssh:${repo.path}` && <Spinner />}
-                    {m.repos.probeAlias}
-                  </button>
-                </div>
-
-                {note &&
-                  (note.key === `access:${repo.path}` ||
-                    note.key === `ssh:${repo.path}`) && (
-                    <p
-                      className={`rounded bg-raised px-2 py-1.5 text-[11px] break-all whitespace-pre-wrap ${
-                        note.tone === "bad" ? "text-danger-fg" : "text-fg-3"
-                      }`}
-                    >
-                      {note.text}
-                    </p>
                   )}
-              </li>
-            );
-          })}
-        </ul>
+                </li>
+              );
+            })}
+          </ul>
+        ))}
+
+      {open && foreign > 0 && (
+        <p className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+          {m.repos.foreignHostHint}
+          <InfoTip text={m.repos.foreignHostInfo} />
+        </p>
       )}
     </li>
   );

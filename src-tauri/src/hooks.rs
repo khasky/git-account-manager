@@ -119,20 +119,6 @@ pub fn ensure_in_force() -> Result<(), String> {
     }
 }
 
-/// How the guard reaches one repository: `global` when the dispatcher is in
-/// force there, `local-override` when the repository's own `core.hooksPath`
-/// bypasses it, `off` when the global setting is not this app's.
-pub fn repo_guard_state(dir: &str) -> String {
-    if git::repo_config_get_local(dir, "core.hooksPath").is_some() {
-        return "local-override".to_string();
-    }
-    if status().ours {
-        "global".to_string()
-    } else {
-        "off".to_string()
-    }
-}
-
 /// Writes the guard library and one dispatcher per hook name. Rewritten on
 /// every enable so an upgrade carries its script changes without a migration.
 pub fn write_scripts(dir: &std::path::Path) -> Result<(), String> {
@@ -297,25 +283,26 @@ gam_exec() {
 }
 "#;
 
+/// `sh` is what git runs a hook with. Git for Windows ships one but does not
+/// always put it on PATH, so the guard's behaviour is proven wherever a shell
+/// exists and the test says so out loud where one does not.
+#[cfg(test)]
+pub fn shell() -> Option<&'static str> {
+    ["sh", "bash", "C:/Program Files/Git/usr/bin/sh.exe"]
+        .into_iter()
+        .find(|candidate| {
+            std::process::Command::new(candidate)
+                .arg("-c")
+                .arg("exit 0")
+                .output()
+                .is_ok()
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::process::Command;
-
-    /// `sh` is what git runs a hook with. Git for Windows ships one but does not
-    /// always put it on PATH, so the guard's behaviour is proven wherever a
-    /// shell exists and the test says so out loud where one does not.
-    fn shell() -> Option<&'static str> {
-        ["sh", "bash", "C:/Program Files/Git/usr/bin/sh.exe"]
-            .into_iter()
-            .find(|candidate| {
-                Command::new(candidate)
-                    .arg("-c")
-                    .arg("exit 0")
-                    .output()
-                    .is_ok()
-            })
-    }
 
     fn git(dir: &str, args: &[&str]) -> String {
         let out = Command::new("git")

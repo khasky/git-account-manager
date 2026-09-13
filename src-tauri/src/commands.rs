@@ -12,10 +12,12 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use crate::git::{self, GitIdentity};
 use crate::models::{
     slugify, AppState, DeviceCodeResponse, GuardSettings, OAuthSettings, Platform, PlatformUser,
-    Profile, RepoBinding, RepoRoot, SshKeyInfo, SshKeyPair, PLATFORMS,
+    Profile, RepoRoot, SshKeyInfo, SshKeyPair, PLATFORMS,
 };
 use crate::tray::{self, TrayLabels};
-use crate::{gh, guard, hooks, oauth, openssh_integration, platform, repos, secrets, ssh, storage};
+use crate::{
+    doctor, gh, guard, hooks, oauth, openssh_integration, platform, repos, secrets, ssh, storage,
+};
 
 // -- profiles ---------------------------------------------------------------
 
@@ -49,8 +51,8 @@ pub fn save_profile(app: tauri::AppHandle, mut profile: Profile) -> Result<(), S
 }
 
 /// Brings `~/.ssh/config`, the global identity and the generated `~/.gitconfig`
-/// region in line with the stored state. With the global-identity fuse enabled
-/// no machine-wide identity is written at all — repositories carry their own.
+/// region in line with the stored state. The active profile is the machine's
+/// default, for every repository a folder rule does not claim.
 fn sync_machine(state: &AppState) -> Result<(), String> {
     ssh::update_ssh_config(&state.profiles)?;
 
@@ -65,23 +67,24 @@ fn sync_machine(state: &AppState) -> Result<(), String> {
         }
     }
 
-    if !state.guard.unset_global_identity {
-        if let Some(active) = active {
-            if let Some((name, email)) = active.active_identity() {
-                git::set_global_identity(name, email)?;
-            }
-            // Follows the identity: signing with the profile that just stopped
-            // being active would produce a signature the new author cannot own.
-            git::set_global_signing(active.active_account().and_then(|a| a.signing_key()))?;
+    if let Some(active) = active {
+        if let Some((name, email)) = active.active_identity() {
+            git::set_global_identity(name, email)?;
         }
+        // Follows the identity: signing with the profile that just stopped
+        // being active would produce a signature the new author cannot own.
+        git::set_global_signing(active.active_account().and_then(|a| a.signing_key()))?;
     }
 
-    guard::apply(
-        &state.guard,
-        &state.profiles,
-        &state.repo_roots,
-        &state.bindings,
-    )
+    // An older version could arm `user.useConfigOnly`, which leaves every
+    // repository outside a watched folder refusing to commit under the default
+    // profile — the opposite of what the default is for. Released once, on the
+    // first sync after the setting that armed it is read off the stored file.
+    if state.release_identity_fuse {
+        guard::relax_global_identity()?;
+    }
+
+    guard::apply(&state.guard, &state.profiles, &state.repo_roots)
 }
 
 fn delete_removed_platform_tokens(existing: &Profile, next: &Profile) -> Result<(), String> {
@@ -114,13 +117,9 @@ pub fn delete_profile(app: tauri::AppHandle, id: String) -> Result<(), String> {
         }
 
         state.profiles.retain(|p| p.id != id);
-        // A binding whose profile is gone would leave a stale allow-list behind
-        // that blocks every push, so the repository is released before the
-        // profile drops.
-        for binding in state.bindings.iter().filter(|b| b.profile_id == id) {
-            repos::clear_binding(&binding.path).ok();
-        }
-        state.bindings.retain(|b| b.profile_id != id);
+        // The folders this profile claimed go with it. Their repositories keep
+        // nothing of their own, so dropping the rule is the whole undo: they
+        // fall back to the active profile like any unclaimed repository.
         state.repo_roots.retain(|r| r.profile_id != id);
         storage::save_state(&state)?;
         secrets::delete_profile_tokens(&id)?;
@@ -394,12 +393,11 @@ pub fn get_git_identity() -> Result<GitIdentity, String> {
     git::get_global_identity()
 }
 
-// -- repositories -----------------------------------------------------------
+// -- folders ----------------------------------------------------------------
 
 #[derive(serde::Serialize)]
 pub struct RepoState {
     roots: Vec<RepoRoot>,
-    bindings: Vec<RepoBinding>,
     guard: GuardSettings,
 }
 
@@ -407,7 +405,7 @@ pub struct RepoState {
 ///
 /// Tauri executes a synchronous command on the main thread, so anything that
 /// shells out to Git holds the window frozen for as long as it takes — a scan
-/// walks the disk, the doctor spawns several Git processes per repository.
+/// walks the disk, the doctor spawns several Git processes per folder.
 /// Declaring the command `async` and handing the body to `spawn_blocking` keeps
 /// the UI responsive while the work runs.
 async fn off_main<T, F>(work: F) -> Result<T, String>
@@ -420,12 +418,6 @@ where
         .map_err(|e| e.to_string())?
 }
 
-#[derive(serde::Serialize)]
-pub struct DoctorReport {
-    guard: guard::GuardStatus,
-    repos: Vec<repos::RepoStatus>,
-}
-
 #[tauri::command]
 pub async fn get_repo_state() -> Result<RepoState, String> {
     off_main(|| {
@@ -433,7 +425,6 @@ pub async fn get_repo_state() -> Result<RepoState, String> {
             let state = storage::load_state()?;
             Ok(RepoState {
                 roots: state.repo_roots,
-                bindings: state.bindings,
                 guard: state.guard,
             })
         })
@@ -441,25 +432,89 @@ pub async fn get_repo_state() -> Result<RepoState, String> {
     .await
 }
 
+/// Everything the folders would cover, for the form to show before anything is
+/// saved. The profile being edited overrides what is on disk: a new one is not
+/// in the state at all, and an edited one may have just gained the account whose
+/// host decides whether a repository sits under a foreign platform.
 #[tauri::command]
-pub async fn apply_profile_repos(plan: repos::RepoPlan) -> Result<repos::ApplyReport, String> {
+pub async fn scan_profile_folders(
+    profile: Profile,
+    roots: Vec<RepoRoot>,
+) -> Result<Vec<repos::FolderRepo>, String> {
+    off_main(move || {
+        let state = storage::with_lock(storage::load_state)?;
+        let mut profiles: Vec<Profile> = state
+            .profiles
+            .iter()
+            .filter(|p| p.id != profile.id)
+            .cloned()
+            .collect();
+        profiles.push(profile);
+        Ok(repos::scan(&roots, &profiles))
+    })
+    .await
+}
+
+#[derive(serde::Serialize)]
+pub struct SaveFoldersReport {
+    pub folders: usize,
+    pub repos: usize,
+}
+
+/// Replaces one profile's folders. Another profile's are left alone, so two
+/// profiles edited in turn do not overwrite each other.
+///
+/// Each folder is scanned once here, and what was found is stored with it: that
+/// list is how a folder is recognised again after it moves.
+#[tauri::command]
+pub async fn save_profile_folders(
+    profile_id: String,
+    roots: Vec<RepoRoot>,
+) -> Result<SaveFoldersReport, String> {
     off_main(move || {
         storage::with_lock(move || {
             let mut state = storage::load_state()?;
-            let report = repos::apply_plan(
-                &state.profiles,
-                &mut state.repo_roots,
-                &mut state.bindings,
-                plan,
-            )?;
+            let mut repo_count = 0;
+            let mut stored: Vec<RepoRoot> = Vec::new();
+            for mut root in roots {
+                root.path = guard::normalize_folder(&root.path);
+                // One folder cannot belong to two accounts: git would apply
+                // whichever rule it read last, and which one that is depends on
+                // nothing the user can see. Taking the other profile's folder
+                // away silently would be worse, so the save says no instead.
+                if let Some(other) = state
+                    .repo_roots
+                    .iter()
+                    .find(|r| r.profile_id != profile_id && r.path == root.path)
+                {
+                    let owner = state
+                        .profiles
+                        .iter()
+                        .find(|p| p.id == other.profile_id)
+                        .map(|p| p.name.as_str())
+                        .unwrap_or("another profile");
+                    return Err(format!("{} already belongs to {}", root.path, owner));
+                }
+                root.profile_id = profile_id.clone();
+                let found = repos::scan_one(&root, &state.profiles);
+                repo_count += found.len();
+                root.fingerprint = repos::fingerprint(&found);
+                stored.push(root);
+            }
+
+            state.repo_roots.retain(|r| r.profile_id != profile_id);
+            state.repo_roots.extend(stored);
+            let folders = state
+                .repo_roots
+                .iter()
+                .filter(|r| r.profile_id == profile_id)
+                .count();
             storage::save_state(&state)?;
-            guard::apply(
-                &state.guard,
-                &state.profiles,
-                &state.repo_roots,
-                &state.bindings,
-            )?;
-            Ok(report)
+            sync_machine(&state)?;
+            Ok(SaveFoldersReport {
+                folders,
+                repos: repo_count,
+            })
         })
     })
     .await
@@ -469,15 +524,8 @@ pub async fn apply_profile_repos(plan: repos::RepoPlan) -> Result<repos::ApplyRe
 pub fn save_guard_settings(settings: GuardSettings) -> Result<(), String> {
     storage::with_lock(|| {
         let mut state = storage::load_state()?;
-        let was_fused = state.guard.unset_global_identity;
         state.guard = settings;
         storage::save_state(&state)?;
-        // Releasing the fuse is only correct as an explicit switch-off;
-        // `sync_machine` must never undo it on its own, or a manual
-        // `user.useConfigOnly` would be wiped on the next profile switch.
-        if was_fused && !state.guard.unset_global_identity {
-            guard::relax_global_identity()?;
-        }
         sync_machine(&state)?;
         if state.guard.guard_commits {
             hooks::ensure_in_force()?;
@@ -486,148 +534,120 @@ pub fn save_guard_settings(settings: GuardSettings) -> Result<(), String> {
     })
 }
 
-/// Scans one profile's folders while the profile is still being edited, so the
-/// form's copy of it overrides what is on disk: a new profile is not in the
-/// state at all, and an edited one may have just gained the account the evidence
-/// ladder needs to recognise its own namespace.
 #[tauri::command]
-pub fn scan_profile_repositories(
-    profile: Profile,
-    roots: Vec<RepoRoot>,
-) -> Result<Vec<repos::DiscoveredRepo>, String> {
-    let state = storage::with_lock(storage::load_state)?;
-    let mut profiles: Vec<Profile> = state
-        .profiles
-        .iter()
-        .filter(|p| p.id != profile.id)
-        .cloned()
-        .collect();
-    profiles.push(profile);
-    Ok(repos::scan(&roots, &profiles, &state.bindings))
-}
-
-fn profile_by_id(state: &AppState, id: &str) -> Result<Profile, String> {
-    state
-        .profiles
-        .iter()
-        .find(|p| p.id == id)
-        .cloned()
-        .ok_or_else(|| format!("Unknown profile: {}", id))
-}
-
-#[tauri::command]
-pub async fn fix_repository(path: String) -> Result<repos::BindResult, String> {
-    off_main(move || {
-        storage::with_lock(move || {
-            let mut state = storage::load_state()?;
-            let profile_id = state
-                .bindings
-                .iter()
-                .find(|b| b.path == path)
-                .map(|b| b.profile_id.clone())
-                .ok_or_else(|| format!("No binding for {}", path))?;
-            let profile = profile_by_id(&state, &profile_id)?;
-            let binding = state
-                .bindings
-                .iter_mut()
-                .find(|b| b.path == path)
-                .expect("looked up a moment ago");
-            let result = repos::apply_binding(binding, &profile)?;
-            // Re-applying can be what first pins the remote, and the address it
-            // replaced is only recoverable if it is written down now.
-            storage::save_state(&state)?;
-            guard::apply(
-                &state.guard,
-                &state.profiles,
-                &state.repo_roots,
-                &state.bindings,
-            )?;
-            Ok(result)
-        })
-    })
-    .await
-}
-
-/// Widens one repository's allow-list. Used to accept an address the history
-/// check flagged — a bot, a co-author — without weakening any other repository.
-#[tauri::command]
-pub async fn allow_email_in_repository(
-    path: String,
-    email: String,
-) -> Result<repos::BindResult, String> {
-    off_main(move || {
-        storage::with_lock(move || {
-            let email = email.trim().to_string();
-            if email.is_empty() {
-                return Err("Email is empty".to_string());
-            }
-
-            let mut state = storage::load_state()?;
-            let profile_id = state
-                .bindings
-                .iter()
-                .find(|b| b.path == path)
-                .map(|b| b.profile_id.clone())
-                .ok_or_else(|| format!("No binding for {}", path))?;
-            // Resolved before the mutable borrow: the profile is read from the
-            // same state the binding lives in.
-            let profile = profile_by_id(&state, &profile_id)?;
-
-            let binding = state
-                .bindings
-                .iter_mut()
-                .find(|b| b.path == path)
-                .expect("looked up a moment ago");
-            if !binding.extra_allowed_emails.contains(&email) {
-                binding.extra_allowed_emails.push(email);
-            }
-            let result = repos::apply_binding(binding, &profile)?;
-            storage::save_state(&state)?;
-            Ok(result)
-        })
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn doctor() -> Result<DoctorReport, String> {
+pub async fn doctor() -> Result<doctor::DoctorReport, String> {
     off_main(|| {
         // The lock guards the state file, and reading it takes milliseconds; the
         // Git work that follows takes seconds and touches nothing shared. Holding
         // the lock across both made every other command queue behind the report.
         let state = storage::with_lock(storage::load_state)?;
-        let repos = repos::inspect_all(&state.bindings, &state.profiles, state.guard.guard_commits);
-        Ok(DoctorReport {
-            guard: guard::status(&state.guard, &state.profiles),
-            repos,
+        Ok(doctor::report(
+            &state.guard,
+            &state.profiles,
+            &state.repo_roots,
+        ))
+    })
+    .await
+}
+
+/// The cheap half of the doctor, for the window to ask on a timer: is each
+/// folder still where its rule says, and is the rule still in force.
+#[tauri::command]
+pub async fn watch_folders() -> Result<Vec<doctor::FolderWatch>, String> {
+    off_main(|| {
+        let state = storage::with_lock(storage::load_state)?;
+        Ok(doctor::watch(
+            &state.guard,
+            &state.profiles,
+            &state.repo_roots,
+        ))
+    })
+    .await
+}
+
+/// Where a folder went, asked only when something is about to be shown about
+/// it: the search walks the disk, and the check on the timer must not.
+#[tauri::command]
+pub async fn locate_folder(path: String) -> Result<Option<String>, String> {
+    off_main(move || {
+        let state = storage::with_lock(storage::load_state)?;
+        let Some(root) = state.repo_roots.iter().find(|r| r.path == path) else {
+            return Ok(None);
+        };
+        Ok(doctor::find_moved(root, &state.profiles))
+    })
+    .await
+}
+
+/// Puts one folder back under its rule: the rule is rewritten, the guard is put
+/// back in force, and the repositories under it stop carrying their own copy of
+/// what the rule supplies. Answers with how many of them had to be cleaned.
+#[tauri::command]
+pub async fn fix_folder(path: String) -> Result<usize, String> {
+    off_main(move || {
+        storage::with_lock(move || {
+            let state = storage::load_state()?;
+            let root = state
+                .repo_roots
+                .iter()
+                .find(|r| r.path == path)
+                .ok_or_else(|| format!("No folder at {}", path))?;
+            let cleaned = doctor::clean_overrides(root, &state.profiles)?;
+            sync_machine(&state)?;
+            Ok(cleaned)
+        })
+    })
+    .await
+}
+
+/// Points a folder's rule at where the folder actually is now.
+#[tauri::command]
+pub async fn relink_folder(path: String, new_path: String) -> Result<(), String> {
+    off_main(move || {
+        storage::with_lock(move || {
+            let mut state = storage::load_state()?;
+            let profiles = state.profiles.clone();
+            let root = state
+                .repo_roots
+                .iter_mut()
+                .find(|r| r.path == path)
+                .ok_or_else(|| format!("No folder at {}", path))?;
+            root.path = guard::normalize_folder(&new_path);
+            // Recorded against the new location: what is there now is what the
+            // folder should be recognised by the next time it moves.
+            let found = repos::scan_one(root, &profiles);
+            root.fingerprint = repos::fingerprint(&found);
+            storage::save_state(&state)?;
+            sync_machine(&state)
         })
     })
     .await
 }
 
 #[tauri::command]
-pub async fn probe_ssh_alias(host: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || ssh::probe_host(&host))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn forget_folder(path: String) -> Result<(), String> {
+    off_main(move || {
+        storage::with_lock(move || {
+            let mut state = storage::load_state()?;
+            state.repo_roots.retain(|r| r.path != path);
+            storage::save_state(&state)?;
+            sync_machine(&state)
+        })
+    })
+    .await
 }
 
+/// Brings the window up for a finding the user did not go looking for. Done
+/// here rather than from the page, which would need window permissions of its
+/// own for the one thing it has to do from the background.
 #[tauri::command]
-pub async fn verify_repo_access(
-    profile_id: String,
-    platform: Platform,
-    owner: String,
-    repo: String,
-) -> Result<repos::RepoReach, String> {
-    let state = storage::with_lock(storage::load_state)?;
-    let profile = state
-        .profiles
-        .into_iter()
-        .find(|p| p.id == profile_id)
-        .ok_or("Profile not found")?;
-    tokio::task::spawn_blocking(move || repos::reach(&profile, platform, &owner, &repo))
-        .await
-        .map_err(|e| e.to_string())
+pub fn focus_window(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
 }
 
 // -- tray -------------------------------------------------------------------

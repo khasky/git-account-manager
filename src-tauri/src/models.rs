@@ -175,66 +175,30 @@ impl Profile {
     }
 }
 
-/// A folder that holds repositories belonging to one profile. Drives the scan
-/// suggestions, the generated `includeIf "gitdir:"` blocks, and the switches
-/// every repository inside it starts with.
+/// A folder whose repositories all belong to one profile's account.
+///
+/// The rule is the folder, not the repositories inside it: one generated
+/// `includeIf "gitdir:"` block hands the identity, the SSH key and the guard's
+/// allow-list to everything underneath at any depth, a repository cloned there
+/// tomorrow included.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoRoot {
     pub path: String,
     pub profile_id: String,
     pub platform: Platform,
-    /// Default for the repositories in this folder. Rewriting a remote is
-    /// visible from outside the app, so it starts off.
+    /// `owner/repo` of what was found here when the folder was last scanned.
+    /// A folder that moved is recognised by this at its new location, which a
+    /// name match alone cannot do when several folders share a name.
     #[serde(default)]
-    pub pin_remote_alias: bool,
+    pub fingerprint: Vec<String>,
 }
 
-/// One repository pinned to a profile. The identity is written to the
-/// repository's own config, which is the only place every Git client — CLI,
-/// libgit2/TortoiseGit, IDEs — agrees on.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RepoBinding {
-    pub path: String,
-    pub profile_id: String,
-    pub platform: Platform,
-    /// Rewrite `origin` to the profile's `<platform>-<slug>` SSH alias so the
-    /// key no longer depends on which profile is active.
-    #[serde(default)]
-    pub pin_remote_alias: bool,
-    /// Extra emails the identity guard accepts here (bots, co-authors).
-    #[serde(default)]
-    pub extra_allowed_emails: Vec<String>,
-    /// Set once the user changes this repository's switch away from its
-    /// folder's default. A later change to that default then leaves it alone,
-    /// so a deliberate exception is not undone by an unrelated edit.
-    #[serde(default)]
-    pub overrides_root: bool,
-    /// What `origin` was before the alias replaced it. Switching the alias back
-    /// off restores this exactly; rebuilding a canonical URL instead would hand
-    /// back an SSH address to a repository that was cloned over HTTPS, and would
-    /// drop a non-default port along the way.
-    #[serde(default)]
-    pub original_remote_url: Option<String>,
-}
-
-/// Machine-wide guard rails. The identity ones default to off so an existing
-/// install keeps its current behaviour until the user opts in; the commit guard
-/// defaults to on because it replaces the per-repository hook it succeeds.
+/// Machine-wide guard rails.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuardSettings {
-    /// Remove global `user.name`/`user.email` and set `user.useConfigOnly`, so a
-    /// repository without its own identity fails loudly instead of borrowing
-    /// whichever profile happens to be active.
-    #[serde(default)]
-    pub unset_global_identity: bool,
-    /// Maintain a generated `includeIf` region in `~/.gitconfig` so fresh clones
-    /// under a known root start with the right identity.
-    #[serde(default)]
-    pub manage_gitconfig_includes: bool,
     /// Route every repository's hooks through this app's dispatchers via the
     /// global `core.hooksPath`, so the identity guard runs on `pre-commit` and
-    /// `pre-push` without a file of ours inside any repository. Implies the
-    /// `includeIf` region, which is where the guard reads its allow-list from.
+    /// `pre-push` without a file of ours inside any repository.
     #[serde(default = "default_true")]
     pub guard_commits: bool,
 }
@@ -246,8 +210,6 @@ fn default_true() -> bool {
 impl Default for GuardSettings {
     fn default() -> Self {
         Self {
-            unset_global_identity: false,
-            manage_gitconfig_includes: false,
             guard_commits: true,
         }
     }
@@ -294,9 +256,19 @@ pub struct AppState {
     #[serde(default)]
     pub repo_roots: Vec<RepoRoot>,
     #[serde(default)]
-    pub bindings: Vec<RepoBinding>,
-    #[serde(default)]
     pub guard: GuardSettings,
+    /// Set once the repositories have been cleaned of what the per-repository
+    /// model wrote into them (`migrate.rs`). Stored rather than re-derived: the
+    /// clean-up walks every watched folder, which is not a thing to repeat on
+    /// every start.
+    #[serde(default)]
+    pub migrated_to_folder_rules: bool,
+    /// An older version could remove the global identity and set
+    /// `user.useConfigOnly`, which the folder rules replaced. Read out of the
+    /// stored file rather than kept in it, so releasing the fuse happens once
+    /// and the field is gone from the next save.
+    #[serde(skip)]
+    pub release_identity_fuse: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -458,17 +430,22 @@ mod tests {
           }
         }"#;
 
+        // Per-repository bindings and the switches that went with them are
+        // gone; the folder they sat under is what survives, and the fields they
+        // left behind must not stop the file from opening.
         let state: AppState = serde_json::from_str(on_disk).expect("must still open");
         assert_eq!(state.profiles[0].default_platform, Some(Platform::Gitlab));
         assert_eq!(state.repo_roots[0].platform, Platform::Github);
-        assert_eq!(state.bindings[0].platform, Platform::Bitbucket);
-        assert!(state.guard.unset_global_identity);
+        assert_eq!(state.repo_roots[0].path, "D:/repos");
         assert!(state.oauth.use_openssh_for_git_tools);
+        assert!(
+            state.guard.guard_commits,
+            "a file that never named it is guarded"
+        );
 
         // And writes back the same names, so downgrading is not a trap either.
         let round_tripped = serde_json::to_string(&state).unwrap();
         assert!(round_tripped.contains(r#""platform":"github""#));
-        assert!(round_tripped.contains(r#""platform":"bitbucket""#));
         assert!(round_tripped.contains(r#""default_platform":"gitlab""#));
     }
 
