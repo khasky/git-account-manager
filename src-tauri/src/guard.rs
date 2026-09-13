@@ -227,11 +227,35 @@ fn by_depth_then_path(roots: &[RepoRoot]) -> Vec<&RepoRoot> {
     ordered
 }
 
+/// `std::fs::canonicalize` answers with an extended-length path on Windows
+/// (`\\?\C:\...`), a form git's `gitdir` matcher does not recognise.
+fn without_extended_prefix(path: &std::path::Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    match text.strip_prefix("//?/UNC/") {
+        Some(share) => format!("//{}", share),
+        None => text.strip_prefix("//?/").unwrap_or(&text).to_string(),
+    }
+}
+
 /// One spelling for a folder wherever it came from: a file picker, a stored
-/// state file or a relink. Paths are compared as strings all over this app, and
-/// two spellings of one folder are two folders to every one of those checks.
+/// state file or a relink.
+///
+/// Git matches a `gitdir` pattern against the path it resolves a repository to,
+/// with 8.3 short names expanded and junctions and symlinks followed, so a rule
+/// written against any other spelling of the same folder matches nothing and
+/// says nothing about why. The folder is asked what it really is rather than
+/// trusted to have arrived in that form. A path that is not there keeps the
+/// spelling it came with, which is what the doctor reports as missing.
+/// The trailing slash is trimmed from the answer rather than from the question:
+/// on Windows `canonicalize("D:")` resolves to the current directory on that
+/// drive, so trimming first would turn a whole drive into whatever folder the
+/// process happened to be in.
 pub fn normalize_folder(path: &str) -> String {
-    path.replace('\\', "/").trim_end_matches('/').to_string()
+    let given = path.replace('\\', "/");
+    let real = std::fs::canonicalize(&given)
+        .map(|real| without_extended_prefix(&real))
+        .unwrap_or(given);
+    real.trim_end_matches('/').to_string()
 }
 
 /// `gitdir/i:` needs a trailing slash to reach everything underneath, and the
@@ -512,6 +536,46 @@ mod tests {
         );
     }
 
+    /// A rule is only worth writing against the path git will resolve the
+    /// repository to. The spelling the folder arrived in is not that path
+    /// whenever a short name, a junction or a `..` stands between them, and a
+    /// rule built from it matches nothing without saying so.
+    #[test]
+    fn a_folder_is_named_by_what_the_filesystem_says_it_is() {
+        let dir = std::env::temp_dir().join(format!("gam-normalize-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("work")).unwrap();
+
+        let direct = normalize_folder(&posix(&dir.join("work")));
+        let detour = normalize_folder(&posix(&dir.join("work").join("..").join("work")));
+        assert_eq!(direct, detour, "one folder, one spelling");
+        assert!(direct.ends_with("/work"), "{}", direct);
+
+        // Windows answers a canonicalize with an extended-length path, which
+        // git's matcher treats as a name rather than a location.
+        assert!(!direct.contains("//?/"), "{}", direct);
+        assert!(!direct.contains('\\'), "{}", direct);
+
+        // A trailing slash is one more spelling of the same folder.
+        assert_eq!(normalize_folder(&format!("{}/", direct)), direct);
+
+        // A folder that is not there is still the folder the doctor reports as
+        // missing, so it keeps the spelling it was stored with.
+        let gone = posix(&dir.join("never-created"));
+        assert_eq!(normalize_folder(&gone), gone);
+
+        // Windows reads a bare drive letter as the current directory on that
+        // drive, so a whole drive claimed as a folder must not come back as
+        // whatever directory this process happens to sit in.
+        #[cfg(windows)]
+        {
+            let root = posix(&dir).chars().take(2).collect::<String>();
+            assert_eq!(normalize_folder(&format!("{}/", root)), root);
+        }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// The pattern has to reach a repository's `.git` directory at any depth,
     /// and a folder handed back by the file picker may carry a trailing slash
     /// or backslashes.
@@ -627,6 +691,86 @@ mod tests {
         // And so does the address the commit guard accepts here.
         assert_eq!(resolved("gam.allowedEmail"), "octo@example.com");
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A directory that reaches the same place under another name. Junctions
+    /// need no privilege on Windows; a symlink is the equivalent elsewhere.
+    /// A machine that allows neither says so rather than passing quietly.
+    fn link_dir(target: &std::path::Path, link: &std::path::Path) -> bool {
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .output()
+                .map(|out| out.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+    }
+
+    /// The failure this normalization exists for, end to end. Git resolves a
+    /// repository to the path the filesystem really keeps it at, so a rule
+    /// written against another name for the same folder — a junction, a
+    /// symlink, an 8.3 short name — matched nothing and said nothing about it.
+    #[test]
+    fn a_rule_for_a_folder_reached_under_another_name_still_applies() {
+        let dir = std::env::temp_dir().join(format!("gam-linked-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let target = dir.join("target");
+        let link = dir.join("link");
+        fs::create_dir_all(target.join("demo")).unwrap();
+        if !link_dir(&target, &link) {
+            eprintln!("no directory link available here: a linked folder is not verified");
+            let _ = fs::remove_dir_all(&dir);
+            return;
+        }
+        std::process::Command::new("git")
+            .args(["init", "-q", &posix(&target.join("demo"))])
+            .output()
+            .expect("git must be on PATH");
+
+        // The rule names where the repository really is, not the name the
+        // folder was added under.
+        let pattern = gitdir_pattern(&posix(&link));
+        assert!(pattern.contains("/target/"), "{}", pattern);
+
+        let identity = dir.join("identity.gitconfig");
+        fs::write(&identity, identity_file_body(&account(false), "ssh")).unwrap();
+        let config = dir.join("global.gitconfig");
+        fs::write(
+            &config,
+            format!(
+                "[includeIf \"gitdir/i:{}\"]\n\tpath = {}\n",
+                pattern,
+                config_value(&posix(&identity))
+            ),
+        )
+        .unwrap();
+
+        let out = std::process::Command::new("git")
+            .args([
+                "-C",
+                &posix(&link.join("demo")),
+                "config",
+                "--get",
+                "user.email",
+            ])
+            .env("GIT_CONFIG_GLOBAL", &config)
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "octo@example.com",
+            "a folder added under one name must still hand out its identity"
+        );
+
+        let _ = fs::remove_dir(&link);
         let _ = fs::remove_dir_all(&dir);
     }
 

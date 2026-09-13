@@ -472,6 +472,11 @@ pub async fn save_profile_folders(
             let mut stored: Vec<RepoRoot> = Vec::new();
             for mut root in roots {
                 root.path = guard::normalize_folder(&root.path);
+                // Two spellings of one folder normalize to the same path, and a
+                // second rule for it would only repeat the first.
+                if stored.iter().any(|r: &RepoRoot| r.path == root.path) {
+                    continue;
+                }
                 // One folder cannot belong to two accounts: git would apply
                 // whichever rule it read last, and which one that is depends on
                 // nothing the user can see. Taking the other profile's folder
