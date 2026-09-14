@@ -1,4 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { noSuggestions } from "../fieldSuggestions";
 import { fmt, rich, useI18n } from "../i18n";
 import { PLATFORM_LABEL, profileUrl } from "../platforms";
 import type { DeviceCodeResponse, PlatformId, SshKeyInfo } from "../types";
@@ -189,6 +190,7 @@ export default function PlatformSection({
             })}
           </p>
           <input
+            {...noSuggestions}
             type="text"
             aria-label={m.form.bitbucket.emailPlaceholder}
             value={credentials.email}
@@ -197,6 +199,7 @@ export default function PlatformSection({
             className="field-sm"
           />
           <input
+            {...noSuggestions}
             type="password"
             aria-label={m.form.bitbucket.tokenPlaceholder}
             value={credentials.token}
@@ -442,6 +445,7 @@ export default function PlatformSection({
               {m.form.gitName}
             </label>
             <input
+              {...noSuggestions}
               id={nameId}
               type="text"
               value={state.gitName}
@@ -487,6 +491,7 @@ export default function PlatformSection({
                     />
                   )}
                 <input
+                  {...noSuggestions}
                   id={emailId}
                   type="text"
                   value={state.gitEmail}
@@ -497,6 +502,7 @@ export default function PlatformSection({
               </div>
             ) : (
               <input
+                {...noSuggestions}
                 id={emailId}
                 type="text"
                 value={state.gitEmail}

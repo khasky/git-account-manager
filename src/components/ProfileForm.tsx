@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api";
 import { attachedKey } from "../attachedKey";
 import { copySshPublicKey } from "../copySshPublicKey";
+import { noSuggestions } from "../fieldSuggestions";
 import { fmt, rich, useI18n } from "../i18n";
 import { PLATFORM_LABEL, PLATFORMS } from "../platforms";
 import type {
@@ -672,6 +673,7 @@ export default function ProfileForm({
               {m.form.profileName}
             </label>
             <input
+              {...noSuggestions}
               id="profile-name"
               type="text"
               value={name}

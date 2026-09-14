@@ -6,6 +6,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import * as api from "../api";
+import { noSuggestions } from "../fieldSuggestions";
 import { fmt, LANGUAGES, type LangCode, rich, useI18n } from "../i18n";
 import { useTheme } from "../ThemeContext";
 import type {
@@ -424,6 +425,7 @@ export default function SettingsPage({ onBack }: Props) {
             <li>{rich(m.settings.github.step6)}</li>
           </ol>
           <input
+            {...noSuggestions}
             type="text"
             value={githubId}
             onChange={(e) => setGithubId(e.target.value)}
@@ -449,6 +451,7 @@ export default function SettingsPage({ onBack }: Props) {
             <li>{rich(m.settings.gitlab.step6)}</li>
           </ol>
           <input
+            {...noSuggestions}
             type="text"
             value={gitlabId}
             onChange={(e) => setGitlabId(e.target.value)}
