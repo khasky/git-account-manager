@@ -2,6 +2,14 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.0.4](https://github.com/khasky/git-account-manager/compare/v1.0.3...v1.0.4) (2026-09-14)
+
+
+### Features
+
+* **profiles:** hold the window while a profile save runs ([677efce](https://github.com/khasky/git-account-manager/commit/677efce6d6cd9047b5842b12ffd8c80d91107ac7))
+* **settings:** add a cancel next to the save action ([47f0257](https://github.com/khasky/git-account-manager/commit/47f02570a83af00e71df70ec4f226973dc898d89))
+
 ## [1.0.3](https://github.com/khasky/git-account-manager/compare/v1.0.2...v1.0.3) (2026-09-14)
 
 
