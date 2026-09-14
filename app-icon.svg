@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="32 32 960 960" width="1024" height="1024"><defs>
 <linearGradient id="g" x1="150" y1="150" x2="874" y2="874" gradientUnits="userSpaceOnUse">
   <stop offset="0" stop-color="#22d3ee"/><stop offset=".5" stop-color="#a855f7"/><stop offset="1" stop-color="#ec4899"/>
 </linearGradient>
@@ -15,10 +15,15 @@
   <stop offset="0" stop-color="#1b2430"/><stop offset="1" stop-color="#0d1117"/>
 </linearGradient></defs>
 <rect x="32" y="32" width="960" height="960" rx="232" fill="#0d1117"/>
+<!-- The tile is a backing, not part of the drawing. The marks are moved from
+     their own centre, which sits at 475.5 rather than 512, to the tile's, and
+     grown until a thin margin is all that is left to the rounded corners. -->
+<g transform="translate(512 512) scale(1.22) translate(-512 -475.5)">
 <circle cx="512" cy="512" r="300" fill="none" stroke="url(#g)" stroke-width="46" opacity=".5"/>
 <circle cx="512" cy="512" r="132" fill="url(#g)"/>
 <circle cx="512" cy="488" r="26.4" fill="#0d1117"/><path d="M465.6 561.6a46.4 46.4 0 0 1 92.8 0z" fill="#0d1117"/>
 <circle cx="512" cy="212" r="96" fill="url(#g)"/>
 <circle cx="252" cy="662" r="96" fill="url(#gb)"/>
 <circle cx="772" cy="662" r="96" fill="url(#go)"/>
+</g>
 </svg>
