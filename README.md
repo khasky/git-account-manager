@@ -417,7 +417,7 @@ This appears on **GitLab's website** (URL like `gitlab.com/oauth/authorize?...`)
 | **Confidential / auth method**      | This app uses a **public** client with PKCE (no client secret). On GitLab, leave **Confidential** **unchecked** when creating the application. A **confidential** app can lead to **unsupported authentication method** (or related failures) during token exchange because the flow does not send a client secret.                                                   |
 | **Redirect URI or scopes**          | Set **Redirect URI** to `http://localhost:19847/callback` and enable the **api** scope, as shown in Settings. A mismatch can cause other OAuth errors; fix the application on GitLab to match.                                                                                                                                                                        |
 
-After fixing the application on GitLab, click **Save Settings** in this app, then try **Connect with GitLab** again.
+After fixing the application on GitLab, click **Save Changes** in this app, then try **Connect with GitLab** again.
 
 </details>
 
