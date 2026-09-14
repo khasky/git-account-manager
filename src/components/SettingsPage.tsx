@@ -461,7 +461,20 @@ export default function SettingsPage({ onBack }: Props) {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 border-t border-bd px-6 py-4">
+      <div className="flex items-center justify-end gap-3 border-t border-bd px-6 py-4">
+        {saved && (
+          <span className="mr-auto text-sm text-success-fg">
+            {m.settings.saved}
+          </span>
+        )}
+        {saveError ? (
+          <span className="mr-auto max-w-md text-sm text-red-600 dark:text-red-400">
+            {saveError}
+          </span>
+        ) : null}
+        <button type="button" onClick={onBack} className="btn-subtle">
+          {m.settings.cancel}
+        </button>
         <button
           type="button"
           onClick={handleSave}
@@ -470,14 +483,6 @@ export default function SettingsPage({ onBack }: Props) {
         >
           {saving ? m.settings.saving : m.settings.save}
         </button>
-        {saved && (
-          <span className="text-sm text-success-fg">{m.settings.saved}</span>
-        )}
-        {saveError ? (
-          <span className="max-w-md text-sm text-red-600 dark:text-red-400">
-            {saveError}
-          </span>
-        ) : null}
       </div>
     </div>
   );
