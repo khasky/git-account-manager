@@ -7,6 +7,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use tauri::Emitter;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::git::{self, GitIdentity};
@@ -455,6 +456,25 @@ pub struct SaveFoldersReport {
     pub repos: usize,
 }
 
+/// The event a running save reports itself on, so the window can hold the user
+/// out of a form whose folders are still being read.
+pub const SAVE_PROGRESS_EVENT: &str = "save-progress";
+
+/// How far a save has got. The counts travel as they are rather than as a
+/// percentage: which share of the bar a folder owns is the window's to decide,
+/// and only the window knows the wording for the step being reported.
+#[derive(Clone, serde::Serialize)]
+pub struct SaveProgress {
+    /// `scan` while a folder's repositories are read, `apply` once the state is
+    /// written and the git rules go out.
+    pub stage: &'static str,
+    pub folder: String,
+    pub folder_index: usize,
+    pub folder_count: usize,
+    pub repos_done: usize,
+    pub repos_total: usize,
+}
+
 /// Replaces one profile's folders. Another profile's are left alone, so two
 /// profiles edited in turn do not overwrite each other.
 ///
@@ -462,6 +482,7 @@ pub struct SaveFoldersReport {
 /// list is how a folder is recognised again after it moves.
 #[tauri::command]
 pub async fn save_profile_folders(
+    app: tauri::AppHandle,
     profile_id: String,
     roots: Vec<RepoRoot>,
 ) -> Result<SaveFoldersReport, String> {
@@ -470,7 +491,8 @@ pub async fn save_profile_folders(
             let mut state = storage::load_state()?;
             let mut repo_count = 0;
             let mut stored: Vec<RepoRoot> = Vec::new();
-            for mut root in roots {
+            let folder_count = roots.len();
+            for (folder_index, mut root) in roots.into_iter().enumerate() {
                 root.path = guard::normalize_folder(&root.path);
                 // Two spellings of one folder normalize to the same path, and a
                 // second rule for it would only repeat the first.
@@ -495,7 +517,21 @@ pub async fn save_profile_folders(
                     return Err(format!("{} already belongs to {}", root.path, owner));
                 }
                 root.profile_id = profile_id.clone();
-                let found = repos::scan_one(&root, &state.profiles);
+                let mut report = |repos_done, repos_total| {
+                    let _ = app.emit(
+                        SAVE_PROGRESS_EVENT,
+                        SaveProgress {
+                            stage: "scan",
+                            folder: root.path.clone(),
+                            folder_index,
+                            folder_count,
+                            repos_done,
+                            repos_total,
+                        },
+                    );
+                };
+                report(0, 0);
+                let found = repos::scan_one_reporting(&root, &state.profiles, &mut report);
                 repo_count += found.len();
                 root.fingerprint = repos::fingerprint(&found);
                 stored.push(root);
@@ -508,6 +544,17 @@ pub async fn save_profile_folders(
                 .iter()
                 .filter(|r| r.profile_id == profile_id)
                 .count();
+            let _ = app.emit(
+                SAVE_PROGRESS_EVENT,
+                SaveProgress {
+                    stage: "apply",
+                    folder: String::new(),
+                    folder_index: folder_count,
+                    folder_count,
+                    repos_done: 0,
+                    repos_total: 0,
+                },
+            );
             storage::save_state(&state)?;
             sync_machine(&state)?;
             Ok(SaveFoldersReport {

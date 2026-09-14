@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api";
@@ -6,6 +7,7 @@ import { copySshPublicKey } from "../copySshPublicKey";
 import { noSuggestions } from "../fieldSuggestions";
 import { fmt, rich, useI18n } from "../i18n";
 import { PLATFORM_LABEL, PLATFORMS } from "../platforms";
+import { savePercent } from "../saveProgress";
 import type {
   FolderRepo,
   FolderStatus,
@@ -15,6 +17,7 @@ import type {
   PlatformId,
   Profile,
   RepoRoot,
+  SaveProgress,
   SshKeyInfo,
 } from "../types";
 import ConfirmDialog, { type DialogAction } from "./ConfirmDialog";
@@ -24,6 +27,7 @@ import PlatformSection, {
   type PlatformState,
 } from "./PlatformSection";
 import ProfileRepos from "./ProfileRepos";
+import ProgressOverlay from "./ProgressOverlay";
 import Spinner from "./Spinner";
 
 interface Props {
@@ -118,6 +122,7 @@ export default function ProfileForm({
   const [bbToken, setBbToken] = useState("");
   const [sshKeys, setSshKeys] = useState<SshKeyInfo[]>([]);
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState<SaveProgress | null>(null);
   const [disconnectTarget, setDisconnectTarget] = useState<{
     platform: PlatformId;
     keyPath: string;
@@ -273,13 +278,15 @@ export default function ProfileForm({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !disconnectTarget) {
+      // A save in flight owns the window until it answers: leaving the form
+      // now would hide a folder scan that is still writing the rules.
+      if (e.key === "Escape" && !disconnectTarget && !saving) {
         handleProfileCancelRef.current();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [disconnectTarget]);
+  }, [disconnectTarget, saving]);
 
   useEffect(() => {
     api
@@ -548,9 +555,13 @@ export default function ProfileForm({
       return;
     }
     setSaving(true);
+    setProgress(null);
     setError("");
 
     const p = draftProfile();
+    const stopListening = await listen<SaveProgress>("save-progress", (event) =>
+      setProgress(event.payload),
+    );
 
     try {
       await api.saveProfile(p);
@@ -559,7 +570,9 @@ export default function ProfileForm({
     } catch (e) {
       setError(String(e));
     } finally {
+      stopListening();
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -646,6 +659,20 @@ export default function ProfileForm({
     github: cancelGitHubAuth,
     gitlab: cancelGitLabAuth,
   };
+
+  // Until the first step arrives the profile itself is being written, and the
+  // folder whose repositories have not been counted yet has no number to show.
+  const progressLabel = !progress
+    ? m.form.savingProfile
+    : progress.stage === "apply"
+      ? m.form.savingApply
+      : progress.repos_total === 0
+        ? fmt(m.form.savingWalk, { folder: progress.folder })
+        : fmt(m.form.savingScan, {
+            folder: progress.folder,
+            done: progress.repos_done,
+            total: progress.repos_total,
+          });
 
   return (
     <>
@@ -802,7 +829,14 @@ export default function ProfileForm({
           )}
         </div>
 
-        <div className="flex gap-3 border-t border-bd px-6 py-4">
+        <div className="flex justify-end gap-3 border-t border-bd px-6 py-4">
+          <button
+            type="button"
+            onClick={handleProfileCancel}
+            className="btn-subtle"
+          >
+            {m.form.cancel}
+          </button>
           <button
             type="button"
             onClick={handleSave}
@@ -815,13 +849,6 @@ export default function ProfileForm({
               : isEdit
                 ? m.form.saveChanges
                 : m.form.createProfile}
-          </button>
-          <button
-            type="button"
-            onClick={handleProfileCancel}
-            className="btn-subtle"
-          >
-            {m.form.cancel}
           </button>
         </div>
       </div>
@@ -843,6 +870,13 @@ export default function ProfileForm({
           </div>
         )}
       </ConfirmDialog>
+
+      <ProgressOverlay
+        open={saving}
+        title={m.form.saving}
+        label={progressLabel}
+        percent={progress ? savePercent(progress) : null}
+      />
     </>
   );
 }

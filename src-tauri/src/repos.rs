@@ -171,11 +171,23 @@ fn posix(path: &Path) -> String {
 
 /// Every repository under one folder, in path order, deepest nesting included.
 pub fn scan_one(root: &RepoRoot, profiles: &[Profile]) -> Vec<FolderRepo> {
+    scan_one_reporting(root, profiles, &mut |_, _| {})
+}
+
+/// The scan with a way to follow it: `on_repo` is called with how many of the
+/// folder's repositories have been read and how many the walk found, which is
+/// the only count available before the whole folder is done.
+pub fn scan_one_reporting(
+    root: &RepoRoot,
+    profiles: &[Profile],
+    on_repo: &mut dyn FnMut(usize, usize),
+) -> Vec<FolderRepo> {
     let base = root.path.replace('\\', "/");
     let base = base.trim_end_matches('/');
     let mut paths = Vec::new();
     walk(Path::new(&root.path), 0, MAX_SCAN_DEPTH, &mut paths);
 
+    let total = paths.len();
     let mut found: Vec<FolderRepo> = Vec::new();
     for path in paths {
         let dir = posix(&path);
@@ -207,6 +219,7 @@ pub fn scan_one(root: &RepoRoot, profiles: &[Profile]) -> Vec<FolderRepo> {
             foreign_host,
             path: dir,
         });
+        on_repo(found.len(), total);
     }
     found.sort_by(|a, b| a.path.cmp(&b.path));
     found

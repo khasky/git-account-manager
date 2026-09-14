@@ -186,3 +186,13 @@ export interface DoctorReport {
   guard: GuardStatus;
   folders: FolderStatus[];
 }
+
+/** How far a profile save has got, reported by the backend while it runs. */
+export interface SaveProgress {
+  stage: "scan" | "apply";
+  folder: string;
+  folder_index: number;
+  folder_count: number;
+  repos_done: number;
+  repos_total: number;
+}
