@@ -2,6 +2,25 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.0.3](https://github.com/khasky/git-account-manager/compare/v1.0.2...v1.0.3) (2026-09-14)
+
+
+### Features
+
+* **git:** switch the gh account together with the profile ([c2348a5](https://github.com/khasky/git-account-manager/commit/c2348a50cd06bd457d420625f46651ffde8ccf09))
+* **guard:** add a switch to commit only in claimed folders ([a8bd77c](https://github.com/khasky/git-account-manager/commit/a8bd77cf1234c501dc27e7d882e5313b802a4689))
+* **repos:** make the folder the rule and drop per-repository bindings ([930edb3](https://github.com/khasky/git-account-manager/commit/930edb33e49f868e6e6c66f9e90366325f23a61c))
+* **repos:** move the identity guard out of every repository ([be3c3f1](https://github.com/khasky/git-account-manager/commit/be3c3f176c76a4761cba1c77e780bfe89d4aa7cd))
+* **ssh:** let the active profile always own the bare hosts ([2d48c2d](https://github.com/khasky/git-account-manager/commit/2d48c2d4faff6f95706279f2e7229c5e01adb5e6))
+
+
+### Bug Fixes
+
+* **guard:** name a folder by the path git resolves it to ([54c66d8](https://github.com/khasky/git-account-manager/commit/54c66d81d763063808fdc9394b566a382cbf3e78))
+* **repos:** hide doctor rows for a folder removed from the draft ([873dc74](https://github.com/khasky/git-account-manager/commit/873dc746ca4bcffc27585c9e4d96180023665e34))
+* **tauri:** draw the application icon edge to edge ([fe15612](https://github.com/khasky/git-account-manager/commit/fe1561210ed42d018e74d0c30687a435d598fa36))
+* **ui:** turn off the webview's suggestions in text fields ([484df5d](https://github.com/khasky/git-account-manager/commit/484df5d961db5eacde99a7b27f0a9e783100bd2d))
+
 ## [1.0.2](https://github.com/khasky/git-account-manager/compare/v1.0.1...v1.0.2) (2026-08-31)
 
 
