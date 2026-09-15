@@ -2,6 +2,19 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.0.5](https://github.com/khasky/git-account-manager/compare/v1.0.4...v1.0.5) (2026-09-15)
+
+
+### Features
+
+* **git:** answer HTTPS credential requests ([00ac677](https://github.com/khasky/git-account-manager/commit/00ac6779de2769d18074e4b78135ceae8744e445))
+* **ui:** surface the HTTPS token and the version ([5e7f019](https://github.com/khasky/git-account-manager/commit/5e7f0193ac374c73930b5c6d9c12d1bf8ce0a9bd))
+
+
+### Bug Fixes
+
+* **ui:** draw every header icon at one size ([99c0209](https://github.com/khasky/git-account-manager/commit/99c0209ceddc16b1111df7e3b14437de2cae6d93))
+
 ## [1.0.4](https://github.com/khasky/git-account-manager/compare/v1.0.3...v1.0.4) (2026-09-14)
 
 
