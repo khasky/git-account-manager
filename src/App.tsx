@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -49,6 +50,16 @@ function App() {
   const [themeOpen, setThemeOpen] = useState(false);
   const themeRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The same number the updater compares against, so the badge in the header
+  // and the "current version" the update banner names cannot disagree. Empty
+  // outside the desktop shell, where there is no app to ask.
+  const [version, setVersion] = useState("");
+
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -344,9 +355,13 @@ function App() {
     <>
       <UpdateBanner />
       <header className="flex items-center justify-between border-b border-bd px-6 py-4">
-        <div>
+        <div className="flex items-center gap-2.5">
           <h1 className="text-xl font-bold text-fg">Git Account Manager</h1>
-          <p className="text-xs text-fg-4">{m.app.subtitle}</p>
+          {version && (
+            <span className="rounded-full bg-raised px-2 py-0.5 text-xs font-medium text-fg-4 tabular-nums">
+              v{version}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -357,7 +372,7 @@ function App() {
             className="btn-icon"
             title={m.app.githubRepo}
           >
-            <GitHubIcon className="h-5 w-5" />
+            <GitHubIcon />
           </button>
           <div className="relative" ref={themeRef}>
             <button

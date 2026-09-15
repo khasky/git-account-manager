@@ -2,7 +2,6 @@ import type { Messages } from "./en";
 
 export const ru: Messages = {
   app: {
-    subtitle: `Управление SSH-ключами, git-идентичностью и аккаунтами платформ`,
     githubRepo: `Репозиторий GitHub`,
     themeTitle: `Тема`,
     oauthSettings: `Настройки OAuth`,
@@ -55,6 +54,13 @@ export const ru: Messages = {
       notFound: `<code>gh</code> не найден в PATH. Установите <a>GitHub CLI</a>, чтобы переключать его аккаунт вместе с профилем.`,
       toggle: `Переключать аккаунт gh вместе с профилем`,
       toggleHint: `Выполняет <code>gh auth switch --user <login></code> при каждой активации. Логин, в который gh не вошёл, пропускается.`,
+    },
+    https: {
+      title: `HTTPS-ремоуты`,
+      intro: `Если ремоут начинается с <code>https://</code>, git спрашивает пароль у credential helper — отсюда и всплывающее окно, знакомое по другим инструментам. Когда включено, git спрашивает Git Account Manager и получает токен активного профиля: смена профиля переключает HTTPS так же, как уже переключает SSH.`,
+      toggle: `Отвечать на запросы учётных данных HTTPS`,
+      toggleHint: `Записывает <code>credential.https://<host>.helper</code> для хостов, на которые у активного профиля есть токен, и убирает с остальных — там продолжает отвечать ваш прежний менеджер учётных данных.`,
+      needsToken: `Ни у одного аккаунта активного профиля ещё нет HTTPS-токена, поэтому ничего не настроено. Добавьте его в профиле, в поле <b>HTTPS-токен</b> у платформы.`,
     },
     tortoise: {
       title: `TortoiseGit и Git из командной строки`,
@@ -162,6 +168,15 @@ export const ru: Messages = {
       scopesHint: `Выбери scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket.`,
       errCreds: `Укажите и email Atlassian, и API-токен.`,
       emailPrivacy: `У Bitbucket нет noreply-адреса. Чтобы личная почта не попадала в коммиты, добавь подтверждённый алиас в <a>Email aliases</a> и укажи его как Git-email — коммиты останутся привязаны к аккаунту.`,
+    },
+    https: {
+      label: `HTTPS-токен`,
+      placeholder: `Вставь токен для https://-ремоутов`,
+      storedPlaceholder: `Сохранён — вставь новый, чтобы заменить`,
+      remove: `Удалить сохранённый токен`,
+      hintGithub: `Используется для <code>https://</code>-ремоутов, когда в настройках включён HTTPS credential helper. Создай <a>personal access token</a> со скоупом <code>repo</code>: токеном входа пушить по HTTPS нельзя.`,
+      hintGitlab: `Используется для <code>https://</code>-ремоутов, когда в настройках включён HTTPS credential helper. Создай <a>personal access token</a> с <code>write_repository</code>: токен входа живёт всего пару часов.`,
+      hintBitbucket: `Используется для <code>https://</code>-ремоутов, когда в настройках включён HTTPS credential helper. <a>API-токен</a>, которым ты подключался, уже отвечает здесь — добавляй другой, только если git должен использовать иной токен.`,
     },
     editTitle: `Редактировать профиль`,
     newTitle: `Новый профиль`,

@@ -54,6 +54,8 @@ export interface OAuthSettings {
   use_openssh_for_git_tools: boolean;
   /** Run `gh auth switch` to the active profile's GitHub login on every switch. */
   switch_gh_account: boolean;
+  /** Answer git's credential requests on HTTPS remotes from the active profile. */
+  use_https_credential_helper: boolean;
 }
 
 export interface GhProbe {

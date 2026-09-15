@@ -2,7 +2,6 @@ import type { Messages } from "./en";
 
 export const zhHant: Messages = {
   app: {
-    subtitle: `管理 SSH 金鑰、git 身分和平台帳戶`,
     githubRepo: `GitHub 儲存庫`,
     themeTitle: `主題`,
     oauthSettings: `OAuth 設定`,
@@ -55,6 +54,13 @@ export const zhHant: Messages = {
       notFound: `PATH 中找不到 <code>gh</code>。安裝 <a>GitHub CLI</a> 後即可隨設定檔切換其帳戶。`,
       toggle: `隨設定檔切換 gh 帳戶`,
       toggleHint: `每次啟用時執行 <code>gh auth switch --user <login></code>。gh 未登入的登入名稱會被略過。`,
+    },
+    https: {
+      title: `HTTPS 遠端`,
+      intro: `遠端位址以 <code>https://</code> 開頭時，git 會向 credential helper 索取密碼，其他工具跳出的視窗就來自這裡。開啟後，git 改為詢問 Git Account Manager 並取得目前使用中設定檔的權杖，於是切換設定檔會像切換 SSH 一樣切換 HTTPS。`,
+      toggle: `回應 git 的 HTTPS 憑證要求`,
+      toggleHint: `只為使用中設定檔持有權杖的主機寫入 <code>credential.https://<host>.helper</code>，其餘主機則移除該項 — 它們仍由你原本的憑證管理員負責。`,
+      needsToken: `使用中設定檔的帳號都還沒有 HTTPS 權杖，因此尚未設定任何主機。請在設定檔中對應平台的 <b>HTTPS 權杖</b> 欄位新增一個。`,
     },
     tortoise: {
       title: `TortoiseGit 和命令列 Git`,
@@ -162,6 +168,15 @@ export const zhHant: Messages = {
       scopesHint: `選擇 scopes：read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket`,
       errCreds: `請輸入 Atlassian 電子郵件和 API 權杖。`,
       emailPrivacy: `Bitbucket 沒有 noreply 位址。要讓個人信箱不出現在提交中，請在 <a>Email aliases</a> 新增已確認的別名並用作 Git 信箱——提交仍會關聯到你的帳號。`,
+    },
+    https: {
+      label: `HTTPS 權杖`,
+      placeholder: `貼上用於 https:// 遠端的權杖`,
+      storedPlaceholder: `已儲存 — 貼上新權杖即可取代`,
+      remove: `刪除已儲存的權杖`,
+      hintGithub: `在設定中開啟 HTTPS credential helper 後，用於 <code>https://</code> 遠端。請建立具 <code>repo</code> 範圍的<a>個人存取權杖</a>；登入用的權杖無法透過 HTTPS 推送。`,
+      hintGitlab: `在設定中開啟 HTTPS credential helper 後，用於 <code>https://</code> 遠端。請建立具 <code>write_repository</code> 的<a>個人存取權杖</a>；登入用的權杖幾小時就會過期。`,
+      hintBitbucket: `在設定中開啟 HTTPS credential helper 後，用於 <code>https://</code> 遠端。你連線時使用的 <a>API 權杖</a>已經能在這裡回應 — 只有想讓 git 使用其他權杖時才需要新增。`,
     },
     editTitle: `編輯設定檔`,
     newTitle: `新增設定檔`,

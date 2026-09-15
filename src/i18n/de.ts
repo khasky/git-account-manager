@@ -2,7 +2,6 @@ import type { Messages } from "./en";
 
 export const de: Messages = {
   app: {
-    subtitle: `SSH-Schlüssel, Git-Identität und Plattformkonten verwalten`,
     githubRepo: `GitHub-Repository`,
     themeTitle: `Design`,
     oauthSettings: `OAuth-Einstellungen`,
@@ -55,6 +54,13 @@ export const de: Messages = {
       notFound: `<code>gh</code> wurde nicht im PATH gefunden. Installiere die <a>GitHub CLI</a>, um ihr Konto zusammen mit dem Profil zu wechseln.`,
       toggle: `gh-Konto mit dem Profil wechseln`,
       toggleHint: `Führt bei jeder Aktivierung <code>gh auth switch --user <login></code> aus. Ein Login, in dem gh nicht angemeldet ist, wird übersprungen.`,
+    },
+    https: {
+      title: `HTTPS-Remotes`,
+      intro: `Ein Remote, das mit <code>https://</code> beginnt, schickt Git zu einem Credential-Helper, der das Passwort liefert — daher das Fenster, das andere Werkzeuge an dieser Stelle zeigen. Ist dies aktiv, fragt Git stattdessen Git Account Manager und erhält das Token des aktiven Profils; ein Profilwechsel wechselt damit HTTPS genauso wie schon SSH.`,
+      toggle: `Gits HTTPS-Anfragen nach Zugangsdaten beantworten`,
+      toggleHint: `Setzt <code>credential.https://<host>.helper</code> für die Hosts, für die das aktive Profil ein Token hat, und entfernt den Eintrag bei allen anderen — dort bleibt Ihr bisheriger Credential-Manager zuständig.`,
+      needsToken: `Noch kein Konto des aktiven Profils hat ein HTTPS-Token, deshalb ist nichts eingerichtet. Fügen Sie eines im Profil unter dem Feld <b>HTTPS-Token</b> der Plattform hinzu.`,
     },
     tortoise: {
       title: `TortoiseGit und Git auf der Kommandozeile`,
@@ -162,6 +168,15 @@ export const de: Messages = {
       scopesHint: `Scopes auswählen: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket.`,
       errCreds: `Gib sowohl deine Atlassian-E-Mail als auch das API-Token ein.`,
       emailPrivacy: `Bitbucket hat keine Noreply-Adresse. Damit deine private E-Mail nicht in Commits landet, füge unter <a>Email aliases</a> einen bestätigten Alias hinzu und nutze ihn als Git-E-Mail — die Commits bleiben deinem Konto zugeordnet.`,
+    },
+    https: {
+      label: `HTTPS-Token`,
+      placeholder: `Token für https://-Remotes einfügen`,
+      storedPlaceholder: `Gespeichert — neues Token einfügen, um es zu ersetzen`,
+      remove: `Gespeichertes Token entfernen`,
+      hintGithub: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Erstelle ein <a>Personal Access Token</a> mit dem Scope <code>repo</code>; das Anmelde-Token kann über HTTPS nicht pushen.`,
+      hintGitlab: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Erstelle ein <a>Personal Access Token</a> mit <code>write_repository</code>; das Anmelde-Token läuft nach wenigen Stunden ab.`,
+      hintBitbucket: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Das <a>API-Token</a>, mit dem du dich verbunden hast, antwortet hier bereits — füge nur eines hinzu, wenn Git ein anderes Token nutzen soll.`,
     },
     editTitle: `Profil bearbeiten`,
     newTitle: `Neues Profil`,

@@ -2,7 +2,6 @@ import type { Messages } from "./en";
 
 export const zhHans: Messages = {
   app: {
-    subtitle: `管理 SSH 密钥、git 身份和平台账户`,
     githubRepo: `GitHub 仓库`,
     themeTitle: `主题`,
     oauthSettings: `OAuth 设置`,
@@ -55,6 +54,13 @@ export const zhHans: Messages = {
       notFound: `PATH 中找不到 <code>gh</code>。安装 <a>GitHub CLI</a> 后即可随配置文件切换其账户。`,
       toggle: `随配置文件切换 gh 账户`,
       toggleHint: `每次激活时运行 <code>gh auth switch --user <login></code>。gh 未登录的登录名会被跳过。`,
+    },
+    https: {
+      title: `HTTPS 远程仓库`,
+      intro: `远程地址以 <code>https://</code> 开头时，git 会向 credential helper 索取密码，其他工具弹出的窗口就来自这里。开启后，git 转而询问 Git Account Manager 并拿到当前活动配置的令牌，于是切换配置会像切换 SSH 一样切换 HTTPS。`,
+      toggle: `响应 git 的 HTTPS 凭据请求`,
+      toggleHint: `只为活动配置持有令牌的主机写入 <code>credential.https://<host>.helper</code>，其余主机上移除该项 — 它们仍由你原来的凭据管理器负责。`,
+      needsToken: `活动配置的所有账户都还没有 HTTPS 令牌，因此尚未配置任何主机。请在配置中对应平台的 <b>HTTPS 令牌</b> 字段里添加一个。`,
     },
     tortoise: {
       title: `TortoiseGit 和命令行 Git`,
@@ -162,6 +168,15 @@ export const zhHans: Messages = {
       scopesHint: `选择 scopes：read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket`,
       errCreds: `请输入 Atlassian 邮箱和 API 令牌。`,
       emailPrivacy: `Bitbucket 没有 noreply 地址。要让个人邮箱不出现在提交中，请在 <a>Email aliases</a> 添加已确认的别名并用作 Git 邮箱——提交仍会关联到你的账号。`,
+    },
+    https: {
+      label: `HTTPS 令牌`,
+      placeholder: `粘贴用于 https:// 远程的令牌`,
+      storedPlaceholder: `已保存 — 粘贴新令牌即可替换`,
+      remove: `删除已保存的令牌`,
+      hintGithub: `在设置中开启 HTTPS credential helper 后，用于 <code>https://</code> 远程。请创建带 <code>repo</code> 权限的<a>个人访问令牌</a>；登录用的令牌无法通过 HTTPS 推送。`,
+      hintGitlab: `在设置中开启 HTTPS credential helper 后，用于 <code>https://</code> 远程。请创建带 <code>write_repository</code> 的<a>个人访问令牌</a>；登录用的令牌几小时就会过期。`,
+      hintBitbucket: `在设置中开启 HTTPS credential helper 后，用于 <code>https://</code> 远程。你连接时用的 <a>API 令牌</a>已经能在这里应答 — 只有想让 git 使用另一个令牌时才需要添加。`,
     },
     editTitle: `编辑配置文件`,
     newTitle: `新建配置文件`,

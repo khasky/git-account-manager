@@ -2,7 +2,6 @@ import type { Messages } from "./en";
 
 export const ko: Messages = {
   app: {
-    subtitle: `SSH 키, git 신원, 플랫폼 계정 관리`,
     githubRepo: `GitHub 저장소`,
     themeTitle: `테마`,
     oauthSettings: `OAuth 설정`,
@@ -55,6 +54,13 @@ export const ko: Messages = {
       notFound: `PATH에서 <code>gh</code>를 찾지 못했습니다. 프로필과 함께 계정을 전환하려면 <a>GitHub CLI</a>를 설치하세요.`,
       toggle: `프로필과 함께 gh 계정 전환`,
       toggleHint: `활성화할 때마다 <code>gh auth switch --user <login></code>을 실행합니다. gh에 로그인되지 않은 로그인은 건너뜁니다.`,
+    },
+    https: {
+      title: `HTTPS 원격 저장소`,
+      intro: `<code>https://</code>로 시작하는 원격 저장소에서는 git이 credential helper에게 비밀번호를 묻습니다. 다른 도구에서 보던 팝업이 여기서 나옵니다. 이 옵션을 켜면 git이 Git Account Manager에게 묻고 활성 프로필의 토큰을 받으므로, 프로필을 바꾸면 SSH처럼 HTTPS도 함께 바뀝니다.`,
+      toggle: `git의 HTTPS 자격 증명 요청에 응답`,
+      toggleHint: `활성 프로필이 토큰을 가진 호스트에만 <code>credential.https://<host>.helper</code>를 쓰고 나머지에서는 지웁니다. 나머지 호스트는 기존에 쓰던 자격 증명 관리자가 계속 응답합니다.`,
+      needsToken: `활성 프로필의 어떤 계정에도 HTTPS 토큰이 없어 아직 아무것도 설정되지 않았습니다. 프로필의 플랫폼 <b>HTTPS 토큰</b> 칸에 추가하세요.`,
     },
     tortoise: {
       title: `TortoiseGit 및 명령줄 Git`,
@@ -162,6 +168,15 @@ export const ko: Messages = {
       scopesHint: `스코프 선택: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket`,
       errCreds: `Atlassian 이메일과 API 토큰을 모두 입력하세요.`,
       emailPrivacy: `Bitbucket에는 noreply 주소가 없습니다. 개인 이메일이 커밋에 남지 않게 하려면 <a>Email aliases</a>에서 확인된 별칭을 추가하고 Git 이메일로 사용하세요. 커밋은 계정에 연결된 상태로 유지됩니다.`,
+    },
+    https: {
+      label: `HTTPS 토큰`,
+      placeholder: `https:// 원격용 토큰 붙여넣기`,
+      storedPlaceholder: `저장됨 — 바꾸려면 새 토큰을 붙여넣기`,
+      remove: `저장된 토큰 삭제`,
+      hintGithub: `설정에서 HTTPS credential helper를 켜면 <code>https://</code> 원격에 사용됩니다. <code>repo</code> 범위를 가진 <a>개인용 액세스 토큰</a>을 만드세요. 로그인 토큰으로는 HTTPS 푸시가 되지 않습니다.`,
+      hintGitlab: `설정에서 HTTPS credential helper를 켜면 <code>https://</code> 원격에 사용됩니다. <code>write_repository</code> 권한의 <a>개인용 액세스 토큰</a>을 만드세요. 로그인 토큰은 몇 시간이면 만료됩니다.`,
+      hintBitbucket: `설정에서 HTTPS credential helper를 켜면 <code>https://</code> 원격에 사용됩니다. 연결할 때 쓴 <a>API 토큰</a>이 이미 여기서 응답합니다. git이 다른 토큰을 쓰게 하려면 그때만 추가하세요.`,
     },
     editTitle: `프로필 편집`,
     newTitle: `새 프로필`,

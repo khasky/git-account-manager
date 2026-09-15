@@ -1,7 +1,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { noSuggestions } from "../fieldSuggestions";
 import { fmt, rich, useI18n } from "../i18n";
-import { PLATFORM_LABEL, profileUrl } from "../platforms";
+import { PLATFORM_LABEL, profileUrl, TOKEN_PAGE_URL } from "../platforms";
 import type { DeviceCodeResponse, PlatformId, SshKeyInfo } from "../types";
 import { CheckIcon, CopyIcon } from "./icons";
 
@@ -38,6 +38,10 @@ export interface PlatformState {
   signingError: string;
   /** Why the handle shown is a fallback the platform could not confirm. */
   usernameNotice: string;
+  /** A token typed into the HTTPS field, on its way to the credential store.
+   *  Never what is already stored: a stored one is not read back out. */
+  httpsToken: string;
+  httpsTokenStored: boolean;
   deviceCode: DeviceCodeResponse | null;
 }
 
@@ -61,6 +65,8 @@ export function emptyPlatform(): PlatformState {
     signCommits: true,
     signingError: "",
     usernameNotice: "",
+    httpsToken: "",
+    httpsTokenStored: false,
     deviceCode: null,
   };
 }
@@ -89,6 +95,9 @@ interface Props {
   onUploadExistingKey: () => void;
   onSelectKey: (key: SshKeyInfo) => void;
   onDisconnect: () => void;
+  /** Drops the stored HTTPS token now, rather than with the rest of the form:
+   *  it lives in the credential store, not in the profile being edited. */
+  onRemoveHttpsToken: () => void;
   onOpenSettings: () => void;
 }
 
@@ -142,6 +151,7 @@ export default function PlatformSection({
   onUploadExistingKey,
   onSelectKey,
   onDisconnect,
+  onRemoveHttpsToken,
   onOpenSettings,
 }: Props) {
   const { m } = useI18n();
@@ -407,9 +417,56 @@ export default function PlatformSection({
     );
   }
 
+  /** The token git authenticates HTTPS remotes with, which each platform issues
+   *  under its own rules and scopes. */
+  function renderHttpsToken() {
+    const hint = {
+      github: m.form.https.hintGithub,
+      gitlab: m.form.https.hintGitlab,
+      bitbucket: m.form.https.hintBitbucket,
+    }[platform];
+
+    return (
+      <div>
+        <label htmlFor={httpsId} className="mb-1 block text-xs text-fg-4">
+          {m.form.https.label}
+        </label>
+        <input
+          {...noSuggestions}
+          id={httpsId}
+          type="password"
+          value={state.httpsToken}
+          onChange={(e) => onChange({ httpsToken: e.target.value })}
+          placeholder={
+            state.httpsTokenStored
+              ? m.form.https.storedPlaceholder
+              : m.form.https.placeholder
+          }
+          className="field-sm"
+        />
+        <p className="mt-1 text-xs text-fg-5">
+          {rich(hint, {
+            onLink: () => openUrl(TOKEN_PAGE_URL[platform]),
+            codeClass: "text-fg-4",
+          })}
+        </p>
+        {state.httpsTokenStored && (
+          <button
+            type="button"
+            onClick={onRemoveHttpsToken}
+            className="mt-1 text-xs text-danger-fg hover:underline"
+          >
+            {m.form.https.remove}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   const nameId = `git-name-${platform}`;
   const emailId = `git-email-${platform}`;
   const signId = `sign-commits-${platform}`;
+  const httpsId = `https-token-${platform}`;
   const hasChoices = state.noreplyEmail || state.publicEmail || importedEmail;
 
   return (
@@ -517,6 +574,8 @@ export default function PlatformSection({
             <p className="mb-1 block text-xs text-fg-4">{m.form.sshKey}</p>
             {renderKeySection()}
           </div>
+
+          {renderHttpsToken()}
 
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">

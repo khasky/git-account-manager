@@ -115,6 +115,17 @@ export const deletePlatformToken = (args: {
 export const deleteProfileTokens = (profileId: string) =>
   invoke<void>("delete_profile_tokens", { profileId });
 
+/** An empty token removes the stored one. */
+export const saveHttpsToken = (args: {
+  profileId: string;
+  platform: PlatformId;
+  token: string;
+}) => invoke<void>("save_https_token", args);
+
+/** Which platforms of this profile hold an HTTPS token, never the token itself. */
+export const httpsTokenPlatforms = (profileId: string) =>
+  invoke<PlatformId[]>("https_token_platforms", { profileId });
+
 // -- settings ---------------------------------------------------------------
 
 export const getSettings = () => invoke<OAuthSettings>("get_settings");

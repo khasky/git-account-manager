@@ -8,7 +8,6 @@
 //  - Inline markup must stay intact: <code>…</code>, <b>…</b>, <a>…</a>.
 export const en = {
   app: {
-    subtitle: `Manage SSH keys, git identity, and platform accounts`,
     githubRepo: `GitHub Repository`,
     themeTitle: `Theme`,
     oauthSettings: `OAuth Settings`,
@@ -61,6 +60,13 @@ export const en = {
       notFound: `<code>gh</code> was not found on PATH. Install the <a>GitHub CLI</a> to switch its account together with the profile.`,
       toggle: `Switch the gh account with the profile`,
       toggleHint: `Runs <code>gh auth switch --user <login></code> on every activation. A login gh is not signed in to is skipped.`,
+    },
+    https: {
+      title: `HTTPS remotes`,
+      intro: `A remote that starts with <code>https://</code> sends git to a credential helper for the password, which is where the popup you may know from other tools comes from. With this on, git asks Git Account Manager instead and gets the active profile's token, so switching a profile switches HTTPS the way it already switches SSH.`,
+      toggle: `Answer git's HTTPS credential requests`,
+      toggleHint: `Writes <code>credential.https://<host>.helper</code> for the hosts the active profile holds a token for, and removes it from the rest — every other host keeps the credential manager you already use.`,
+      needsToken: `No account of the active profile has an HTTPS token yet, so nothing is configured. Add one in the profile, under the platform's <b>HTTPS token</b> field.`,
     },
     tortoise: {
       title: `TortoiseGit and command-line Git`,
@@ -168,6 +174,15 @@ export const en = {
       scopesHint: `Select scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket.`,
       errCreds: `Enter both your Atlassian email and API token.`,
       emailPrivacy: `Bitbucket has no noreply address. To keep your personal email out of commits, add a confirmed alias under <a>Email aliases</a> and use it as the Git email — commits stay linked to your account.`,
+    },
+    https: {
+      label: `HTTPS token`,
+      placeholder: `Paste a token for https:// remotes`,
+      storedPlaceholder: `Stored — paste a new one to replace it`,
+      remove: `Remove the stored token`,
+      hintGithub: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. Issue a <a>personal access token</a> with the <code>repo</code> scope; the sign-in token cannot push over HTTPS.`,
+      hintGitlab: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. Issue a <a>personal access token</a> with <code>write_repository</code>; the sign-in token expires within hours.`,
+      hintBitbucket: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. The <a>API token</a> you connected with already answers here — add one only to let git use a different token.`,
     },
     editTitle: `Edit Profile`,
     newTitle: `New Profile`,

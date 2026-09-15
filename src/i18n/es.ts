@@ -2,7 +2,6 @@ import type { Messages } from "./en";
 
 export const es: Messages = {
   app: {
-    subtitle: `Gestiona claves SSH, identidad de git y cuentas de plataformas`,
     githubRepo: `Repositorio de GitHub`,
     themeTitle: `Tema`,
     oauthSettings: `Configuración de OAuth`,
@@ -55,6 +54,13 @@ export const es: Messages = {
       notFound: `No se encontró <code>gh</code> en PATH. Instala la <a>GitHub CLI</a> para cambiar su cuenta junto con el perfil.`,
       toggle: `Cambiar la cuenta de gh con el perfil`,
       toggleHint: `Ejecuta <code>gh auth switch --user <login></code> en cada activación. Un login sin sesión en gh se omite.`,
+    },
+    https: {
+      title: `Remotos HTTPS`,
+      intro: `Un remoto que empieza por <code>https://</code> hace que git pida la contraseña a un credential helper, de ahí la ventana emergente que muestran otras herramientas. Con esto activado git se lo pregunta a Git Account Manager y recibe el token del perfil activo, así que cambiar de perfil cambia HTTPS igual que ya cambia SSH.`,
+      toggle: `Responder a las peticiones de credenciales HTTPS de git`,
+      toggleHint: `Escribe <code>credential.https://<host>.helper</code> para los hosts de los que el perfil activo tiene token y lo quita del resto: en los demás sigue respondiendo el gestor de credenciales que ya usa.`,
+      needsToken: `Ninguna cuenta del perfil activo tiene todavía un token HTTPS, así que no se ha configurado nada. Añada uno en el perfil, en el campo <b>Token HTTPS</b> de la plataforma.`,
     },
     tortoise: {
       title: `TortoiseGit y Git por línea de comandos`,
@@ -162,6 +168,15 @@ export const es: Messages = {
       scopesHint: `Selecciona los scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket.`,
       errCreds: `Introduce tu correo de Atlassian y el token de API.`,
       emailPrivacy: `Bitbucket no tiene dirección noreply. Para que tu correo personal no aparezca en los commits, añade un alias confirmado en <a>Email aliases</a> y úsalo como correo de Git: los commits siguen vinculados a tu cuenta.`,
+    },
+    https: {
+      label: `Token HTTPS`,
+      placeholder: `Pega un token para remotos https://`,
+      storedPlaceholder: `Guardado — pega uno nuevo para reemplazarlo`,
+      remove: `Eliminar el token guardado`,
+      hintGithub: `Se usa en los remotos <code>https://</code> cuando el credential helper HTTPS está activado en los ajustes. Crea un <a>token de acceso personal</a> con el ámbito <code>repo</code>; el token de inicio de sesión no puede hacer push por HTTPS.`,
+      hintGitlab: `Se usa en los remotos <code>https://</code> cuando el credential helper HTTPS está activado en los ajustes. Crea un <a>token de acceso personal</a> con <code>write_repository</code>; el token de inicio de sesión caduca en unas horas.`,
+      hintBitbucket: `Se usa en los remotos <code>https://</code> cuando el credential helper HTTPS está activado en los ajustes. El <a>token de API</a> con el que te conectaste ya responde aquí; añade otro solo si quieres que git use un token distinto.`,
     },
     editTitle: `Editar perfil`,
     newTitle: `Nuevo perfil`,

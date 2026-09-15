@@ -42,6 +42,10 @@ export default function SettingsPage({ onBack }: Props) {
   const [gitlabId, setGitlabId] = useState("");
   const [useOpenSsh, setUseOpenSsh] = useState(false);
   const [switchGh, setSwitchGh] = useState(true);
+  const [useHttpsHelper, setUseHttpsHelper] = useState(false);
+  /** Whether the active profile has a token the helper could answer with, so
+   *  the switch says when it is on but has nothing to serve. */
+  const [hasHttpsToken, setHasHttpsToken] = useState(true);
   const [ghProbe, setGhProbe] = useState<GhProbe | null>(null);
   const [openSshProbe, setOpenSshProbe] =
     useState<OpenSshIntegrationProbe | null>(null);
@@ -64,6 +68,15 @@ export default function SettingsPage({ onBack }: Props) {
         setGitlabId(s.gitlab_client_id);
         setUseOpenSsh(Boolean(s.use_openssh_for_git_tools));
         setSwitchGh(s.switch_gh_account);
+        setUseHttpsHelper(Boolean(s.use_https_credential_helper));
+      })
+      .catch(() => {});
+    api
+      .getProfiles()
+      .then(async (profiles) => {
+        const active = profiles.find((p) => p.is_active);
+        if (!active) return;
+        setHasHttpsToken((await api.httpsTokenPlatforms(active.id)).length > 0);
       })
       .catch(() => {});
     api
@@ -142,6 +155,7 @@ export default function SettingsPage({ onBack }: Props) {
         gitlab_client_id: gitlabId.trim(),
         use_openssh_for_git_tools: useOpenSsh,
         switch_gh_account: switchGh,
+        use_https_credential_helper: useHttpsHelper,
       });
       setOpenSshProbe(await api.openSshIntegrationProbe());
       setSaved(true);
@@ -407,6 +421,30 @@ export default function SettingsPage({ onBack }: Props) {
             </div>
             <Toggle on={switchGh} onClick={() => setSwitchGh(!switchGh)} />
           </div>
+        </div>
+
+        <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">
+          <h3 className="font-medium text-fg-2">{m.settings.https.title}</h3>
+          <p className="text-xs leading-relaxed text-fg-4">
+            {rich(m.settings.https.intro, { codeClass: "text-fg-3" })}
+          </p>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-fg-3">{m.settings.https.toggle}</p>
+              <p className="text-xs text-fg-5">
+                {rich(m.settings.https.toggleHint, { codeClass: "text-fg-4" })}
+              </p>
+            </div>
+            <Toggle
+              on={useHttpsHelper}
+              onClick={() => setUseHttpsHelper(!useHttpsHelper)}
+            />
+          </div>
+          {useHttpsHelper && !hasHttpsToken ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {rich(m.settings.https.needsToken)}
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-3 rounded-lg border border-bd bg-raised-40 p-4">

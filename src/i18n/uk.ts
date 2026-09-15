@@ -2,7 +2,6 @@ import type { Messages } from "./en";
 
 export const uk: Messages = {
   app: {
-    subtitle: `Керування SSH-ключами, git-ідентичністю та акаунтами платформ`,
     githubRepo: `Репозиторій GitHub`,
     themeTitle: `Тема`,
     oauthSettings: `Налаштування OAuth`,
@@ -55,6 +54,13 @@ export const uk: Messages = {
       notFound: `<code>gh</code> не знайдено в PATH. Встановіть <a>GitHub CLI</a>, щоб перемикати його акаунт разом із профілем.`,
       toggle: `Перемикати акаунт gh разом із профілем`,
       toggleHint: `Виконує <code>gh auth switch --user <login></code> під час кожної активації. Логін, у який gh не ввійшов, пропускається.`,
+    },
+    https: {
+      title: `HTTPS-ремоути`,
+      intro: `Якщо ремоут починається з <code>https://</code>, git запитує пароль у credential helper — звідси й вікно, знайоме за іншими інструментами. Коли ввімкнено, git запитує Git Account Manager і отримує токен активного профілю: зміна профілю перемикає HTTPS так само, як уже перемикає SSH.`,
+      toggle: `Відповідати на запити облікових даних HTTPS`,
+      toggleHint: `Записує <code>credential.https://<host>.helper</code> для хостів, на які в активного профілю є токен, і прибирає з решти — там і далі відповідає ваш попередній менеджер облікових даних.`,
+      needsToken: `У жодного акаунта активного профілю ще немає HTTPS-токена, тому нічого не налаштовано. Додайте його в профілі, у полі <b>HTTPS-токен</b> платформи.`,
     },
     tortoise: {
       title: `TortoiseGit та Git у командному рядку`,
@@ -162,6 +168,15 @@ export const uk: Messages = {
       scopesHint: `Вибери scopes: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket.`,
       errCreds: `Вкажіть і email Atlassian, і API-токен.`,
       emailPrivacy: `У Bitbucket немає noreply-адреси. Щоб особиста пошта не потрапляла в коміти, додай підтверджений аліас у <a>Email aliases</a> і вкажи його як Git-email — коміти лишаться прив'язані до акаунта.`,
+    },
+    https: {
+      label: `HTTPS-токен`,
+      placeholder: `Встав токен для https://-ремоутів`,
+      storedPlaceholder: `Збережено — встав новий, щоб замінити`,
+      remove: `Видалити збережений токен`,
+      hintGithub: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. Створи <a>personal access token</a> зі скоупом <code>repo</code>: токеном входу пушити через HTTPS не можна.`,
+      hintGitlab: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. Створи <a>personal access token</a> з <code>write_repository</code>: токен входу живе лише кілька годин.`,
+      hintBitbucket: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. <a>API-токен</a>, яким ти під'єднувався, уже відповідає тут — додавай інший, лише якщо git має використовувати інший токен.`,
     },
     editTitle: `Редагувати профіль`,
     newTitle: `Новий профіль`,

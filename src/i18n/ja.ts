@@ -2,7 +2,6 @@ import type { Messages } from "./en";
 
 export const ja: Messages = {
   app: {
-    subtitle: `SSHキー、git のアイデンティティ、プラットフォームのアカウントを管理`,
     githubRepo: `GitHub リポジトリ`,
     themeTitle: `テーマ`,
     oauthSettings: `OAuth 設定`,
@@ -55,6 +54,13 @@ export const ja: Messages = {
       notFound: `PATH に <code>gh</code> が見つかりません。プロフィールと一緒にアカウントを切り替えるには <a>GitHub CLI</a> をインストールしてください。`,
       toggle: `プロフィールと一緒に gh のアカウントを切り替える`,
       toggleHint: `有効化のたびに <code>gh auth switch --user <login></code> を実行します。gh がサインインしていないログインはスキップされます。`,
+    },
+    https: {
+      title: `HTTPS リモート`,
+      intro: `<code>https://</code> で始まるリモートでは、git はパスワードを credential helper に尋ねます。ほかのツールでポップアップが出るのはこのためです。これを有効にすると git は Git Account Manager に尋ね、アクティブなプロファイルのトークンを受け取ります。プロファイルを切り替えれば、SSH と同じように HTTPS も切り替わります。`,
+      toggle: `git の HTTPS 認証情報の要求に応答する`,
+      toggleHint: `アクティブなプロファイルがトークンを持つホストにだけ <code>credential.https://<host>.helper</code> を書き込み、ほかのホストからは削除します。残りのホストは、これまで使っていた認証情報マネージャーが引き続き応答します。`,
+      needsToken: `アクティブなプロファイルのどのアカウントにも HTTPS トークンがないため、まだ何も設定されていません。プロファイルのプラットフォーム欄の <b>HTTPS トークン</b> に追加してください。`,
     },
     tortoise: {
       title: `TortoiseGit とコマンドラインの Git`,
@@ -162,6 +168,15 @@ export const ja: Messages = {
       scopesHint: `スコープを選択: read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket`,
       errCreds: `Atlassian のメールと API トークンの両方を入力してください。`,
       emailPrivacy: `Bitbucket には noreply アドレスがありません。個人のメールをコミットに残さないには、<a>Email aliases</a> で確認済みのエイリアスを追加し、Git のメールに指定してください。コミットはアカウントに紐付いたままです。`,
+    },
+    https: {
+      label: `HTTPS トークン`,
+      placeholder: `https:// リモート用のトークンを貼り付け`,
+      storedPlaceholder: `保存済み — 置き換えるには新しいトークンを貼り付け`,
+      remove: `保存したトークンを削除`,
+      hintGithub: `設定で HTTPS credential helper を有効にすると、<code>https://</code> リモートで使われます。<code>repo</code> スコープを付けた<a>パーソナルアクセストークン</a>を作成してください。サインイン用のトークンでは HTTPS で push できません。`,
+      hintGitlab: `設定で HTTPS credential helper を有効にすると、<code>https://</code> リモートで使われます。<code>write_repository</code> を付けた<a>パーソナルアクセストークン</a>を作成してください。サインイン用のトークンは数時間で期限切れになります。`,
+      hintBitbucket: `設定で HTTPS credential helper を有効にすると、<code>https://</code> リモートで使われます。接続に使った <a>API トークン</a>がすでにここで応答します。git に別のトークンを使わせたい場合だけ追加してください。`,
     },
     editTitle: `プロフィールを編集`,
     newTitle: `新しいプロフィール`,

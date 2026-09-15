@@ -171,6 +171,20 @@ export default function ProfileForm({
     loadRepoState().catch(() => {});
   }, [loadRepoState]);
 
+  // Which accounts already hold an HTTPS token. The tokens themselves stay in
+  // the credential store and are never read back into the form.
+  useEffect(() => {
+    if (!profile) return;
+    api
+      .httpsTokenPlatforms(profile.id)
+      .then((platforms) => {
+        for (const platform of platforms) {
+          update(platform, { httpsTokenStored: true });
+        }
+      })
+      .catch(() => {});
+  }, [profile, update]);
+
   const ghPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ghTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ghCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -545,6 +559,28 @@ export default function ProfileForm({
     };
   }
 
+  /** Sends the HTTPS tokens typed into the form to the credential store, after
+   *  the profile itself is saved: the account they belong to has to exist
+   *  before there is anything to key them by. */
+  async function saveTypedHttpsTokens() {
+    for (const platform of PLATFORMS) {
+      const token = sections[platform].httpsToken.trim();
+      if (!token) continue;
+      await api.saveHttpsToken({ profileId, platform, token });
+      update(platform, { httpsToken: "", httpsTokenStored: true });
+    }
+  }
+
+  async function removeHttpsToken(platform: PlatformId) {
+    try {
+      await api.saveHttpsToken({ profileId, platform, token: "" });
+      update(platform, { httpsToken: "", httpsTokenStored: false });
+    } catch (e) {
+      // The field keeps saying a token is stored, because one still is.
+      setError(String(e));
+    }
+  }
+
   async function handleSave() {
     if (!name.trim()) {
       setError(m.form.errProfileName);
@@ -565,6 +601,7 @@ export default function ProfileForm({
 
     try {
       await api.saveProfile(p);
+      await saveTypedHttpsTokens();
       await api.saveProfileFolders({ profileId: p.id, roots });
       onSave(p);
     } catch (e) {
@@ -761,6 +798,7 @@ export default function ProfileForm({
                   ...attachedKey(sections[platform]),
                 })
               }
+              onRemoveHttpsToken={() => removeHttpsToken(platform)}
               onOpenSettings={onSettings}
             />
           ))}

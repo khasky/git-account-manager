@@ -2,7 +2,6 @@ import type { Messages } from "./en";
 
 export const fr: Messages = {
   app: {
-    subtitle: `Gérez les clés SSH, l’identité git et les comptes de plateformes`,
     githubRepo: `Dépôt GitHub`,
     themeTitle: `Thème`,
     oauthSettings: `Paramètres OAuth`,
@@ -55,6 +54,13 @@ export const fr: Messages = {
       notFound: `<code>gh</code> est introuvable dans le PATH. Installez la <a>GitHub CLI</a> pour basculer son compte avec le profil.`,
       toggle: `Basculer le compte gh avec le profil`,
       toggleHint: `Lance <code>gh auth switch --user <login></code> à chaque activation. Un login auquel gh n'est pas connecté est ignoré.`,
+    },
+    https: {
+      title: `Dépôts distants HTTPS`,
+      intro: `Un dépôt distant commençant par <code>https://</code> envoie git chercher le mot de passe auprès d'un credential helper, d'où la fenêtre que montrent d'autres outils. Avec cette option, git interroge Git Account Manager et reçoit le jeton du profil actif : changer de profil change HTTPS comme cela change déjà SSH.`,
+      toggle: `Répondre aux demandes d'identifiants HTTPS de git`,
+      toggleHint: `Écrit <code>credential.https://<host>.helper</code> pour les hôtes dont le profil actif possède un jeton, et le retire des autres : ceux-ci restent gérés par votre gestionnaire d'identifiants habituel.`,
+      needsToken: `Aucun compte du profil actif n'a encore de jeton HTTPS, rien n'est donc configuré. Ajoutez-en un dans le profil, dans le champ <b>Jeton HTTPS</b> de la plateforme.`,
     },
     tortoise: {
       title: `TortoiseGit et Git en ligne de commande`,
@@ -162,6 +168,15 @@ export const fr: Messages = {
       scopesHint: `Sélectionnez les scopes : read:user:bitbucket, read:ssh-key:bitbucket, write:ssh-key:bitbucket, read:workspace:bitbucket.`,
       errCreds: `Saisissez votre e-mail Atlassian et votre jeton d'API.`,
       emailPrivacy: `Bitbucket n'a pas d'adresse noreply. Pour que votre e-mail personnel n'apparaisse pas dans les commits, ajoutez un alias confirmé dans <a>Email aliases</a> et utilisez-le comme e-mail Git — les commits restent liés à votre compte.`,
+    },
+    https: {
+      label: `Jeton HTTPS`,
+      placeholder: `Collez un jeton pour les dépôts https://`,
+      storedPlaceholder: `Enregistré — collez-en un nouveau pour le remplacer`,
+      remove: `Supprimer le jeton enregistré`,
+      hintGithub: `Utilisé pour les dépôts <code>https://</code> dès que le credential helper HTTPS est activé dans les paramètres. Créez un <a>jeton d'accès personnel</a> avec la portée <code>repo</code> ; le jeton de connexion ne permet pas de pousser en HTTPS.`,
+      hintGitlab: `Utilisé pour les dépôts <code>https://</code> dès que le credential helper HTTPS est activé dans les paramètres. Créez un <a>jeton d'accès personnel</a> avec <code>write_repository</code> ; le jeton de connexion expire en quelques heures.`,
+      hintBitbucket: `Utilisé pour les dépôts <code>https://</code> dès que le credential helper HTTPS est activé dans les paramètres. Le <a>jeton d'API</a> avec lequel vous vous êtes connecté répond déjà ici — n'en ajoutez un que pour que git utilise un autre jeton.`,
     },
     editTitle: `Modifier le profil`,
     newTitle: `Nouveau profil`,
