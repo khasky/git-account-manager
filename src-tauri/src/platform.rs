@@ -607,9 +607,195 @@ async fn delete_bitbucket_key(
     Ok(())
 }
 
+/// What a platform will say about a token meant for pushing over HTTPS.
+pub struct HttpsToken {
+    /// Who the platform says the token belongs to, so a token pasted from
+    /// another account is caught before git authenticates as the wrong person.
+    /// Absent where the token could not be put to the platform at all.
+    pub username: Option<String>,
+    /// Set when the platform does not disclose whether the token can push, and
+    /// the caller should say so rather than claim the token was checked.
+    pub note: Option<String>,
+}
+
+/// Whether a token carries what a push needs, as far as the platform will say.
+///
+/// A token the platform rejects, or one it names as unable to push, comes back
+/// as an error: that is the case worth blocking, because it fails at `git push`
+/// with a 403 the user has no way to trace back to here. Anything the platform
+/// does not disclose is stored with a note instead of refused — refusing a
+/// token that might be perfectly good would cost more than it saves.
+pub async fn check_https_token(platform: Platform, token: &str) -> Result<HttpsToken, String> {
+    // What git is handed for a bare Atlassian token is the
+    // `x-bitbucket-api-token-auth` username beside it, while the REST API
+    // authenticates one with the account email, which a bare token does not
+    // carry. Refusing it here would refuse a token that pushes.
+    if platform == Platform::Bitbucket && !token.contains(':') {
+        return Ok(HttpsToken {
+            username: None,
+            note: Some(
+                "Bitbucket checks an API token only together with the account email. Paste it as email:token to have it checked here."
+                    .to_string(),
+            ),
+        });
+    }
+
+    let user = verify_token(platform, token).await?;
+    let client = client();
+
+    let note = match platform {
+        Platform::Github => github_push_permission(github_scopes(client, token).await.as_deref())?,
+        Platform::Gitlab => gitlab_push_permission(&gitlab_scopes(client, token).await)?,
+        // Bitbucket answers for an Atlassian API token without naming its
+        // scopes, so the account it belongs to is all there is to check.
+        Platform::Bitbucket => Some(
+            "Bitbucket does not disclose this token's scopes. It needs write:repository:bitbucket to push."
+                .to_string(),
+        ),
+    };
+
+    Ok(HttpsToken {
+        username: Some(user.username),
+        note,
+    })
+}
+
+/// The scopes a classic GitHub token was issued with. A fine-grained token
+/// carries per-repository permissions instead, which this header does not name.
+async fn github_scopes(client: &Client, token: &str) -> Option<String> {
+    let resp = client
+        .get("https://api.github.com/user")
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .ok()?;
+    let scopes = resp.headers().get("x-oauth-scopes")?;
+    Some(scopes.to_str().ok()?.to_string())
+}
+
+async fn gitlab_scopes(client: &Client, token: &str) -> Option<Vec<String>> {
+    #[derive(Deserialize)]
+    struct TokenSelf {
+        scopes: Vec<String>,
+    }
+
+    let resp = client
+        .get("https://gitlab.com/api/v4/personal_access_tokens/self")
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    Some(resp.json::<TokenSelf>().await.ok()?.scopes)
+}
+
+/// `repo` reaches private repositories, `public_repo` only public ones, and
+/// GitHub grants a push with either.
+const GITHUB_PUSH_SCOPES: [&str; 2] = ["repo", "public_repo"];
+
+fn github_push_permission(scopes: Option<&str>) -> Result<Option<String>, String> {
+    let Some(scopes) = scopes.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(Some(
+            "GitHub names no scopes for this token, which is what a fine-grained token looks like here. Give it Contents: Read and write on the repositories you push to.".to_string(),
+        ));
+    };
+
+    if scopes
+        .split(',')
+        .map(str::trim)
+        .any(|scope| GITHUB_PUSH_SCOPES.contains(&scope))
+    {
+        return Ok(None);
+    }
+
+    Err(format!(
+        "This token carries {} and cannot push. Issue one with the repo scope.",
+        scopes
+    ))
+}
+
+/// `api` is full access and covers a push; `write_repository` is the narrow
+/// scope meant for exactly this.
+const GITLAB_PUSH_SCOPES: [&str; 2] = ["api", "write_repository"];
+
+fn gitlab_push_permission(scopes: &Option<Vec<String>>) -> Result<Option<String>, String> {
+    let Some(scopes) = scopes else {
+        return Ok(Some(
+            "GitLab did not disclose this token's scopes. It needs api or write_repository to push."
+                .to_string(),
+        ));
+    };
+
+    if scopes
+        .iter()
+        .any(|scope| GITLAB_PUSH_SCOPES.contains(&scope.as_str()))
+    {
+        return Ok(None);
+    }
+
+    Err(format!(
+        "This token carries {} and cannot push. Issue one with write_repository.",
+        scopes.join(", ")
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The scopes this app's own sign-in asks for. None of them reaches a
+    /// repository, so a token issued for the app and pasted into the HTTPS
+    /// field authenticates and then fails the push with a 403.
+    #[test]
+    fn a_github_token_without_a_repository_scope_is_refused() {
+        let signin_scopes = "read:user, user:email, admin:public_key, write:ssh_signing_key";
+
+        let refusal = github_push_permission(Some(signin_scopes)).unwrap_err();
+
+        assert!(refusal.contains("repo scope"), "{}", refusal);
+        assert!(refusal.contains("read:user"), "{}", refusal);
+    }
+
+    #[test]
+    fn a_github_token_that_can_push_passes_without_a_note() {
+        assert_eq!(github_push_permission(Some("repo, gist")), Ok(None));
+        assert_eq!(github_push_permission(Some("public_repo")), Ok(None));
+    }
+
+    /// A fine-grained token carries per-repository permissions that this header
+    /// does not name, so it is stored with what the user has to check instead
+    /// of being refused on an absence.
+    #[test]
+    fn a_github_token_with_no_scopes_named_is_stored_with_a_note() {
+        for header in [None, Some(""), Some("  ")] {
+            let note = github_push_permission(header).unwrap();
+            assert!(
+                note.is_some_and(|n| n.contains("Contents: Read and write")),
+                "{:?} should carry the fine-grained note",
+                header
+            );
+        }
+    }
+
+    #[test]
+    fn gitlab_scopes_decide_the_same_way() {
+        let read_only = Some(vec!["read_user".to_string(), "read_api".to_string()]);
+        let refusal = gitlab_push_permission(&read_only).unwrap_err();
+        assert!(refusal.contains("write_repository"), "{}", refusal);
+
+        assert_eq!(
+            gitlab_push_permission(&Some(vec!["write_repository".to_string()])),
+            Ok(None)
+        );
+        assert_eq!(
+            gitlab_push_permission(&Some(vec!["api".to_string()])),
+            Ok(None)
+        );
+        assert!(gitlab_push_permission(&None).unwrap().is_some());
+    }
 
     /// The real bodies the three platforms answer with when the account already
     /// carries the key. Reporting these as failures would make a second Save

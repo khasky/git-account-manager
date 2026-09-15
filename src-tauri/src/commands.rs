@@ -390,20 +390,56 @@ pub fn save_settings(settings: OAuthSettings) -> Result<(), String> {
 /// Kept out of `save_profile`: like the Bitbucket connect form, a secret goes
 /// straight to the credential store and never through the state file. An empty
 /// value removes what was there, which is how the form clears a token.
+///
+/// The token is checked against the platform before it is stored, because the
+/// alternative is finding out at `git push`, where the platform answers 403
+/// with nothing that points back at this field. Returns what the platform would
+/// not confirm, for the form to show.
+///
+/// The account it is compared against is the one in the stored profile, so a
+/// profile saved for the first time gets that half of the check on the save
+/// that follows rather than on the keystroke.
 #[tauri::command]
-pub fn save_https_token(
+pub async fn save_https_token(
     profile_id: String,
     platform: Platform,
     token: String,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let token = token.trim().to_string();
     if token.is_empty() {
         secrets::delete_https_token(&profile_id, platform)?;
-    } else {
-        secrets::set_https_token(&profile_id, platform, &token)?;
+        return storage::with_lock(|| credential::apply(&storage::load_state()?)).map(|()| None);
     }
 
-    storage::with_lock(|| credential::apply(&storage::load_state()?))
+    let expected = storage::with_lock(|| {
+        let state = storage::load_state()?;
+        Ok(state
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .and_then(|p| p.account(platform))
+            .map(|a| a.username.clone()))
+    })?;
+
+    let checked = platform::check_https_token(platform, &token).await?;
+
+    // A token from another account authenticates as that account, which is the
+    // one thing this app exists to stop from happening quietly.
+    if let (Some(expected), Some(actual)) = (&expected, &checked.username) {
+        if !expected.eq_ignore_ascii_case(actual) {
+            return Err(format!(
+                "This token belongs to {}, not {}. Issue one from the {} account.",
+                actual,
+                expected,
+                platform.label()
+            ));
+        }
+    }
+
+    secrets::set_https_token(&profile_id, platform, &token)?;
+    storage::with_lock(|| credential::apply(&storage::load_state()?))?;
+
+    Ok(checked.note)
 }
 
 /// Which of a profile's platforms hold an HTTPS token, for a form that shows
