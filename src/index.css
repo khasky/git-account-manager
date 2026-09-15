@@ -150,9 +150,14 @@
   @apply rounded-md bg-raised px-3 py-1.5 text-xs font-medium text-fg-2 transition-colors hover:bg-subtle disabled:opacity-50;
 }
 
-/* An icon-only control in the header bar. */
+/* An icon-only control in the header bar. The glyph is sized here rather than
+   at each call site: a button that passed its own size drew a mark a couple of
+   pixels off from the ones beside it. */
 @utility btn-icon {
   @apply rounded-md bg-raised p-2 text-fg-4 transition-colors hover:bg-subtle hover:text-fg-2;
+}
+.btn-icon > svg {
+  @apply h-5 w-5;
 }
 
 @utility panel {

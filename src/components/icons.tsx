@@ -109,10 +109,13 @@ export const PeopleIcon = (p: IconProps) => (
   />
 );
 
-export const GitHubIcon = ({ className }: { className: string }) => (
+/** The mark fills its own box edge to edge, unlike the stroked icons drawn in
+ *  a 24-unit box with room around them, so at the same width it reads as the
+ *  larger one. The viewBox carries that missing room instead of the call sites. */
+export const GitHubIcon = ({ className }: IconProps) => (
   <svg
     className={className}
-    viewBox="0 0 16 16"
+    viewBox="-2 -2 20 20"
     fill="currentColor"
     aria-hidden="true"
   >
