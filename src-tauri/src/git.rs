@@ -115,6 +115,50 @@ pub fn unset_global_ssh_command() -> Result<(), String> {
     run_git_optional(&["config", "--global", "--unset", "core.sshCommand"])
 }
 
+/// Where git looks for the helper that answers for one host. Scoped to the
+/// host rather than set globally, so a credential manager the user already runs
+/// keeps answering for every host this app has no account on.
+fn credential_helper_key(host: &str) -> String {
+    format!("credential.https://{}.helper", host)
+}
+
+/// Git runs a helper value beginning with `!` through a shell, and that is the
+/// only form a path with spaces survives in, once quoted.
+fn helper_command(helper_path: &str) -> String {
+    format!("!\"{}\" credential", helper_path.replace('\\', "/"))
+}
+
+/// Points git at this app's helper for one host.
+///
+/// The empty value written first is git's own way to reset the helper list for
+/// a context: helpers are consulted in config order, so without it a globally
+/// configured manager answers before this one and the active profile never
+/// reaches the wire.
+pub fn set_credential_helper(host: &str, helper_path: &str) -> Result<(), String> {
+    let key = credential_helper_key(host);
+    unset_credential_helper(host)?;
+    run_git(&["config", "--global", "--add", &key, ""])?;
+    run_git(&[
+        "config",
+        "--global",
+        "--add",
+        &key,
+        &helper_command(helper_path),
+    ])?;
+    Ok(())
+}
+
+/// Removes every helper entry this app wrote for one host, which hands the host
+/// back to whatever was answering for it before.
+pub fn unset_credential_helper(host: &str) -> Result<(), String> {
+    run_git_optional(&[
+        "config",
+        "--global",
+        "--unset-all",
+        &credential_helper_key(host),
+    ])
+}
+
 pub fn is_repo(dir: &Path) -> bool {
     dir.join(".git").exists()
 }
@@ -223,4 +267,25 @@ fn run_git_optional(args: &[&str]) -> Result<(), String> {
     }
 
     Err(stderr.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_helper_path_with_spaces_stays_one_argument_for_the_shell() {
+        assert_eq!(
+            helper_command(r"C:\Program Files\Git Account Manager\gam.exe"),
+            "!\"C:/Program Files/Git Account Manager/gam.exe\" credential"
+        );
+    }
+
+    #[test]
+    fn the_helper_key_names_one_host_and_not_the_whole_config() {
+        assert_eq!(
+            credential_helper_key("github.com"),
+            "credential.https://github.com.helper"
+        );
+    }
 }

@@ -17,7 +17,8 @@ use crate::models::{
 };
 use crate::tray::{self, TrayLabels};
 use crate::{
-    doctor, gh, guard, hooks, oauth, openssh_integration, platform, repos, secrets, ssh, storage,
+    credential, doctor, gh, guard, hooks, oauth, openssh_integration, platform, repos, secrets,
+    ssh, storage,
 };
 
 // -- profiles ---------------------------------------------------------------
@@ -78,6 +79,11 @@ fn sync_machine(state: &AppState) -> Result<(), String> {
         // being active would produce a signature the new author cannot own.
         git::set_global_signing(active.active_account().and_then(|a| a.signing_key()))?;
     }
+
+    // A helper binary that is missing, or a host the new profile has no token
+    // for, must not undo the switch of everything else; the settings page is
+    // where that failure is reported.
+    let _ = credential::apply(state);
 
     guard::apply(&state.guard, &state.profiles, &state.repo_roots)
 }
@@ -364,13 +370,53 @@ pub fn save_settings(settings: OAuthSettings) -> Result<(), String> {
     if settings.use_openssh_for_git_tools {
         openssh_integration::ensure_ssh_available()?;
     }
+    if settings.use_https_credential_helper {
+        credential::ensure_helper_available()?;
+    }
 
     storage::with_lock(|| {
         let mut state = storage::load_state()?;
         state.oauth = settings;
         storage::save_state(&state)?;
-        openssh_integration::apply(state.oauth.use_openssh_for_git_tools)
+        openssh_integration::apply(state.oauth.use_openssh_for_git_tools)?;
+        credential::apply(&state)
     })
+}
+
+// -- HTTPS credentials ------------------------------------------------------
+
+/// The token git is handed for this account's HTTPS remotes.
+///
+/// Kept out of `save_profile`: like the Bitbucket connect form, a secret goes
+/// straight to the credential store and never through the state file. An empty
+/// value removes what was there, which is how the form clears a token.
+#[tauri::command]
+pub fn save_https_token(
+    profile_id: String,
+    platform: Platform,
+    token: String,
+) -> Result<(), String> {
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        secrets::delete_https_token(&profile_id, platform)?;
+    } else {
+        secrets::set_https_token(&profile_id, platform, &token)?;
+    }
+
+    storage::with_lock(|| credential::apply(&storage::load_state()?))
+}
+
+/// Which of a profile's platforms hold an HTTPS token, for a form that shows
+/// whether one is set without reading it back out.
+#[tauri::command]
+pub fn https_token_platforms(profile_id: String) -> Result<Vec<Platform>, String> {
+    let mut set = Vec::new();
+    for platform in PLATFORMS {
+        if secrets::get_https_token(&profile_id, platform)?.is_some() {
+            set.push(platform);
+        }
+    }
+    Ok(set)
 }
 
 #[tauri::command]

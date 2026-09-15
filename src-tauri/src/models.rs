@@ -241,6 +241,11 @@ pub struct OAuthSettings {
     /// profile switch, where `gh` is installed and signed in to that login.
     #[serde(default = "default_true")]
     pub switch_gh_account: bool,
+    /// Answer git's credential requests on HTTPS remotes from the active
+    /// profile's stored token, through the `gam` helper, instead of leaving
+    /// them to whatever credential manager the machine has.
+    #[serde(default)]
+    pub use_https_credential_helper: bool,
 }
 
 impl Default for OAuthSettings {
@@ -250,6 +255,7 @@ impl Default for OAuthSettings {
             gitlab_client_id: default_gitlab_client_id(),
             use_openssh_for_git_tools: false,
             switch_gh_account: true,
+            use_https_credential_helper: false,
         }
     }
 }

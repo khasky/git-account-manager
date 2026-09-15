@@ -57,12 +57,53 @@ pub fn get_token(profile_id: &str, platform: Platform) -> Result<String, String>
     OsSecretStore.get_token(profile_id, platform)
 }
 
+/// Drops everything this account authenticates with, the HTTPS credential
+/// included: a platform disconnected from a profile must not leave a usable
+/// password behind in the credential store.
 pub fn delete_token(profile_id: &str, platform: Platform) -> Result<(), String> {
-    OsSecretStore.delete_token(profile_id, platform)
+    OsSecretStore.delete_token(profile_id, platform)?;
+    delete_https_token(profile_id, platform)
 }
 
 pub fn delete_profile_tokens(profile_id: &str) -> Result<(), String> {
-    OsSecretStore.delete_profile_tokens(profile_id)
+    OsSecretStore.delete_profile_tokens(profile_id)?;
+    for platform in PLATFORMS {
+        delete_https_token(profile_id, platform)?;
+    }
+    Ok(())
+}
+
+/// The password git is handed for an HTTPS remote, kept in its own slot rather
+/// than in the OAuth one.
+///
+/// The two are not interchangeable: the scopes this app asks for over OAuth do
+/// not reach a private repository over HTTPS (`read:user user:email
+/// admin:public_key write:ssh_signing_key` on GitHub), so the credential git
+/// needs is one the user issues themselves and pastes in.
+pub fn set_https_token(profile_id: &str, platform: Platform, token: &str) -> Result<(), String> {
+    ensure_store()?;
+    https_entry(profile_id, platform)?
+        .set_password(token)
+        .map_err(|e| store_error("save", e))
+}
+
+/// `None` where the account has no HTTPS credential, which is the normal state
+/// of every account until someone adds one.
+pub fn get_https_token(profile_id: &str, platform: Platform) -> Result<Option<String>, String> {
+    ensure_store()?;
+    match https_entry(profile_id, platform)?.get_password() {
+        Ok(token) => Ok(Some(token)),
+        Err(Error::NoEntry) => Ok(None),
+        Err(e) => Err(store_error("read", e)),
+    }
+}
+
+pub fn delete_https_token(profile_id: &str, platform: Platform) -> Result<(), String> {
+    ensure_store()?;
+    match https_entry(profile_id, platform)?.delete_credential() {
+        Ok(()) | Err(Error::NoEntry) => Ok(()),
+        Err(e) => Err(store_error("delete", e)),
+    }
 }
 
 pub fn migrate_plaintext_tokens(state: &mut AppState) -> Result<bool, String> {
@@ -159,11 +200,82 @@ fn account_name(profile_id: &str, platform: Platform) -> String {
     format!("token:{}:{}", profile_id, platform.as_str())
 }
 
+fn https_entry(profile_id: &str, platform: Platform) -> Result<Entry, String> {
+    Entry::new(SERVICE, &https_account_name(profile_id, platform))
+        .map_err(|e| store_error("open", e))
+}
+
+/// Its own prefix, so adding an HTTPS credential never overwrites the OAuth
+/// token an install already holds under `token:`.
+fn https_account_name(profile_id: &str, platform: Platform) -> String {
+    format!("https:{}:{}", profile_id, platform.as_str())
+}
+
 fn store_error(action: &str, err: Error) -> String {
     format!(
         "Could not {} token in the OS credential store: {}",
         action, err
     )
+}
+
+/// Issuer prefixes that name a secret whatever its length.
+const TOKEN_PREFIXES: [&str; 8] = [
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "github_pat_",
+    "glpat-",
+    "ATATT",
+];
+
+/// Length at which an unbroken run of token characters is treated as a secret
+/// on its own. A GitLab OAuth access token is 64 hex characters and carries no
+/// prefix to recognise it by.
+const UNPREFIXED_SECRET_LEN: usize = 32;
+
+const REDACTED: &str = "[redacted]";
+
+/// Cuts token-shaped runs out of a message before anything prints it.
+///
+/// The credential helper is the first place a stored token travels through a
+/// process this app does not own, and its diagnostics land in a terminal, a CI
+/// log or a pasted bug report. Known ceiling: a secret shorter than
+/// `UNPREFIXED_SECRET_LEN` that carries no known prefix survives, and a long
+/// identifier that is not a secret (a commit SHA) is masked along with them.
+pub fn redact(message: &str) -> String {
+    let mut out = String::with_capacity(message.len());
+    let mut run = String::new();
+
+    for ch in message.chars() {
+        if is_token_char(ch) {
+            run.push(ch);
+        } else {
+            flush_run(&mut run, &mut out);
+            out.push(ch);
+        }
+    }
+    flush_run(&mut run, &mut out);
+
+    out
+}
+
+/// Path separators, dots, colons and `=` are left out: a file path breaks into
+/// short runs instead of reading as one long secret, and the `key=value` line
+/// the credential protocol speaks in breaks at the `=`, so the value is weighed
+/// on its own rather than hidden behind the length of its key.
+fn is_token_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '+')
+}
+
+fn flush_run(run: &mut String, out: &mut String) {
+    if run.len() >= UNPREFIXED_SECRET_LEN || TOKEN_PREFIXES.iter().any(|p| run.starts_with(p)) {
+        out.push_str(REDACTED);
+    } else {
+        out.push_str(run);
+    }
+    run.clear();
 }
 
 #[cfg(test)]
@@ -284,6 +396,47 @@ mod tests {
                 .token
                 .as_deref(),
             Some("bb-token")
+        );
+    }
+
+    #[test]
+    fn redact_masks_prefixed_and_long_unprefixed_tokens() {
+        assert_eq!(
+            redact("Authorization failed for ghp_16C7e42F292c6912E7710c838347Ae178B4a"),
+            "Authorization failed for [redacted]"
+        );
+        assert_eq!(redact("token glpat-abc123DEF456"), "token [redacted]");
+        assert_eq!(
+            redact(&format!("Bearer {}", "a1b2c3d4".repeat(8))),
+            "Bearer [redacted]"
+        );
+        assert_eq!(
+            redact("password=ATATT3xFfGF0abcdefgh"),
+            "password=[redacted]"
+        );
+    }
+
+    #[test]
+    fn redact_leaves_paths_and_ordinary_words_alone() {
+        assert_eq!(
+            redact("Could not read C:/Users/dev/.ssh/id_ed25519_gam_pc_github_work"),
+            "Could not read C:/Users/dev/.ssh/id_ed25519_gam_pc_github_work"
+        );
+        assert_eq!(
+            redact("git config --global --unset-all credential.https://github.com.helper"),
+            "git config --global --unset-all credential.https://github.com.helper"
+        );
+    }
+
+    #[test]
+    fn https_credentials_live_under_their_own_key() {
+        assert_eq!(
+            https_account_name("p1", Platform::Github),
+            "https:p1:github"
+        );
+        assert_ne!(
+            https_account_name("p1", Platform::Github),
+            account_name("p1", Platform::Github)
         );
     }
 

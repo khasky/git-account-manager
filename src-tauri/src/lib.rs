@@ -1,4 +1,6 @@
+pub mod cli;
 mod commands;
+mod credential;
 mod doctor;
 mod gh;
 mod git;
@@ -80,6 +82,12 @@ pub fn run() {
                         state.migrated_to_folder_rules = true;
                         storage::save_state(&state)?;
                     }
+
+                    // What git has in its config is the path this app was at
+                    // when the switch was last saved, and a reinstall elsewhere
+                    // or a copy moved by hand leaves it naming a helper that is
+                    // no longer there. Rewritten from where this launch runs.
+                    let _ = credential::apply(&state);
 
                     // The rules live in `~/.gitconfig` and in the hooks
                     // directory, where anything can edit them, so they are
@@ -175,6 +183,8 @@ pub fn run() {
             commands::gitlab_oauth_abort,
             commands::get_settings,
             commands::save_settings,
+            commands::save_https_token,
+            commands::https_token_platforms,
             commands::openssh_integration_probe,
             commands::gh_probe,
             commands::get_git_identity,
