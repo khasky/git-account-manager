@@ -8,7 +8,7 @@ A desktop Git account manager for identity switching across popular code hosting
 
 [![License](https://img.shields.io/github/license/khasky/git-account-manager)](LICENSE) [![Version](https://img.shields.io/github/package-json/v/khasky/git-account-manager?color=blue)](./package.json) [![GitHub issues](https://img.shields.io/github/issues/khasky/git-account-manager)](https://github.com/khasky/git-account-manager/issues) [![Downloads](https://img.shields.io/github/downloads/khasky/git-account-manager/total)](https://github.com/khasky/git-account-manager/releases) [![CI](https://github.com/khasky/git-account-manager/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/khasky/git-account-manager/actions/workflows/build.yml) ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg) [![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-ea4aaa.svg?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/khasky) [![Emojery](https://api.emojery.app/badge/github/khasky/git-account-manager.svg)](https://emojery.app/react?t=github/khasky/git-account-manager)
 
-[Features](#features) · [Why GAM?](#why-git-account-manager) · [Folder-scoped identity](#folder-scoped-identity) · [Install](#installation) · [Security Notes](#security-notes) · [Development](#development) · [Troubleshooting](#troubleshooting) · [Roadmap](#roadmap) · [Contributing](#contributing) · [Reporting a vulnerability](#reporting-a-vulnerability) · [Support](#support) · [License](#license)
+[Features](#features) · [Why GAM?](#why-git-account-manager) · [Folder-scoped identity](#folder-scoped-identity) · [Install](#installation) · [Security Notes](#security-notes) · [Development](#development) · [Troubleshooting](#troubleshooting) · [Contributing](#contributing) · [Reporting a vulnerability](#reporting-a-vulnerability) · [Support](#support) · [License](#license)
 
 <picture>
   <source media="(prefers-color-scheme: dark)"  srcset="screenshots/dark1.webp">
@@ -30,6 +30,7 @@ A desktop Git account manager for identity switching across popular code hosting
 - **OAuth sign-in** — **GitHub** via device code flow, **GitLab.com** via browser authorization + PKCE, **Bitbucket** via an Atlassian API token. Client / Application IDs are configurable in Settings (with built-in defaults).
 - **Secure token storage** — OAuth and API tokens are kept in the OS credential store (**Windows Credential Manager**, **macOS Keychain**, or Linux **Secret Service**) instead of plaintext JSON.
 - **SSH keys** — Generate **Ed25519** keys with `ssh-keygen`, attach an existing key from `~/.ssh`, **upload** keys to the host, optionally **remove** them when deleting a profile, and **copy a public key** to the clipboard.
+- **HTTPS remotes** — An optional built-in **credential helper**: with it on, git asks this app for the password on `https://` remotes and gets the active profile's token, so switching a profile switches HTTPS the way it already switches SSH. Configured per host, so every host you have no token for keeps whatever credential manager you already use. Each account carries its own **HTTPS token** field, stored in the OS credential store.
 - **Commit signing** — The same Ed25519 key can sign commits: the app registers it as a signing key and writes `gpg.format = ssh`, `user.signingkey`, and `commit.gpgsign` for the profile. On GitHub the **Verified** badge additionally requires the commit email to be confirmed on the account. Signing runs through `git commit`, so clients that commit via libgit2 (TortoiseGit among them) may not produce a signature.
 - **GitHub CLI** — Activating a profile also runs `gh auth switch` to that profile's GitHub login, so `gh` acts as the same account the SSH key does. Optional, on by default, skipped where `gh` is missing or not signed in to that login.
 - **System tray** — Closing the window hides the app; the tray shows the active identity, lets you switch profiles, restore the window, or quit.
@@ -46,7 +47,7 @@ It's the only tool here that **generates and uploads an SSH key for you from a G
 | Generate + upload SSH key   |           ✅            |             ⚠️ login only              |                          ❌                          |                               ❌                               |                   ⚠️                    |
 | GitHub / GitLab / Bitbucket |           ✅            |                 GitHub                 |                        GitHub                        |                           ✅ +Azure                            |                   ✅                    |
 | One-click identity switch   |           ✅            |                  CLI                   |                          ❌                          |                              auto                              |                   ✅                    |
-| HTTPS credential helper     |      🚧 _planned_       |                   ✅                   |                          ✅                          |                               ✅                               |                   ✅                    |
+| HTTPS credential helper     |           ✅            |                   ✅                   |                          ✅                          |                               ✅                               |                   ✅                    |
 | Free & open source (MIT)    |           ✅            |                   ✅                   |                          ✅                          |                               ✅                               |                ❌ _paid_                |
 
 <sub>Measured against the most-used tools in the space — <b><code>gh</code></b> 44k★ · <b>GitHub Desktop</b> 21k★ · <b>GCM</b> 8.9k★ · <b>GitKraken</b> (popular paid client).</sub>
@@ -362,9 +363,9 @@ The warning typically disappears for everyone once the installer is code-signed 
 
 <br>
 
-During **Git for Windows** setup, the **"Choose a credential helper"** step offers **Git Credential Manager (GCM)** (default) or **None**. Either choice is fine — **Git Account Manager does not require a credential helper** and works out of the box with both.
+During **Git for Windows** setup, the **"Choose a credential helper"** step offers **Git Credential Manager (GCM)** (default) or **None**. Either choice is fine — **Git Account Manager does not require a credential helper** and works out of the box with both. It can also answer for HTTPS itself: see **HTTPS remotes** in Settings, which writes a helper entry only for the hosts the active profile holds a token for and leaves your choice here in charge of every other host.
 
-This app drives Git over **SSH**, not HTTPS:
+Out of the box this app drives Git over **SSH**, not HTTPS:
 
 - It switches your active identity with `git config --global user.name` / `user.email`.
 - It rewrites `~/.ssh/config` so SSH to **github.com** / **gitlab.com** uses the selected profile's key (`User git`, `IdentityFile`, `IdentitiesOnly yes`).
@@ -372,12 +373,12 @@ This app drives Git over **SSH**, not HTTPS:
 
 SSH authenticates with **keys**, which never use a credential helper — so the GCM-vs-None choice does not affect anything this app does.
 
-**The credential helper only matters for HTTPS remotes** (`https://github.com/...`), which this app does not manage:
+**The credential helper only matters for HTTPS remotes** (`https://github.com/...`), which this app manages only once you switch **HTTPS remotes** on in Settings and give the account an HTTPS token:
 
 | Your Git remotes                                          | If you pick "None"                                                                                                                                                                                      |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **SSH** (`git@github.com:...`) — what this app configures | Works out of the box; nothing else needed.                                                                                                                                                              |
-| **HTTPS** (`https://github.com/...`)                      | Git prompts for credentials on every push/pull (GitHub requires a **personal access token**, not a password). This is standard Git/HTTPS behavior, unrelated to this app — keeping **GCM** is smoother. |
+| **HTTPS** (`https://github.com/...`)                      | Git prompts for credentials on every push/pull (GitHub requires a **personal access token**, not a password). Either keep **GCM**, or switch **HTTPS remotes** on here and let the active profile's token answer. |
 
 </details>
 
@@ -447,11 +448,6 @@ After you click **Connect with GitLab**, the browser completes authorization and
 **Note:** OAuth in this app targets **GitLab.com** (`gitlab.com`). Self-managed GitLab instances use different hostnames and are not covered by the built-in URLs.
 
 </details>
-
-## Roadmap
-
-- **HTTPS / PAT support** — work with HTTPS remotes via a built-in git **credential helper** (not just SSH).
-- **CLI** — `gam set <profile>` for terminals, CI, and dotfiles.
 
 ## Contributing
 
