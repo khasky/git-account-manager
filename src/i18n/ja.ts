@@ -174,6 +174,7 @@ export const ja: Messages = {
       placeholder: `https:// リモート用のトークンを貼り付け`,
       storedPlaceholder: `保存済み — 置き換えるには新しいトークンを貼り付け`,
       remove: `保存したトークンを削除`,
+      unverified: `保存しましたが未確認です: {reason}`,
       hintGithub: `設定で HTTPS credential helper を有効にすると、<code>https://</code> リモートで使われます。<code>repo</code> スコープを付けた<a>パーソナルアクセストークン</a>を作成してください。サインイン用のトークンでは HTTPS で push できません。`,
       hintGitlab: `設定で HTTPS credential helper を有効にすると、<code>https://</code> リモートで使われます。<code>write_repository</code> を付けた<a>パーソナルアクセストークン</a>を作成してください。サインイン用のトークンは数時間で期限切れになります。`,
       hintBitbucket: `設定で HTTPS credential helper を有効にすると、<code>https://</code> リモートで使われます。接続に使った <a>API トークン</a>がすでにここで応答します。git に別のトークンを使わせたい場合だけ追加してください。`,

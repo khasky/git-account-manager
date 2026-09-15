@@ -174,6 +174,7 @@ export const de: Messages = {
       placeholder: `Token für https://-Remotes einfügen`,
       storedPlaceholder: `Gespeichert — neues Token einfügen, um es zu ersetzen`,
       remove: `Gespeichertes Token entfernen`,
+      unverified: `Gespeichert, aber nicht geprüft: {reason}`,
       hintGithub: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Erstelle ein <a>Personal Access Token</a> mit dem Scope <code>repo</code>; das Anmelde-Token kann über HTTPS nicht pushen.`,
       hintGitlab: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Erstelle ein <a>Personal Access Token</a> mit <code>write_repository</code>; das Anmelde-Token läuft nach wenigen Stunden ab.`,
       hintBitbucket: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Das <a>API-Token</a>, mit dem du dich verbunden hast, antwortet hier bereits — füge nur eines hinzu, wenn Git ein anderes Token nutzen soll.`,

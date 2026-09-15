@@ -115,12 +115,16 @@ export const deletePlatformToken = (args: {
 export const deleteProfileTokens = (profileId: string) =>
   invoke<void>("delete_profile_tokens", { profileId });
 
-/** An empty token removes the stored one. */
+/**
+ * An empty token removes the stored one. Rejects when the platform refuses the
+ * token or names it as unable to push; resolves with what the platform would
+ * not confirm, or null when it confirmed everything.
+ */
 export const saveHttpsToken = (args: {
   profileId: string;
   platform: PlatformId;
   token: string;
-}) => invoke<void>("save_https_token", args);
+}) => invoke<string | null>("save_https_token", args);
 
 /** Which platforms of this profile hold an HTTPS token, never the token itself. */
 export const httpsTokenPlatforms = (profileId: string) =>

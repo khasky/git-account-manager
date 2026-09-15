@@ -174,6 +174,7 @@ export const zhHans: Messages = {
       placeholder: `粘贴用于 https:// 远程的令牌`,
       storedPlaceholder: `已保存 — 粘贴新令牌即可替换`,
       remove: `删除已保存的令牌`,
+      unverified: `已保存，但未验证：{reason}`,
       hintGithub: `在设置中开启 HTTPS credential helper 后，用于 <code>https://</code> 远程。请创建带 <code>repo</code> 权限的<a>个人访问令牌</a>；登录用的令牌无法通过 HTTPS 推送。`,
       hintGitlab: `在设置中开启 HTTPS credential helper 后，用于 <code>https://</code> 远程。请创建带 <code>write_repository</code> 的<a>个人访问令牌</a>；登录用的令牌几小时就会过期。`,
       hintBitbucket: `在设置中开启 HTTPS credential helper 后，用于 <code>https://</code> 远程。你连接时用的 <a>API 令牌</a>已经能在这里应答 — 只有想让 git 使用另一个令牌时才需要添加。`,

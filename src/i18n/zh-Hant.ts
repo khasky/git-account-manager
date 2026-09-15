@@ -174,6 +174,7 @@ export const zhHant: Messages = {
       placeholder: `貼上用於 https:// 遠端的權杖`,
       storedPlaceholder: `已儲存 — 貼上新權杖即可取代`,
       remove: `刪除已儲存的權杖`,
+      unverified: `已儲存，但未驗證：{reason}`,
       hintGithub: `在設定中開啟 HTTPS credential helper 後，用於 <code>https://</code> 遠端。請建立具 <code>repo</code> 範圍的<a>個人存取權杖</a>；登入用的權杖無法透過 HTTPS 推送。`,
       hintGitlab: `在設定中開啟 HTTPS credential helper 後，用於 <code>https://</code> 遠端。請建立具 <code>write_repository</code> 的<a>個人存取權杖</a>；登入用的權杖幾小時就會過期。`,
       hintBitbucket: `在設定中開啟 HTTPS credential helper 後，用於 <code>https://</code> 遠端。你連線時使用的 <a>API 權杖</a>已經能在這裡回應 — 只有想讓 git 使用其他權杖時才需要新增。`,

@@ -42,6 +42,9 @@ export interface PlatformState {
    *  Never what is already stored: a stored one is not read back out. */
   httpsToken: string;
   httpsTokenStored: boolean;
+  /** What the platform would not confirm about the stored token, so a token
+   *  that may not be able to push says so here rather than at the next push. */
+  httpsTokenNotice: string;
   deviceCode: DeviceCodeResponse | null;
 }
 
@@ -67,6 +70,7 @@ export function emptyPlatform(): PlatformState {
     usernameNotice: "",
     httpsToken: "",
     httpsTokenStored: false,
+    httpsTokenNotice: "",
     deviceCode: null,
   };
 }
@@ -95,6 +99,10 @@ interface Props {
   onUploadExistingKey: () => void;
   onSelectKey: (key: SshKeyInfo) => void;
   onDisconnect: () => void;
+  /** Hands the typed HTTPS token over to be checked and stored, on the way out
+   *  of the field, so what the platform says about it lands next to the field
+   *  rather than after the form has closed. */
+  onCommitHttpsToken: () => void;
   /** Drops the stored HTTPS token now, rather than with the rest of the form:
    *  it lives in the credential store, not in the profile being edited. */
   onRemoveHttpsToken: () => void;
@@ -151,6 +159,7 @@ export default function PlatformSection({
   onUploadExistingKey,
   onSelectKey,
   onDisconnect,
+  onCommitHttpsToken,
   onRemoveHttpsToken,
   onOpenSettings,
 }: Props) {
@@ -437,6 +446,7 @@ export default function PlatformSection({
           type="password"
           value={state.httpsToken}
           onChange={(e) => onChange({ httpsToken: e.target.value })}
+          onBlur={onCommitHttpsToken}
           placeholder={
             state.httpsTokenStored
               ? m.form.https.storedPlaceholder
@@ -450,6 +460,11 @@ export default function PlatformSection({
             codeClass: "text-fg-4",
           })}
         </p>
+        {state.httpsTokenNotice && (
+          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+            {fmt(m.form.https.unverified, { reason: state.httpsTokenNotice })}
+          </p>
+        )}
         {state.httpsTokenStored && (
           <button
             type="button"

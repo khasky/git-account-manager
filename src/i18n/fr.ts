@@ -174,6 +174,7 @@ export const fr: Messages = {
       placeholder: `Collez un jeton pour les dépôts https://`,
       storedPlaceholder: `Enregistré — collez-en un nouveau pour le remplacer`,
       remove: `Supprimer le jeton enregistré`,
+      unverified: `Enregistré, mais non vérifié : {reason}`,
       hintGithub: `Utilisé pour les dépôts <code>https://</code> dès que le credential helper HTTPS est activé dans les paramètres. Créez un <a>jeton d'accès personnel</a> avec la portée <code>repo</code> ; le jeton de connexion ne permet pas de pousser en HTTPS.`,
       hintGitlab: `Utilisé pour les dépôts <code>https://</code> dès que le credential helper HTTPS est activé dans les paramètres. Créez un <a>jeton d'accès personnel</a> avec <code>write_repository</code> ; le jeton de connexion expire en quelques heures.`,
       hintBitbucket: `Utilisé pour les dépôts <code>https://</code> dès que le credential helper HTTPS est activé dans les paramètres. Le <a>jeton d'API</a> avec lequel vous vous êtes connecté répond déjà ici — n'en ajoutez un que pour que git utilise un autre jeton.`,

@@ -559,22 +559,35 @@ export default function ProfileForm({
     };
   }
 
-  /** Sends the HTTPS tokens typed into the form to the credential store, after
-   *  the profile itself is saved: the account they belong to has to exist
-   *  before there is anything to key them by. */
+  /** Sends one typed token to the credential store, which checks it against the
+   *  platform before keeping it. Throws what the platform refused, for the
+   *  caller to put where it belongs. */
+  async function commitHttpsToken(platform: PlatformId) {
+    const token = sections[platform].httpsToken.trim();
+    if (!token) return;
+    const notice = await api.saveHttpsToken({ profileId, platform, token });
+    update(platform, {
+      httpsToken: "",
+      httpsTokenStored: true,
+      httpsTokenNotice: notice ?? "",
+    });
+  }
+
+  /** Whatever was typed and not yet committed by leaving the field. */
   async function saveTypedHttpsTokens() {
     for (const platform of PLATFORMS) {
-      const token = sections[platform].httpsToken.trim();
-      if (!token) continue;
-      await api.saveHttpsToken({ profileId, platform, token });
-      update(platform, { httpsToken: "", httpsTokenStored: true });
+      await commitHttpsToken(platform);
     }
   }
 
   async function removeHttpsToken(platform: PlatformId) {
     try {
       await api.saveHttpsToken({ profileId, platform, token: "" });
-      update(platform, { httpsToken: "", httpsTokenStored: false });
+      update(platform, {
+        httpsToken: "",
+        httpsTokenStored: false,
+        httpsTokenNotice: "",
+      });
     } catch (e) {
       // The field keeps saying a token is stored, because one still is.
       setError(String(e));
@@ -797,6 +810,9 @@ export default function ProfileForm({
                   platform,
                   ...attachedKey(sections[platform]),
                 })
+              }
+              onCommitHttpsToken={() =>
+                commitHttpsToken(platform).catch((e) => setError(String(e)))
               }
               onRemoveHttpsToken={() => removeHttpsToken(platform)}
               onOpenSettings={onSettings}

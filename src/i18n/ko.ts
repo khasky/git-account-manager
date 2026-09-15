@@ -174,6 +174,7 @@ export const ko: Messages = {
       placeholder: `https:// 원격용 토큰 붙여넣기`,
       storedPlaceholder: `저장됨 — 바꾸려면 새 토큰을 붙여넣기`,
       remove: `저장된 토큰 삭제`,
+      unverified: `저장했지만 확인되지 않았습니다: {reason}`,
       hintGithub: `설정에서 HTTPS credential helper를 켜면 <code>https://</code> 원격에 사용됩니다. <code>repo</code> 범위를 가진 <a>개인용 액세스 토큰</a>을 만드세요. 로그인 토큰으로는 HTTPS 푸시가 되지 않습니다.`,
       hintGitlab: `설정에서 HTTPS credential helper를 켜면 <code>https://</code> 원격에 사용됩니다. <code>write_repository</code> 권한의 <a>개인용 액세스 토큰</a>을 만드세요. 로그인 토큰은 몇 시간이면 만료됩니다.`,
       hintBitbucket: `설정에서 HTTPS credential helper를 켜면 <code>https://</code> 원격에 사용됩니다. 연결할 때 쓴 <a>API 토큰</a>이 이미 여기서 응답합니다. git이 다른 토큰을 쓰게 하려면 그때만 추가하세요.`,

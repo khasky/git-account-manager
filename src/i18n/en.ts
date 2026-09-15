@@ -180,6 +180,7 @@ export const en = {
       placeholder: `Paste a token for https:// remotes`,
       storedPlaceholder: `Stored — paste a new one to replace it`,
       remove: `Remove the stored token`,
+      unverified: `Stored, but not verified: {reason}`,
       hintGithub: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. Issue a <a>personal access token</a> with the <code>repo</code> scope; the sign-in token cannot push over HTTPS.`,
       hintGitlab: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. Issue a <a>personal access token</a> with <code>write_repository</code>; the sign-in token expires within hours.`,
       hintBitbucket: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. The <a>API token</a> you connected with already answers here — add one only to let git use a different token.`,

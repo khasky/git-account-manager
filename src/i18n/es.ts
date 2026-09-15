@@ -174,6 +174,7 @@ export const es: Messages = {
       placeholder: `Pega un token para remotos https://`,
       storedPlaceholder: `Guardado — pega uno nuevo para reemplazarlo`,
       remove: `Eliminar el token guardado`,
+      unverified: `Guardado, pero sin verificar: {reason}`,
       hintGithub: `Se usa en los remotos <code>https://</code> cuando el credential helper HTTPS está activado en los ajustes. Crea un <a>token de acceso personal</a> con el ámbito <code>repo</code>; el token de inicio de sesión no puede hacer push por HTTPS.`,
       hintGitlab: `Se usa en los remotos <code>https://</code> cuando el credential helper HTTPS está activado en los ajustes. Crea un <a>token de acceso personal</a> con <code>write_repository</code>; el token de inicio de sesión caduca en unas horas.`,
       hintBitbucket: `Se usa en los remotos <code>https://</code> cuando el credential helper HTTPS está activado en los ajustes. El <a>token de API</a> con el que te conectaste ya responde aquí; añade otro solo si quieres que git use un token distinto.`,

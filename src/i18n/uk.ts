@@ -174,6 +174,7 @@ export const uk: Messages = {
       placeholder: `Встав токен для https://-ремоутів`,
       storedPlaceholder: `Збережено — встав новий, щоб замінити`,
       remove: `Видалити збережений токен`,
+      unverified: `Збережено, але не перевірено: {reason}`,
       hintGithub: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. Створи <a>personal access token</a> зі скоупом <code>repo</code>: токеном входу пушити через HTTPS не можна.`,
       hintGitlab: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. Створи <a>personal access token</a> з <code>write_repository</code>: токен входу живе лише кілька годин.`,
       hintBitbucket: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. <a>API-токен</a>, яким ти під'єднувався, уже відповідає тут — додавай інший, лише якщо git має використовувати інший токен.`,

@@ -174,6 +174,7 @@ export const ptBR: Messages = {
       placeholder: `Cole um token para remotos https://`,
       storedPlaceholder: `Salvo — cole um novo para substituir`,
       remove: `Remover o token salvo`,
+      unverified: `Salvo, mas não verificado: {reason}`,
       hintGithub: `Usado nos remotos <code>https://</code> quando o credential helper HTTPS está ligado nas configurações. Crie um <a>token de acesso pessoal</a> com o escopo <code>repo</code>; o token de login não faz push por HTTPS.`,
       hintGitlab: `Usado nos remotos <code>https://</code> quando o credential helper HTTPS está ligado nas configurações. Crie um <a>token de acesso pessoal</a> com <code>write_repository</code>; o token de login expira em poucas horas.`,
       hintBitbucket: `Usado nos remotos <code>https://</code> quando o credential helper HTTPS está ligado nas configurações. O <a>token de API</a> com que você conectou já responde aqui — adicione outro só para o git usar um token diferente.`,
