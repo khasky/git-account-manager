@@ -403,6 +403,36 @@ After changing settings on GitHub, save the app, copy the Client ID again into t
 </details>
 
 <details>
+<summary><b>GitHub: <code>ERROR: Repository not found</code> when cloning an organization's private repository</b></summary>
+
+<br>
+
+`git clone git@github.com:<org>/<repo>.git` fails with `ERROR: Repository not found.` / `fatal: Could not read from remote repository.` (exit code 128), although the active profile is a member of the organization and the repository opens in the browser under that account.
+
+**Diagnose**
+
+| Check                                     | Result that points to this cause                                       |
+| ----------------------------------------- | ---------------------------------------------------------------------- |
+| `ssh -T git@github.com`                   | `Hi <your-account>!`: the key and `~/.ssh/config` work.                |
+| `git ls-remote` on a **public** org repo  | Lists refs.                                                            |
+| `git ls-remote` on a **private** org repo | `Repository not found`.                                                |
+| Org **Settings → OAuth app policy**       | **Policy: Access restricted**, and your OAuth App is not **Approved**. |
+
+**Cause**
+
+The app uploads the SSH key through the GitHub API with the OAuth App whose Client ID is in **Settings → GitHub OAuth**, so GitHub treats that key as created by the OAuth App. An organization with [OAuth app access restrictions](https://docs.github.com/organizations/managing-oauth-access-to-your-organizations-data/about-oauth-app-access-restrictions) blocks keys created by apps it has not approved, and GitHub hides its private repositories from such a key, so they report `Repository not found`. Public repositories stay readable, which makes the problem look like a missing permission.
+
+**Fix** (any one):
+
+1. Approve the OAuth App for the organization. As an owner: [github.com/settings/applications](https://github.com/settings/applications) → **Authorized OAuth Apps** → your app → **Organization access** → **Grant** next to the organization. As a member: click **Request** there and ask an owner to approve it in the org's **Settings → OAuth app policy**.
+2. An owner removes the restriction: org **Settings → OAuth app policy → Remove restrictions**.
+3. Add the same public key (`~/.ssh/<key>.pub`) by hand at [github.com/settings/keys](https://github.com/settings/keys) after deleting the copy the app uploaded; a key added by the user is not subject to the policy.
+
+Verify with `git ls-remote git@github.com:<org>/<repo>.git`, then clone again.
+
+</details>
+
+<details>
 <summary><b>GitLab (browser): "Client authentication failed … unknown client"</b></summary>
 
 <br>
