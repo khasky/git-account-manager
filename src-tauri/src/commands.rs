@@ -55,7 +55,7 @@ pub fn save_profile(app: tauri::AppHandle, mut profile: Profile) -> Result<(), S
 /// Brings `~/.ssh/config`, the global identity and the generated `~/.gitconfig`
 /// region in line with the stored state. The active profile is the machine's
 /// default, for every repository a folder rule does not claim.
-fn sync_machine(state: &AppState) -> Result<(), String> {
+pub(crate) fn sync_machine(state: &AppState) -> Result<(), String> {
     ssh::update_ssh_config(&state.profiles)?;
 
     let active = state.profiles.iter().find(|p| p.is_active);

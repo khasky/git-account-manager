@@ -83,19 +83,15 @@ pub fn run() {
                         storage::save_state(&state)?;
                     }
 
-                    // What git has in its config is the path this app was at
-                    // when the switch was last saved, and a reinstall elsewhere
-                    // or a copy moved by hand leaves it naming a helper that is
-                    // no longer there. Rewritten from where this launch runs.
-                    let _ = credential::apply(&state);
-
-                    // The rules live in `~/.gitconfig` and in the hooks
-                    // directory, where anything can edit them, so they are
-                    // rewritten on every launch rather than only when a profile
-                    // is saved. It is also what first writes them in the shape
-                    // this version reads, on an install that has saved nothing
-                    // since the upgrade.
-                    guard::apply(&state.guard, &state.profiles, &state.repo_roots)
+                    // Everything an activation writes lives where anything can
+                    // edit it: `~/.ssh/config`, the global identity, the helper
+                    // path (stale after a reinstall elsewhere), the folder rules
+                    // and the hooks. So the active profile is re-applied on every
+                    // launch, the same way a click on it applies it. It is also
+                    // what first writes the rules in the shape this version
+                    // reads, on an install that has saved nothing since the
+                    // upgrade.
+                    commands::sync_machine(&state)
                 });
             });
 
