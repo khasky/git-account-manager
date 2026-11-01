@@ -69,7 +69,14 @@ function platformFromAccount(acc?: PlatformAccount): PlatformState {
 }
 
 function noCountdowns(): Record<PlatformId, number> {
-  return { github: 0, gitlab: 0, bitbucket: 0, azure: 0 };
+  return {
+    github: 0,
+    gitlab: 0,
+    bitbucket: 0,
+    azure: 0,
+    codeberg: 0,
+    huggingface: 0,
+  };
 }
 
 export default function ProfileForm({
@@ -88,6 +95,8 @@ export default function ProfileForm({
     gitlab: Boolean(profile?.gitlab),
     bitbucket: Boolean(profile?.bitbucket),
     azure: Boolean(profile?.azure),
+    codeberg: Boolean(profile?.codeberg),
+    huggingface: Boolean(profile?.huggingface),
   });
 
   const [name, setName] = useState(profile?.name || prefill?.name || "");
@@ -105,6 +114,8 @@ export default function ProfileForm({
       gitlab: platformFromAccount(profile?.gitlab),
       bitbucket: platformFromAccount(profile?.bitbucket),
       azure: platformFromAccount(profile?.azure),
+      codeberg: platformFromAccount(profile?.codeberg),
+      huggingface: platformFromAccount(profile?.huggingface),
     }),
   );
 
@@ -126,6 +137,12 @@ export default function ProfileForm({
   // access token issued in it.
   const [azOrg, setAzOrg] = useState("");
   const [azToken, setAzToken] = useState("");
+  // Codeberg and Hugging Face need the access token alone.
+  const [cbToken, setCbToken] = useState("");
+  const [hfToken, setHfToken] = useState("");
+  // The key buttons are disabled while busy, but a second click can land
+  // before that render does; this answers it synchronously.
+  const keyBusyRef = useRef(new Set<PlatformId>());
   const [sshKeys, setSshKeys] = useState<SshKeyInfo[]>([]);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<SaveProgress | null>(null);
@@ -491,14 +508,63 @@ export default function ProfileForm({
     }
   }
 
+  async function connectWithToken(
+    platform: "codeberg" | "huggingface",
+    token: string,
+    clear: () => void,
+  ) {
+    if (!token.trim()) {
+      update(platform, {
+        error: { kind: "message", text: m.form[platform].errCreds },
+      });
+      return;
+    }
+    update(platform, { connecting: true, error: { kind: "none" } });
+    try {
+      const user = await api.connectWithToken({
+        profileId,
+        platform,
+        token: token.trim(),
+      });
+      // Codeberg names a noreply address; Hugging Face has none.
+      update(platform, connectedPatch(user));
+      clear();
+    } catch (e) {
+      update(platform, {
+        connecting: false,
+        error: { kind: "message", text: String(e) },
+      });
+    }
+  }
+
   const connectors: Record<PlatformId, () => void> = {
     github: connectGitHub,
     gitlab: connectGitLab,
     bitbucket: connectBitbucket,
     azure: connectAzure,
+    codeberg: () => connectWithToken("codeberg", cbToken, () => setCbToken("")),
+    huggingface: () =>
+      connectWithToken("huggingface", hfToken, () => setHfToken("")),
   };
 
-  async function generateAndUpload(platform: PlatformId) {
+  /** Runs one key action at a time per platform, its buttons held meanwhile. */
+  async function withKeyBusy(platform: PlatformId, run: () => Promise<void>) {
+    if (keyBusyRef.current.has(platform)) return;
+    keyBusyRef.current.add(platform);
+    update(platform, { keyBusy: true });
+    try {
+      await run();
+    } finally {
+      keyBusyRef.current.delete(platform);
+      update(platform, { keyBusy: false });
+    }
+  }
+
+  function generateAndUpload(platform: PlatformId) {
+    return withKeyBusy(platform, () => generateAndUploadNow(platform));
+  }
+
+  async function generateAndUploadNow(platform: PlatformId) {
     const section = sections[platform];
     update(platform, { error: { kind: "none" } });
     try {
@@ -536,7 +602,11 @@ export default function ProfileForm({
     }
   }
 
-  async function uploadExistingKey(platform: PlatformId) {
+  function uploadExistingKey(platform: PlatformId) {
+    return withKeyBusy(platform, () => uploadExistingKeyNow(platform));
+  }
+
+  async function uploadExistingKeyNow(platform: PlatformId) {
     const section = sections[platform];
     if (!section.sshPublicKeyPath) return;
     update(platform, { error: { kind: "none" } });
@@ -602,6 +672,8 @@ export default function ProfileForm({
       gitlab: buildAccount(sections.gitlab),
       bitbucket: buildAccount(sections.bitbucket),
       azure: buildAccount(sections.azure),
+      codeberg: buildAccount(sections.codeberg),
+      huggingface: buildAccount(sections.huggingface),
       is_active: profile?.is_active || false,
     };
   }
@@ -844,7 +916,11 @@ export default function ProfileForm({
                         setEmail: setAzOrg,
                         setToken: setAzToken,
                       }
-                    : undefined
+                    : platform === "codeberg"
+                      ? { token: cbToken, setToken: setCbToken }
+                      : platform === "huggingface"
+                        ? { token: hfToken, setToken: setHfToken }
+                        : undefined
               }
               sshKeys={sshKeys}
               importedEmail={importedEmail}

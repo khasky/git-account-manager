@@ -3,6 +3,7 @@ import { noSuggestions } from "../fieldSuggestions";
 import { fmt, rich, useI18n } from "../i18n";
 import {
   azureKeysPageUrl,
+  HUGGINGFACE_KEYS_URL,
   PLATFORM_LABEL,
   profileUrl,
   tokenPageUrl,
@@ -38,6 +39,8 @@ export interface PlatformState {
   selectedKey: string;
   error: SectionError;
   keyUploaded: boolean;
+  /** A key is being generated, uploaded or checked; its buttons wait. */
+  keyBusy: boolean;
   signCommits: boolean;
   /** Why the key this account uses is not registered for signing. */
   signingError: string;
@@ -68,6 +71,7 @@ export function emptyPlatform(): PlatformState {
     selectedKey: "",
     error: { kind: "none" },
     keyUploaded: false,
+    keyBusy: false,
     // On for anything connected from here on: a signed commit is what earns the
     // "Verified" badge, and a key that can sign costs nothing extra to make.
     signCommits: true,
@@ -89,13 +93,14 @@ interface Props {
   onCancelAuth?: () => void;
   /** Seconds left in the running flow; 0 hides the counter. */
   countdown: number;
-  /** Bitbucket (email + API token) and Azure DevOps (organization + personal
-   *  access token) authenticate with pasted credentials, not OAuth. `email`
-   *  holds the first of the two fields. */
+  /** Bitbucket (email + API token), Azure DevOps (organization + personal
+   *  access token), Codeberg and Hugging Face (access token alone) connect
+   *  with pasted credentials, not OAuth. `email` holds the first of two
+   *  fields and is absent where the token is the only one. */
   credentials?: {
-    email: string;
+    email?: string;
     token: string;
-    setEmail: (v: string) => void;
+    setEmail?: (v: string) => void;
     setToken: (v: string) => void;
   };
   sshKeys: SshKeyInfo[];
@@ -205,6 +210,7 @@ export default function PlatformSection({
 
   function renderConnect() {
     if (credentials) {
+      const first = credentials.email ?? "";
       const text =
         platform === "azure"
           ? {
@@ -212,29 +218,47 @@ export default function PlatformSection({
               first: m.form.azure.orgPlaceholder,
               token: m.form.azure.tokenPlaceholder,
               scopes: m.form.azure.scopesHint,
-              helpUrl: tokenPageUrl("azure", credentials.email.trim()),
             }
-          : {
-              help: m.form.bitbucket.help,
-              first: m.form.bitbucket.emailPlaceholder,
-              token: m.form.bitbucket.tokenPlaceholder,
-              scopes: m.form.bitbucket.scopesHint,
-              helpUrl: tokenPageUrl("bitbucket", ""),
-            };
+          : platform === "codeberg"
+            ? {
+                help: m.form.codeberg.help,
+                first: "",
+                token: m.form.codeberg.tokenPlaceholder,
+                scopes: m.form.codeberg.scopesHint,
+              }
+            : platform === "huggingface"
+              ? {
+                  help: m.form.huggingface.help,
+                  first: "",
+                  token: m.form.huggingface.tokenPlaceholder,
+                  scopes: m.form.huggingface.scopesHint,
+                }
+              : {
+                  help: m.form.bitbucket.help,
+                  first: m.form.bitbucket.emailPlaceholder,
+                  token: m.form.bitbucket.tokenPlaceholder,
+                  scopes: m.form.bitbucket.scopesHint,
+                };
+      const helpUrl = tokenPageUrl(
+        platform,
+        platform === "azure" ? first.trim() : "",
+      );
       return (
         <div className="space-y-2">
           <p className="text-xs text-fg-5">
-            {rich(text.help, { onLink: () => openUrl(text.helpUrl) })}
+            {rich(text.help, { onLink: () => openUrl(helpUrl) })}
           </p>
-          <input
-            {...noSuggestions}
-            type="text"
-            aria-label={text.first}
-            value={credentials.email}
-            onChange={(e) => credentials.setEmail(e.target.value)}
-            placeholder={text.first}
-            className="field-sm"
-          />
+          {credentials.setEmail && (
+            <input
+              {...noSuggestions}
+              type="text"
+              aria-label={text.first}
+              value={first}
+              onChange={(e) => credentials.setEmail?.(e.target.value)}
+              placeholder={text.first}
+              className="field-sm"
+            />
+          )}
           <input
             {...noSuggestions}
             type="password"
@@ -390,14 +414,25 @@ export default function PlatformSection({
             })}
           </p>
         )}
+        {platform === "huggingface" && (
+          <p className="text-xs text-fg-5">
+            {rich(m.form.huggingface.keyManual, {
+              onLink: () => openUrl(HUGGINGFACE_KEYS_URL),
+            })}
+          </p>
+        )}
 
         {state.sshSource === "generate" ? (
           <button
             type="button"
             onClick={onGenerateKey}
-            className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500"
+            disabled={state.keyBusy}
+            aria-busy={state.keyBusy}
+            className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-wait disabled:opacity-50"
           >
-            {fmt(m.form.generateAddTo, { platform: label })}
+            {state.keyBusy
+              ? m.form.keyBusy
+              : fmt(m.form.generateAddTo, { platform: label })}
           </button>
         ) : (
           <div className="space-y-2">
@@ -441,9 +476,13 @@ export default function PlatformSection({
               <button
                 type="button"
                 onClick={onUploadExistingKey}
-                className="rounded-md bg-subtle px-3 py-1.5 text-xs text-fg-2 hover:bg-hover"
+                disabled={state.keyBusy}
+                aria-busy={state.keyBusy}
+                className="rounded-md bg-subtle px-3 py-1.5 text-xs text-fg-2 hover:bg-hover disabled:cursor-wait disabled:opacity-50"
               >
-                {fmt(m.form.uploadTo, { platform: label })}
+                {state.keyBusy
+                  ? m.form.keyBusy
+                  : fmt(m.form.uploadTo, { platform: label })}
               </button>
             )}
           </div>
@@ -460,6 +499,8 @@ export default function PlatformSection({
       gitlab: m.form.https.hintGitlab,
       bitbucket: m.form.https.hintBitbucket,
       azure: m.form.https.hintAzure,
+      codeberg: m.form.https.hintCodeberg,
+      huggingface: m.form.https.hintHuggingface,
     }[platform];
 
     return (
@@ -630,14 +671,22 @@ export default function PlatformSection({
               <p className="mt-0.5 text-xs text-fg-5">
                 {m.form.signCommitsHint}
               </p>
-              {state.signingError && (
-                <p className="mt-1 text-xs text-danger-fg">
-                  {fmt(m.form.signingFailed, {
-                    error: state.signingError,
-                    platform: label,
-                  })}
-                </p>
-              )}
+              {state.signingError &&
+                // Codeberg and Hugging Face sign fine but will not show the
+                // badge until the user acts there, which a reconnect does
+                // not fix: their notice is shown as it is.
+                (platform === "codeberg" || platform === "huggingface" ? (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    {state.signingError}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-danger-fg">
+                    {fmt(m.form.signingFailed, {
+                      error: state.signingError,
+                      platform: label,
+                    })}
+                  </p>
+                ))}
             </div>
             <input
               id={signId}

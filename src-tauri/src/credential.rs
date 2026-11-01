@@ -186,6 +186,16 @@ fn credentials(
             let token = stored.split_once(':').map_or(stored.as_str(), |(_, t)| t);
             Some((account.username.clone(), token.to_string()))
         }
+        // Both take the account name and an access token. The token the
+        // account was connected with is one the user issued, so it answers
+        // when no separate one was added, as long as it was given the scope
+        // to push.
+        Platform::Codeberg | Platform::Huggingface => {
+            let stored = https_token
+                .or_else(|| tokens.oauth_token(&profile.id, platform))
+                .filter(|t| !t.trim().is_empty())?;
+            Some((account.username.clone(), stored))
+        }
     }
 }
 
@@ -322,6 +332,8 @@ mod tests {
             gitlab: None,
             bitbucket: None,
             azure: None,
+            codeberg: None,
+            huggingface: None,
             is_active,
         }
     }
@@ -481,6 +493,32 @@ mod tests {
         assert_eq!(
             get("protocol=https\nhost=dev.azure.com\n\n", &state, &tokens).as_deref(),
             Some("username=acme\npassword=push-pat\n\n")
+        );
+    }
+
+    /// Hugging Face is asked about on its HTTPS host, which is not the SSH one,
+    /// and answers with the account name and the connect token.
+    #[test]
+    fn codeberg_and_hugging_face_answer_with_the_account_and_its_token() {
+        let mut work = profile("p1", "Work", true);
+        work.codeberg = Some(account("work-cb"));
+        work.huggingface = Some(account("work-hf"));
+        let state = AppState {
+            profiles: vec![work],
+            ..Default::default()
+        };
+        let tokens = FakeTokens::default()
+            .with_oauth("p1", Platform::Codeberg, "cb-connect")
+            .with_oauth("p1", Platform::Huggingface, "hf_connect")
+            .with_https("p1", Platform::Huggingface, "hf_push");
+
+        assert_eq!(
+            get("protocol=https\nhost=codeberg.org\n\n", &state, &tokens).as_deref(),
+            Some("username=work-cb\npassword=cb-connect\n\n")
+        );
+        assert_eq!(
+            get("protocol=https\nhost=huggingface.co\n\n", &state, &tokens).as_deref(),
+            Some("username=work-hf\npassword=hf_push\n\n")
         );
     }
 

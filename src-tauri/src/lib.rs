@@ -171,6 +171,7 @@ pub fn run() {
             commands::generate_and_upload_key,
             commands::connect_bitbucket,
             commands::connect_azure,
+            commands::connect_with_token,
             commands::upload_ssh_key_to_platform,
             commands::delete_platform_token,
             commands::delete_profile_tokens,

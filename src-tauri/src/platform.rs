@@ -76,6 +76,8 @@ pub async fn verify_token(platform: Platform, token: &str) -> Result<PlatformUse
         Platform::Gitlab => verify_gitlab(client, token).await,
         Platform::Bitbucket => verify_bitbucket(client, token).await,
         Platform::Azure => verify_azure(client, token).await,
+        Platform::Codeberg => verify_codeberg(client, token).await,
+        Platform::Huggingface => verify_huggingface(client, token).await,
     }
 }
 
@@ -190,6 +192,19 @@ fn keys_endpoint(platform: Platform) -> &'static str {
         // Azure DevOps keeps keys under the organization the token belongs
         // to; `delete_azure_key` builds the URL itself.
         Platform::Azure => "",
+        Platform::Codeberg => CODEBERG_KEYS,
+        // Hugging Face has no API for SSH keys: the user adds and removes them
+        // on the settings page.
+        Platform::Huggingface => "",
+    }
+}
+
+/// The `Authorization` value a platform's REST API takes a token in.
+fn auth_header(platform: Platform, token: &str) -> String {
+    match platform {
+        // Forgejo documents the `token` scheme for access tokens.
+        Platform::Codeberg => format!("token {}", token),
+        _ => format!("Bearer {}", token),
     }
 }
 
@@ -265,8 +280,11 @@ pub async fn delete_ssh_key_from_platform(
     if platform == Platform::Azure {
         return delete_azure_key(client, token, &local).await;
     }
+    if platform == Platform::Huggingface {
+        return Ok(());
+    }
 
-    let auth_header = format!("Bearer {}", token);
+    let auth_header = auth_header(platform, token);
     let github = platform == Platform::Github;
 
     delete_from_key_collection(
@@ -294,15 +312,32 @@ pub async fn delete_ssh_key_from_platform(
 /// GitHub keeps that list apart and needs the extra call. GitLab registers new
 /// keys as `auth_and_signing` unless told otherwise, and Bitbucket validates
 /// against the single key list it has, so for both the key uploaded for
-/// authentication already signs and there is nothing left to do.
+/// authentication already signs and there is nothing left to do. The error
+/// returned for Codeberg and Hugging Face is a notice: the commits are still
+/// signed, the platform just will not show them as verified yet.
 pub async fn upload_signing_key(
     platform: Platform,
     token: &str,
     title: &str,
     key_content: &str,
 ) -> Result<(), String> {
-    if platform != Platform::Github {
-        return Ok(());
+    match platform {
+        Platform::Github => {}
+        // Forgejo verifies a signature only against a key marked verified,
+        // which its API cannot do: the proof is signed on the settings page.
+        Platform::Codeberg => {
+            return Err(format!(
+                "Codeberg shows these commits as verified only after the key is verified: press Verify next to it at {}.",
+                CODEBERG_KEYS_PAGE
+            ))
+        }
+        Platform::Huggingface => {
+            return Err(
+                "Hugging Face verifies only GPG signatures, so commits signed with this SSH key show as unverified there."
+                    .to_string(),
+            )
+        }
+        _ => return Ok(()),
     }
 
     let resp = client()
@@ -329,6 +364,8 @@ pub async fn upload_ssh_key(
         Platform::Gitlab => upload_gitlab_key(client, token, title, key_content).await,
         Platform::Bitbucket => upload_bitbucket_key(client, token, title, key_content).await,
         Platform::Azure => confirm_azure_key(client, token, key_content).await,
+        Platform::Codeberg => upload_codeberg_key(client, token, title, key_content).await,
+        Platform::Huggingface => confirm_huggingface_key(client, token, key_content).await,
     }
 }
 
@@ -752,11 +789,14 @@ async fn verify_azure(client: &Client, token: &str) -> Result<PlatformUser, Stri
 /// The page a key is added on by hand, for a platform where a token cannot add
 /// one.
 pub fn manual_key_page(platform: Platform, token: &str) -> Option<String> {
-    if platform != Platform::Azure {
-        return None;
+    match platform {
+        Platform::Azure => {
+            let (org, _) = split_azure(token).ok()?;
+            Some(azure_keys_page(org))
+        }
+        Platform::Huggingface => Some(HUGGINGFACE_KEYS_PAGE.to_string()),
+        _ => None,
     }
-    let (org, _) = split_azure(token).ok()?;
-    Some(azure_keys_page(org))
 }
 
 fn azure_keys_page(org: &str) -> String {
@@ -891,6 +931,262 @@ async fn azure_push_permission(client: &Client, token: &str) -> Result<String, S
     Ok("Azure DevOps does not disclose whether this token can write. It needs Code (Read & write) to push.".to_string())
 }
 
+// -- Codeberg ---------------------------------------------------------------
+//
+// Codeberg runs Forgejo. An access token from the Applications settings page
+// reaches the account under the scopes picked when it was issued: read:user to
+// connect, write:user to add a key, write:repository to push over HTTPS.
+
+const CODEBERG_API: &str = "https://codeberg.org/api/v1";
+const CODEBERG_KEYS: &str = "https://codeberg.org/api/v1/user/keys";
+const CODEBERG_KEYS_PAGE: &str = "https://codeberg.org/user/settings/keys";
+
+#[derive(Deserialize)]
+struct ForgejoUser {
+    login: String,
+    full_name: Option<String>,
+    email: Option<String>,
+    avatar_url: Option<String>,
+}
+
+fn forgejo_rejection(status: reqwest::StatusCode, body: &str) -> String {
+    match status.as_u16() {
+        401 => {
+            "Codeberg did not accept this token. Check that it has not been revoked.".to_string()
+        }
+        // Forgejo names the scope it wanted in the body.
+        403 => format!("Codeberg refused this token: {}", body.trim()),
+        _ => format!("Codeberg API error ({}): {}", status, body.trim()),
+    }
+}
+
+/// Needs the read:user scope.
+async fn verify_codeberg(client: &Client, token: &str) -> Result<PlatformUser, String> {
+    let resp = client
+        .get(format!("{}/user", CODEBERG_API))
+        .header("Authorization", auth_header(Platform::Codeberg, token))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Codeberg API request failed: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(forgejo_rejection(status, &body));
+    }
+    let user: ForgejoUser = resp
+        .json()
+        .await
+        .map_err(|e| format!("Unreadable Codeberg profile: {}", e))?;
+
+    Ok(PlatformUser {
+        // Forgejo's placeholder address, which it counts as a confirmed one
+        // when it verifies a signature.
+        noreply_email: Some(codeberg_noreply(&user.login)),
+        username: user.login,
+        name: user.full_name.filter(|n| !n.trim().is_empty()),
+        email: user.email.filter(|e| !e.trim().is_empty()),
+        avatar_url: user.avatar_url,
+        username_notice: None,
+    })
+}
+
+fn codeberg_noreply(login: &str) -> String {
+    format!("{}@noreply.codeberg.org", login.to_lowercase())
+}
+
+/// Forgejo refuses a second key under a title the account already uses, so
+/// the title carries the end of the key body to stay apart from the keys this
+/// app added before.
+fn codeberg_key_title(title: &str, key: &str) -> String {
+    let body = key.split_whitespace().nth(1).unwrap_or("");
+    let tail = &body[body.len().saturating_sub(8)..];
+    format!("{} {}", title, tail).trim_end().to_string()
+}
+
+/// Needs the write:user scope.
+///
+/// A key the account already has comes back as 422 "Key content has been used
+/// as non-deploy key", the same answer as a key some other account holds, so
+/// the account's own list decides which of the two it was.
+async fn upload_codeberg_key(
+    client: &Client,
+    token: &str,
+    title: &str,
+    key: &str,
+) -> Result<(), String> {
+    let auth = auth_header(Platform::Codeberg, token);
+    let resp = client
+        .post(CODEBERG_KEYS)
+        .header("Authorization", &auth)
+        .header("Accept", "application/json")
+        .json(&serde_json::json!({ "title": codeberg_key_title(title, key), "key": key }))
+        .send()
+        .await
+        .map_err(|e| format!("Codeberg API request failed: {}", e))?;
+    let status = resp.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body = resp.text().await.unwrap_or_default();
+    if status.as_u16() != 422 {
+        return Err(forgejo_rejection(status, &body));
+    }
+
+    let keys: Vec<RemoteKey> = client
+        .get(format!("{}?limit=50", CODEBERG_KEYS))
+        .header("Authorization", &auth)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to list keys: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse keys: {}", e))?;
+    let local = normalize_key(key);
+    if keys.iter().any(|k| normalize_key(&k.key) == local) {
+        return Ok(());
+    }
+    Err(format!(
+        "Codeberg refused this key: {}. A key can belong to only one Codeberg account.",
+        body.trim()
+    ))
+}
+
+// -- Hugging Face -----------------------------------------------------------
+//
+// A user access token (Settings -> Access Tokens) authenticates the API and
+// git over HTTPS alike. Hugging Face has no API for SSH keys, so the user adds
+// the key on the settings page, and the SSH server confirms it: it greets a
+// key it knows by the account's name and any other as "anonymous".
+
+const HUGGINGFACE_WHOAMI: &str = "https://huggingface.co/api/whoami-v2";
+const HUGGINGFACE_KEYS_PAGE: &str = "https://huggingface.co/settings/keys";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HuggingfaceWhoami {
+    name: String,
+    fullname: Option<String>,
+    email: Option<String>,
+    avatar_url: Option<String>,
+    auth: Option<HuggingfaceAuth>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HuggingfaceAuth {
+    access_token: Option<HuggingfaceAccessToken>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HuggingfaceAccessToken {
+    role: Option<String>,
+    fine_grained: Option<serde_json::Value>,
+}
+
+async fn huggingface_whoami(client: &Client, token: &str) -> Result<HuggingfaceWhoami, String> {
+    let resp = client
+        .get(HUGGINGFACE_WHOAMI)
+        .header("Authorization", auth_header(Platform::Huggingface, token))
+        .send()
+        .await
+        .map_err(|e| format!("Hugging Face API request failed: {}", e))?;
+    match resp.status().as_u16() {
+        200 => {}
+        401 => {
+            return Err(
+                "Hugging Face did not accept this token. Check that it has not been revoked."
+                    .to_string(),
+            )
+        }
+        _ => return Err(format!("Hugging Face API error: {}", resp.status())),
+    }
+    resp.json()
+        .await
+        .map_err(|e| format!("Unreadable Hugging Face profile: {}", e))
+}
+
+async fn verify_huggingface(client: &Client, token: &str) -> Result<PlatformUser, String> {
+    let me = huggingface_whoami(client, token).await?;
+    Ok(PlatformUser {
+        username: me.name,
+        name: me.fullname.filter(|n| !n.trim().is_empty()),
+        email: me.email.filter(|e| !e.trim().is_empty()),
+        // Hugging Face has no noreply commit address.
+        noreply_email: None,
+        avatar_url: me.avatar_url.map(|url| match url.starts_with('/') {
+            true => format!("https://huggingface.co{}", url),
+            false => url,
+        }),
+        username_notice: None,
+    })
+}
+
+/// A write token pushes anywhere the account can. A fine-grained one pushes
+/// only where it was granted, which is not something worth refusing it over.
+fn huggingface_push_permission(me: &HuggingfaceWhoami) -> Result<Option<String>, String> {
+    let token = me.auth.as_ref().and_then(|a| a.access_token.as_ref());
+    match token.and_then(|t| t.role.as_deref()) {
+        Some("write") | Some("god") => Ok(None),
+        Some("read") => Err(
+            "This token is read-only and cannot push. Issue one with the Write role.".to_string(),
+        ),
+        Some("fineGrained") => {
+            let grants = token
+                .and_then(|t| t.fine_grained.as_ref())
+                .map(|g| g.to_string())
+                .unwrap_or_default();
+            Ok((!grants.contains("repo.write")).then(|| {
+                "This fine-grained token names no repo.write permission. It pushes only to repositories it was given write access to."
+                    .to_string()
+            }))
+        }
+        _ => Ok(Some(
+            "Hugging Face did not say what this token may do. It needs the Write role to push."
+                .to_string(),
+        )),
+    }
+}
+
+/// The account `ssh -T git@hf.co` greets, or `None` for "anonymous", which is
+/// what a key the account does not carry gets.
+fn huggingface_greeted_user(output: &str) -> Option<&str> {
+    let rest = &output[output.find("Hi ")? + 3..];
+    let name = rest.split([',', ' ', '!', '\n']).next()?.trim();
+    (!name.is_empty() && name != "anonymous").then_some(name)
+}
+
+/// Stands in for an upload, as on Azure DevOps: the user pasted the key on the
+/// settings page, and this confirms the SSH server now knows it as the account
+/// the token belongs to.
+async fn confirm_huggingface_key(client: &Client, token: &str, key: &str) -> Result<(), String> {
+    let me = huggingface_whoami(client, token).await?;
+    let private = crate::ssh::private_key_for(key).ok_or_else(|| {
+        "The private half of this key is not in ~/.ssh, so the app cannot check it against Hugging Face."
+            .to_string()
+    })?;
+    let output = tokio::task::spawn_blocking(move || crate::ssh::greeting("git@hf.co", &private))
+        .await
+        .map_err(|e| e.to_string())??;
+
+    match huggingface_greeted_user(&output) {
+        Some(user) if user.eq_ignore_ascii_case(&me.name) => Ok(()),
+        Some(user) => Err(format!(
+            "Hugging Face knows this key as {}, not {}. Use a key of this account.",
+            user, me.name
+        )),
+        None if output.contains("Hi anonymous") => Err(format!(
+            "This key is not on the Hugging Face account yet. Hugging Face does not let a token add SSH keys: copy the public key, add it at {}, then try again.",
+            HUGGINGFACE_KEYS_PAGE
+        )),
+        None => Err(format!(
+            "Could not reach Hugging Face over SSH: {}",
+            output.trim()
+        )),
+    }
+}
+
 /// What a platform will say about a token meant for pushing over HTTPS.
 pub struct HttpsToken {
     /// Who the platform says the token belongs to, so a token pasted from
@@ -946,6 +1242,12 @@ pub async fn check_https_token(platform: Platform, token: &str) -> Result<HttpsT
                 .to_string(),
         ),
         Platform::Azure => Some(azure_push_permission(client, token).await?),
+        // Forgejo does not name a token's scopes back to it.
+        Platform::Codeberg => Some(
+            "Codeberg does not disclose this token's scopes. It needs write:repository to push."
+                .to_string(),
+        ),
+        Platform::Huggingface => huggingface_push_permission(&huggingface_whoami(client, token).await?)?,
     };
 
     Ok(HttpsToken {
@@ -1248,6 +1550,79 @@ mod tests {
             Some("b6e3e94f-b930-4d97-ac9e-499cd9d79043")
         );
         assert!(find_azure_key(&list.value, &normalize_key("ssh-rsa OTHER x")).is_none());
+    }
+
+    /// The greeting as hf.co sends it to a key it does not know, recorded live,
+    /// and the shape its docs give for one it does.
+    #[test]
+    fn the_hugging_face_greeting_names_the_account_or_nobody() {
+        assert_eq!(
+            huggingface_greeted_user("Hi anonymous, welcome to Hugging Face.\n"),
+            None
+        );
+        assert_eq!(
+            huggingface_greeted_user(
+                "Warning: Permanently added 'hf.co' (ED25519) to the list of known hosts.\nHi acme, welcome to Hugging Face.\n"
+            ),
+            Some("acme")
+        );
+        assert_eq!(
+            huggingface_greeted_user("git@hf.co: Permission denied (publickey)."),
+            None
+        );
+    }
+
+    fn whoami(body: &str) -> HuggingfaceWhoami {
+        serde_json::from_str(body).expect("must parse")
+    }
+
+    /// Bodies in the shape of the whoami-v2 schema in Hugging Face's OpenAPI.
+    #[test]
+    fn a_hugging_face_token_pushes_by_its_role() {
+        let with_role = |role: &str, extra: &str| {
+            whoami(&format!(
+                r#"{{"type":"user","name":"acme","fullname":"Acme","email":null,"avatarUrl":"/avatars/a.svg","auth":{{"type":"access_token","accessToken":{{"displayName":"t","role":"{}"{}}}}}}}"#,
+                role, extra
+            ))
+        };
+        assert_eq!(
+            huggingface_push_permission(&with_role("write", "")),
+            Ok(None)
+        );
+        assert!(huggingface_push_permission(&with_role("read", ""))
+            .unwrap_err()
+            .contains("Write role"));
+        assert_eq!(
+            huggingface_push_permission(&with_role(
+                "fineGrained",
+                r#","fineGrained":{"scoped":[{"entity":{"type":"user","name":"acme"},"permissions":["repo.content.read","repo.write"]}],"global":[]}"#
+            )),
+            Ok(None)
+        );
+        assert!(huggingface_push_permission(&with_role(
+            "fineGrained",
+            r#","fineGrained":{"scoped":[],"global":["inference.serverless.write"]}"#
+        ))
+        .unwrap()
+        .is_some());
+    }
+
+    #[test]
+    fn a_codeberg_key_title_differs_per_key_and_the_noreply_is_lowercase() {
+        assert_eq!(
+            codeberg_key_title(
+                "gam: acme (Codeberg)",
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5ABCDEFGH me"
+            ),
+            "gam: acme (Codeberg) ABCDEFGH"
+        );
+        assert_eq!(codeberg_key_title("t", "garbage"), "t");
+        assert_eq!(codeberg_noreply("Acme"), "acme@noreply.codeberg.org");
+        assert_eq!(
+            manual_key_page(Platform::Huggingface, "hf_x").as_deref(),
+            Some("https://huggingface.co/settings/keys")
+        );
+        assert_eq!(manual_key_page(Platform::Codeberg, "x"), None);
     }
 
     #[test]

@@ -7,8 +7,10 @@ import ConfirmDialog, { type DialogAction } from "./ConfirmDialog";
 import {
   AzureDevOpsIcon,
   BitbucketIcon,
+  CodebergIcon,
   GitHubIcon,
   GitLabIcon,
+  HuggingFaceIcon,
 } from "./icons";
 
 interface Props {
@@ -29,6 +31,8 @@ const PLATFORM_ICON: Record<
   gitlab: GitLabIcon,
   bitbucket: BitbucketIcon,
   azure: AzureDevOpsIcon,
+  codeberg: CodebergIcon,
+  huggingface: HuggingFaceIcon,
 };
 
 function PlatformBadge({

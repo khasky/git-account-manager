@@ -415,6 +415,8 @@ mod tests {
             gitlab: None,
             bitbucket: None,
             azure: None,
+            codeberg: None,
+            huggingface: None,
             is_active: true,
         }
     }

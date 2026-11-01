@@ -346,6 +346,8 @@ mod tests {
                     token: Some("bb-token".to_string()),
                 }),
                 azure: None,
+                codeberg: None,
+                huggingface: None,
                 is_active: true,
             }],
             oauth: Default::default(),

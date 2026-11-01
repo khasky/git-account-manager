@@ -110,6 +110,46 @@ pub fn delete_key_pair(private_key_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The private half of a key in `~/.ssh` whose public half is `public_key`,
+/// compared on type and body since the comment is free to differ.
+pub fn private_key_for(public_key: &str) -> Option<String> {
+    let body = |k: &str| k.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+    let wanted = body(public_key);
+    list_keys().ok()?.into_iter().find_map(|k| {
+        let pub_key = read_public_key(&k.public_key_path).ok()?;
+        (body(&pub_key) == wanted).then_some(k.private_key_path)
+    })
+}
+
+/// What a host says to `ssh -T` when it is reached with exactly this key.
+///
+/// `-F none` keeps the user's own config, this app's region included, from
+/// offering a second key the host might answer to instead. A host key seen
+/// for the first time is accepted, as the first `git clone` would.
+pub fn greeting(user_host: &str, private_key: &str) -> Result<String, String> {
+    let output = hidden_command(&crate::openssh_integration::ssh_program())
+        .args(["-T", "-F", "none", "-i"])
+        .arg(private_key)
+        .args([
+            "-o",
+            "IdentitiesOnly=yes",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-o",
+            "ConnectTimeout=15",
+            user_host,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ssh: {}", e))?;
+    Ok(format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
 pub fn read_public_key(pub_key_path: &str) -> Result<String, String> {
     fs::read_to_string(pub_key_path)
         .map(|s| s.trim().to_string())
@@ -259,6 +299,8 @@ mod tests {
             gitlab: Some(account()),
             bitbucket: None,
             azure: None,
+            codeberg: None,
+            huggingface: None,
             is_active,
         }
     }

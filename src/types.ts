@@ -1,6 +1,12 @@
 /** The platforms this app knows. Mirrors `models::Platform` in the backend,
  *  whose serialized form is exactly these strings. */
-export type PlatformId = "github" | "gitlab" | "bitbucket" | "azure";
+export type PlatformId =
+  | "github"
+  | "gitlab"
+  | "bitbucket"
+  | "azure"
+  | "codeberg"
+  | "huggingface";
 
 export interface PlatformAccount {
   username: string;
@@ -22,6 +28,8 @@ export interface Profile {
   bitbucket?: PlatformAccount;
   /** One Azure DevOps organization; `username` is the organization's name. */
   azure?: PlatformAccount;
+  codeberg?: PlatformAccount;
+  huggingface?: PlatformAccount;
   is_active: boolean;
 }
 

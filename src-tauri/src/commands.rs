@@ -298,6 +298,26 @@ pub async fn connect_azure(
     Ok(user)
 }
 
+/// Codeberg and Hugging Face connect with a single access token the user
+/// issued, which the platform names the account for.
+#[tauri::command]
+pub async fn connect_with_token(
+    profile_id: String,
+    platform: Platform,
+    token: String,
+) -> Result<PlatformUser, String> {
+    if !matches!(platform, Platform::Codeberg | Platform::Huggingface) {
+        return Err(format!(
+            "{} does not connect with a token.",
+            platform.label()
+        ));
+    }
+    let token = token.trim().to_string();
+    let user = platform::verify_token(platform, &token).await?;
+    secrets::set_token(&profile_id, platform, &token)?;
+    Ok(user)
+}
+
 #[tauri::command]
 pub fn delete_platform_token(profile_id: String, platform: Platform) -> Result<(), String> {
     secrets::delete_token(&profile_id, platform)

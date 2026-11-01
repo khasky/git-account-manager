@@ -78,9 +78,12 @@ pub fn parse_remote_url(url: &str) -> Option<RemoteRef> {
 
     let path = path.trim_start_matches('/').trim_end_matches('/');
     let path = path.strip_suffix(".git").unwrap_or(path);
-    let path = match is_azure_host(&host) {
-        true => azure_path(&host, path),
-        false => path.to_string(),
+    let path = if is_platform_host(Platform::Azure, &host) {
+        azure_path(&host, path)
+    } else if is_platform_host(Platform::Huggingface, &host) {
+        huggingface_path(path).to_string()
+    } else {
+        path.to_string()
     };
     let (owner, repo) = path.split_once('/')?;
     if owner.is_empty() || repo.is_empty() {
@@ -94,12 +97,23 @@ pub fn parse_remote_url(url: &str) -> Option<RemoteRef> {
     })
 }
 
-/// An Azure DevOps host, or the `azure-<slug>` alias standing in for one.
-fn is_azure_host(host: &str) -> bool {
-    Platform::Azure.owns_host(host)
+/// One of the platform's hosts, or the `<platform>-<slug>` alias standing in
+/// for one.
+fn is_platform_host(platform: Platform, host: &str) -> bool {
+    platform.owns_host(host)
         || host
             .to_ascii_lowercase()
-            .starts_with(&format!("{}-", Platform::Azure.as_str()))
+            .starts_with(&format!("{}-", platform.as_str()))
+}
+
+/// Hugging Face puts the repository type in front of the namespace for every
+/// kind but a model (`datasets/<owner>/<repo>`, `spaces/<owner>/<repo>`), so
+/// the type is dropped to leave the account as `owner`.
+fn huggingface_path(path: &str) -> &str {
+    ["datasets/", "spaces/", "models/"]
+        .iter()
+        .find_map(|prefix| path.strip_prefix(prefix))
+        .unwrap_or(path)
 }
 
 /// Reduces an Azure DevOps remote path to `<org>/<project>/<repo>`, so `owner`
@@ -376,6 +390,40 @@ mod tests {
         assert_eq!(platform_for_host("azure.com", &[]), None);
     }
 
+    /// Every repository kind Hugging Face serves names the account first once
+    /// the type is set aside, over SSH and HTTPS alike.
+    #[test]
+    fn parses_every_hugging_face_remote_form() {
+        assert_eq!(
+            parse_remote_url("https://huggingface.co/acme/model"),
+            r("huggingface.co", "acme", "model")
+        );
+        assert_eq!(
+            parse_remote_url("https://huggingface.co/datasets/acme/data"),
+            r("huggingface.co", "acme", "data")
+        );
+        assert_eq!(
+            parse_remote_url("git@hf.co:spaces/acme/demo"),
+            r("hf.co", "acme", "demo")
+        );
+        assert_eq!(
+            parse_remote_url("git@huggingface-work:datasets/acme/data"),
+            r("huggingface-work", "acme", "data")
+        );
+        for host in ["hf.co", "huggingface.co"] {
+            assert_eq!(
+                platform_for_host(host, &[]),
+                Some(Platform::Huggingface),
+                "{}",
+                host
+            );
+        }
+        assert_eq!(
+            platform_for_host("codeberg.org", &[]),
+            Some(Platform::Codeberg)
+        );
+    }
+
     fn profile() -> Profile {
         Profile {
             id: "p1".to_string(),
@@ -393,6 +441,8 @@ mod tests {
             gitlab: None,
             bitbucket: None,
             azure: None,
+            codeberg: None,
+            huggingface: None,
             is_active: true,
         }
     }

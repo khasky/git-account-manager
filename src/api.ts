@@ -96,6 +96,13 @@ export const connectAzure = (args: {
   token: string;
 }) => invoke<PlatformUser>("connect_azure", args);
 
+/** Codeberg and Hugging Face: one access token the user issued. */
+export const connectWithToken = (args: {
+  profileId: string;
+  platform: PlatformId;
+  token: string;
+}) => invoke<PlatformUser>("connect_with_token", args);
+
 export const githubOauthStart = (clientId: string) =>
   invoke<DeviceCodeResponse>("github_oauth_start", { clientId });
 

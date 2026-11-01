@@ -6,6 +6,8 @@ export const PLATFORMS: readonly PlatformId[] = [
   "gitlab",
   "bitbucket",
   "azure",
+  "codeberg",
+  "huggingface",
 ];
 
 export const PLATFORM_LABEL: Record<PlatformId, string> = {
@@ -13,6 +15,8 @@ export const PLATFORM_LABEL: Record<PlatformId, string> = {
   gitlab: "GitLab",
   bitbucket: "Bitbucket",
   azure: "Azure DevOps",
+  codeberg: "Codeberg",
+  huggingface: "Hugging Face",
 };
 
 const PROFILE_URL_BASE: Record<PlatformId, string> = {
@@ -21,7 +25,12 @@ const PROFILE_URL_BASE: Record<PlatformId, string> = {
   bitbucket: "https://bitbucket.org/",
   // An Azure DevOps account here is an organization, so this is its home.
   azure: "https://dev.azure.com/",
+  codeberg: "https://codeberg.org/",
+  huggingface: "https://huggingface.co/",
 };
+
+/** Where a platform that will not take a key from a token has it pasted. */
+export const HUGGINGFACE_KEYS_URL = "https://huggingface.co/settings/keys";
 
 export function profileUrl(platform: PlatformId, username: string): string {
   return PROFILE_URL_BASE[platform] + username;
@@ -62,6 +71,10 @@ export function tokenPageUrl(platform: PlatformId, username: string): string {
       return "https://id.atlassian.com/manage-profile/security/api-tokens";
     case "azure":
       return azureSettingsUrl(username, "tokens");
+    case "codeberg":
+      return "https://codeberg.org/user/settings/applications";
+    case "huggingface":
+      return "https://huggingface.co/settings/tokens";
   }
 }
 

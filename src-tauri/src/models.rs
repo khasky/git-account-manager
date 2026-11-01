@@ -15,14 +15,18 @@ pub enum Platform {
     Gitlab,
     Bitbucket,
     Azure,
+    Codeberg,
+    Huggingface,
 }
 
 /// The platforms this app knows, in the order every list and menu shows them.
-pub const PLATFORMS: [Platform; 4] = [
+pub const PLATFORMS: [Platform; 6] = [
     Platform::Github,
     Platform::Gitlab,
     Platform::Bitbucket,
     Platform::Azure,
+    Platform::Codeberg,
+    Platform::Huggingface,
 ];
 
 impl Platform {
@@ -32,6 +36,8 @@ impl Platform {
             Platform::Gitlab => "gitlab",
             Platform::Bitbucket => "bitbucket",
             Platform::Azure => "azure",
+            Platform::Codeberg => "codeberg",
+            Platform::Huggingface => "huggingface",
         }
     }
 
@@ -42,6 +48,8 @@ impl Platform {
             Platform::Gitlab => "GitLab",
             Platform::Bitbucket => "Bitbucket",
             Platform::Azure => "Azure DevOps",
+            Platform::Codeberg => "Codeberg",
+            Platform::Huggingface => "Hugging Face",
         }
     }
 
@@ -53,14 +61,17 @@ impl Platform {
             Platform::Gitlab => "gitlab.com",
             Platform::Bitbucket => "bitbucket.org",
             Platform::Azure => "ssh.dev.azure.com",
+            Platform::Codeberg => "codeberg.org",
+            Platform::Huggingface => "hf.co",
         }
     }
 
-    /// The host git asks for credentials on over HTTPS. Azure DevOps is the one
-    /// platform that serves SSH and HTTPS from different hosts.
+    /// The host git asks for credentials on over HTTPS. Azure DevOps and
+    /// Hugging Face serve SSH and HTTPS from different hosts.
     pub fn https_host(self) -> &'static str {
         match self {
             Platform::Azure => "dev.azure.com",
+            Platform::Huggingface => "huggingface.co",
             other => other.canonical_host(),
         }
     }
@@ -175,6 +186,10 @@ pub struct Profile {
     /// holds the organization's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub azure: Option<PlatformAccount>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codeberg: Option<PlatformAccount>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub huggingface: Option<PlatformAccount>,
     pub is_active: bool,
 }
 
@@ -185,6 +200,8 @@ impl Profile {
             Platform::Gitlab => self.gitlab.as_ref(),
             Platform::Bitbucket => self.bitbucket.as_ref(),
             Platform::Azure => self.azure.as_ref(),
+            Platform::Codeberg => self.codeberg.as_ref(),
+            Platform::Huggingface => self.huggingface.as_ref(),
         }
     }
 
@@ -194,6 +211,8 @@ impl Profile {
             Platform::Gitlab => self.gitlab.as_mut(),
             Platform::Bitbucket => self.bitbucket.as_mut(),
             Platform::Azure => self.azure.as_mut(),
+            Platform::Codeberg => self.codeberg.as_mut(),
+            Platform::Huggingface => self.huggingface.as_mut(),
         }
     }
 
@@ -548,6 +567,8 @@ mod tests {
             gitlab: Some(account("gl@example.com")),
             bitbucket: None,
             azure: None,
+            codeberg: None,
+            huggingface: None,
             is_active: true,
         };
         assert_eq!(profile.active_identity().unwrap().1, "gl@example.com");
