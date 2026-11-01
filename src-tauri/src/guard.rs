@@ -594,6 +594,7 @@ mod tests {
             github: Some(account(false)),
             gitlab: None,
             bitbucket: None,
+            azure: None,
             is_active: false,
         }
     }

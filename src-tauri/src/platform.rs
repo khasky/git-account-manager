@@ -3,7 +3,7 @@ use crate::models::{Platform, PlatformUser};
 use reqwest::{Client, Response};
 use serde::Deserialize;
 
-/// Statuses the three platforms answer with when a key is already registered.
+/// Statuses the platforms answer with when a key is already registered.
 /// None of them gives that case a code of its own, so the body has to decide.
 const AMBIGUOUS_UPLOAD_STATUSES: [u16; 3] = [400, 409, 422];
 
@@ -75,6 +75,7 @@ pub async fn verify_token(platform: Platform, token: &str) -> Result<PlatformUse
         Platform::Github => verify_github(client, token).await,
         Platform::Gitlab => verify_gitlab(client, token).await,
         Platform::Bitbucket => verify_bitbucket(client, token).await,
+        Platform::Azure => verify_azure(client, token).await,
     }
 }
 
@@ -186,6 +187,9 @@ fn keys_endpoint(platform: Platform) -> &'static str {
         // Bitbucket scopes keys under the account's uuid, which has to be
         // fetched first; `delete_bitbucket_key` builds the URL itself.
         Platform::Bitbucket => "",
+        // Azure DevOps keeps keys under the organization the token belongs
+        // to; `delete_azure_key` builds the URL itself.
+        Platform::Azure => "",
     }
 }
 
@@ -258,6 +262,9 @@ pub async fn delete_ssh_key_from_platform(
     if platform == Platform::Bitbucket {
         return delete_bitbucket_key(client, token, &local).await;
     }
+    if platform == Platform::Azure {
+        return delete_azure_key(client, token, &local).await;
+    }
 
     let auth_header = format!("Bearer {}", token);
     let github = platform == Platform::Github;
@@ -321,6 +328,7 @@ pub async fn upload_ssh_key(
         Platform::Github => upload_github_key(client, token, title, key_content).await,
         Platform::Gitlab => upload_gitlab_key(client, token, title, key_content).await,
         Platform::Bitbucket => upload_bitbucket_key(client, token, title, key_content).await,
+        Platform::Azure => confirm_azure_key(client, token, key_content).await,
     }
 }
 
@@ -607,6 +615,282 @@ async fn delete_bitbucket_key(
     Ok(())
 }
 
+// -- Azure DevOps -----------------------------------------------------------
+//
+// Azure DevOps takes a personal access token over HTTP Basic with an empty
+// username. Tokens are issued per organization (tokens for "all accessible
+// organizations" stop working on 1 December 2026), so every call goes to the
+// organization's own host and the stored credential is `org:token`.
+//
+// SSH keys live behind an internal endpoint, `_apis/Token/SessionTokens` with
+// `isPublic=true`, the one the web UI's "SSH public keys" page reads. A token
+// with the "Tokens (Read & manage)" scope can list and delete keys there, but
+// creating one answers `AccessDenied` to anything but the interactive sign-in,
+// so adding a key is the one step the user does by hand.
+
+/// The `api-version` the SSH-key endpoint answers under. It has no released
+/// version; this is the one the web UI sends.
+const AZURE_SESSION_TOKENS_API: &str = "5.0-preview.1";
+
+/// Accepts what a user is likely to paste for an organization: its bare name,
+/// a `dev.azure.com/<org>` URL, or a legacy `<org>.visualstudio.com` host.
+pub fn azure_org_from_input(input: &str) -> Result<String, String> {
+    let raw = input.trim();
+    let raw = raw
+        .strip_prefix("https://")
+        .or_else(|| raw.strip_prefix("http://"))
+        .unwrap_or(raw);
+    let authority_end = raw.find('/').unwrap_or(raw.len());
+    let raw = match raw[..authority_end].rsplit_once('@') {
+        Some((userinfo, _)) => &raw[userinfo.len() + 1..],
+        None => raw,
+    };
+    let host = raw.split('/').next().unwrap_or("");
+    let org = if let Some(rest) = raw.strip_prefix("dev.azure.com/") {
+        rest.split('/').next().unwrap_or("")
+    } else if let Some(sub) = host.strip_suffix(".visualstudio.com") {
+        sub
+    } else {
+        raw.trim_end_matches('/')
+    };
+
+    if org.is_empty()
+        || !org
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(
+            "Enter the Azure DevOps organization name, as in dev.azure.com/<organization>."
+                .to_string(),
+        );
+    }
+    Ok(org.to_string())
+}
+
+/// `org:token` as stored by `commands::connect_azure`.
+fn split_azure(token: &str) -> Result<(&str, &str), String> {
+    match token.split_once(':') {
+        Some((org, pat)) if !org.is_empty() && !pat.is_empty() => Ok((org, pat)),
+        _ => Err(
+            "The Azure DevOps credential is missing its organization. Connect the account again."
+                .to_string(),
+        ),
+    }
+}
+
+fn azure_auth(pat: &str) -> String {
+    basic_auth(&format!(":{}", pat))
+}
+
+/// Azure DevOps answers a token it does not accept with `203` and its sign-in
+/// page rather than with `401`, so success has to exclude that one status or a
+/// revoked token reads as connected.
+fn azure_accepted(status: reqwest::StatusCode) -> bool {
+    status.is_success() && status != reqwest::StatusCode::NON_AUTHORITATIVE_INFORMATION
+}
+
+fn azure_rejection(status: reqwest::StatusCode, org: &str) -> String {
+    match status.as_u16() {
+        203 | 401 => format!(
+            "Azure DevOps did not accept this token for the {} organization. Check that it was issued there and has not expired.",
+            org
+        ),
+        404 => format!("Azure DevOps has no organization named {}.", org),
+        _ => format!("Azure DevOps API error: {}", status),
+    }
+}
+
+async fn azure_get(client: &Client, url: &str, org: &str, pat: &str) -> Result<Response, String> {
+    let resp = client
+        .get(url)
+        .header("Authorization", azure_auth(pat))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Azure DevOps API request failed: {}", e))?;
+    if !azure_accepted(resp.status()) {
+        return Err(azure_rejection(resp.status(), org));
+    }
+    Ok(resp)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AzureProfile {
+    display_name: Option<String>,
+    email_address: Option<String>,
+}
+
+/// Needs the "User Profile (Read)" scope.
+async fn verify_azure(client: &Client, token: &str) -> Result<PlatformUser, String> {
+    let (org, pat) = split_azure(token)?;
+    let url = format!(
+        "https://vssps.dev.azure.com/{}/_apis/profile/profiles/me?api-version=7.1",
+        urlencoding::encode(org)
+    );
+    let profile: AzureProfile = azure_get(client, &url, org, pat)
+        .await?
+        .json()
+        .await
+        .map_err(|e| format!("Unreadable Azure DevOps profile: {}", e))?;
+
+    Ok(PlatformUser {
+        // The organization, not a person: it is what the token reaches, what
+        // the profile link opens, and the user name in front of
+        // `dev.azure.com` in every HTTPS remote the platform hands out, which
+        // is how the credential helper picks the account.
+        username: org.to_string(),
+        name: profile.display_name,
+        email: profile.email_address,
+        // Azure DevOps has no noreply commit address.
+        noreply_email: None,
+        avatar_url: None,
+        username_notice: None,
+    })
+}
+
+/// The page a key is added on by hand, for a platform where a token cannot add
+/// one.
+pub fn manual_key_page(platform: Platform, token: &str) -> Option<String> {
+    if platform != Platform::Azure {
+        return None;
+    }
+    let (org, _) = split_azure(token).ok()?;
+    Some(azure_keys_page(org))
+}
+
+fn azure_keys_page(org: &str) -> String {
+    format!(
+        "https://dev.azure.com/{}/_usersSettings/keys",
+        urlencoding::encode(org)
+    )
+}
+
+#[derive(Deserialize)]
+struct AzureKeyList {
+    value: Vec<AzureKey>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AzureKey {
+    authorization_id: String,
+    #[serde(default)]
+    public_data: Option<String>,
+}
+
+/// Needs the "Tokens (Read & manage)" scope.
+async fn azure_keys(client: &Client, org: &str, pat: &str) -> Result<Vec<AzureKey>, String> {
+    let url = format!(
+        "https://vssps.dev.azure.com/{}/_apis/Token/SessionTokens?isPublic=true&includePublicData=true&api-version={}",
+        urlencoding::encode(org),
+        AZURE_SESSION_TOKENS_API
+    );
+    let list: AzureKeyList = azure_get(client, &url, org, pat)
+        .await
+        .map_err(|e| format!("Failed to list keys: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse keys: {}", e))?;
+    Ok(list.value)
+}
+
+/// The base64 body of a key, from either `ssh-rsa AAAA… comment` or the bare
+/// `AAAA…`, which is how Azure DevOps stores `publicData`: without the type and
+/// without the comment typed on its keys page.
+fn key_body(key: &str) -> &str {
+    let mut parts = key.split_whitespace();
+    let first = parts.next().unwrap_or("");
+    match parts.next() {
+        Some(body) if first.starts_with("ssh-") || first.starts_with("ecdsa-") => body,
+        _ => first,
+    }
+}
+
+/// `local` is a key as `normalize_key` returns it.
+fn find_azure_key<'a>(keys: &'a [AzureKey], local: &str) -> Option<&'a AzureKey> {
+    let local = key_body(local);
+    keys.iter().find(|k| {
+        k.public_data
+            .as_deref()
+            .is_some_and(|data| key_body(data) == local)
+    })
+}
+
+/// Stands in for an upload: a token cannot add a key, so this confirms the one
+/// the user pasted on the keys page is there, which is what the caller is
+/// really asking.
+async fn confirm_azure_key(client: &Client, token: &str, key: &str) -> Result<(), String> {
+    let (org, pat) = split_azure(token)?;
+    if !key.trim_start().starts_with("ssh-rsa ") {
+        return Err(
+            "Azure DevOps accepts only RSA keys (ssh-rsa). Generate a new key for it here."
+                .to_string(),
+        );
+    }
+    let keys = azure_keys(client, org, pat).await?;
+    if find_azure_key(&keys, &normalize_key(key)).is_some() {
+        return Ok(());
+    }
+    Err(format!(
+        "This key is not on the Azure DevOps account yet. Azure DevOps does not let a token add SSH keys: copy the public key, add it at {}, then try again.",
+        azure_keys_page(org)
+    ))
+}
+
+async fn delete_azure_key(client: &Client, token: &str, local: &str) -> Result<(), String> {
+    let (org, pat) = split_azure(token)?;
+    let keys = azure_keys(client, org, pat).await?;
+    let Some(remote) = find_azure_key(&keys, local) else {
+        return Ok(());
+    };
+
+    let url = format!(
+        "https://vssps.dev.azure.com/{}/_apis/Token/SessionTokens/{}?isPublic=true&api-version={}",
+        urlencoding::encode(org),
+        urlencoding::encode(&remote.authorization_id),
+        AZURE_SESSION_TOKENS_API
+    );
+    let resp = client
+        .delete(&url)
+        .header("Authorization", azure_auth(pat))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to delete key: {}", e))?;
+    if !azure_accepted(resp.status()) && resp.status().as_u16() != 404 {
+        return Err(format!(
+            "Failed to delete key: {}",
+            azure_rejection(resp.status(), org)
+        ));
+    }
+    Ok(())
+}
+
+/// Azure DevOps does not name a token's scopes to the token itself. Listing the
+/// organization's repositories needs "Code (Read)", so a token that cannot is
+/// refused; whether it can also write is not something the API will answer.
+async fn azure_push_permission(client: &Client, token: &str) -> Result<String, String> {
+    let (org, pat) = split_azure(token)?;
+    let url = format!(
+        "https://dev.azure.com/{}/_apis/git/repositories?api-version=7.1",
+        urlencoding::encode(org)
+    );
+    let resp = client
+        .get(&url)
+        .header("Authorization", azure_auth(pat))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Azure DevOps API request failed: {}", e))?;
+    if !azure_accepted(resp.status()) {
+        return Err(format!(
+            "This token cannot read code in {} and cannot push. Issue one with the Code (Read & write) scope.",
+            org
+        ));
+    }
+    Ok("Azure DevOps does not disclose whether this token can write. It needs Code (Read & write) to push.".to_string())
+}
+
 /// What a platform will say about a token meant for pushing over HTTPS.
 pub struct HttpsToken {
     /// Who the platform says the token belongs to, so a token pasted from
@@ -630,6 +914,15 @@ pub async fn check_https_token(platform: Platform, token: &str) -> Result<HttpsT
     // `x-bitbucket-api-token-auth` username beside it, while the REST API
     // authenticates one with the account email, which a bare token does not
     // carry. Refusing it here would refuse a token that pushes.
+    if platform == Platform::Azure && !token.contains(':') {
+        return Ok(HttpsToken {
+            username: None,
+            note: Some(
+                "Azure DevOps checks a token only together with its organization. Save the profile first to have it checked here."
+                    .to_string(),
+            ),
+        });
+    }
     if platform == Platform::Bitbucket && !token.contains(':') {
         return Ok(HttpsToken {
             username: None,
@@ -652,6 +945,7 @@ pub async fn check_https_token(platform: Platform, token: &str) -> Result<HttpsT
             "Bitbucket does not disclose this token's scopes. It needs write:repository:bitbucket to push."
                 .to_string(),
         ),
+        Platform::Azure => Some(azure_push_permission(client, token).await?),
     };
 
     Ok(HttpsToken {
@@ -898,6 +1192,74 @@ mod tests {
             Some("khasky")
         );
         assert_eq!(pick_workspace_slug(vec![], "{me}"), None);
+    }
+
+    /// What people paste into the organization field: the name, or a URL they
+    /// copied out of the browser.
+    #[test]
+    fn an_azure_organization_is_read_out_of_whatever_was_pasted() {
+        for input in [
+            "acme",
+            " acme ",
+            "https://dev.azure.com/acme",
+            "https://dev.azure.com/acme/Proj/_git/app",
+            "dev.azure.com/acme/",
+            "https://acme@dev.azure.com/acme/Proj",
+            "https://acme.visualstudio.com/DefaultCollection",
+        ] {
+            assert_eq!(
+                azure_org_from_input(input).as_deref(),
+                Ok("acme"),
+                "{}",
+                input
+            );
+        }
+        for input in ["", "   ", "acme corp", "a?b"] {
+            assert!(azure_org_from_input(input).is_err(), "{:?}", input);
+        }
+    }
+
+    /// The failure this guards against: Azure DevOps answers a bad token with
+    /// 203 and an HTML sign-in page, which `is_success` alone reads as a valid
+    /// connection.
+    #[test]
+    fn an_azure_sign_in_page_is_not_a_success() {
+        assert!(!azure_accepted(
+            reqwest::StatusCode::NON_AUTHORITATIVE_INFORMATION
+        ));
+        assert!(!azure_accepted(reqwest::StatusCode::UNAUTHORIZED));
+        assert!(azure_accepted(reqwest::StatusCode::OK));
+    }
+
+    /// The body the SSH-key endpoint answers with, as recorded off a live
+    /// organization. `publicData` is the bare base64 body: the `ssh-rsa` type
+    /// and the comment pasted with the key are both dropped, so a match on the
+    /// whole `type body` pair never finds a key the user did add.
+    #[test]
+    fn an_azure_key_is_found_in_the_session_token_list() {
+        let body = r#"{"count":2,"value":[
+          {"clientId":"00000000-0000-0000-0000-000000000000","accessId":"46ea21e9-e485-4e0e-8a8b-984e607558e0","authorizationId":"b6e3e94f-b930-4d97-ac9e-499cd9d79043","hostAuthorizationId":"00000000-0000-0000-0000-000000000000","userId":"09b525f4-efd2-69f8-b746-a8ad77f22aaf","validFrom":"2026-10-31T21:28:26.6533333Z","validTo":"2027-10-31T21:28:26.6433333Z","displayName":"laptop","scope":"app_token","targetAccounts":["52971f24-f89d-4549-9bcd-1f812b0a7940"],"token":null,"alternateToken":null,"isValid":true,"isPublic":true,"publicData":"AAAAB3NzaC1yc2E","source":null,"claims":null,"crossCompanyCorrelatingId":null},
+          {"authorizationId":"c0ffee00-0000-0000-0000-000000000000","displayName":"other","publicData":null}
+        ]}"#;
+        let list: AzureKeyList = serde_json::from_str(body).expect("must parse");
+        let local = normalize_key("ssh-rsa AAAAB3NzaC1yc2E me@laptop");
+        assert_eq!(
+            find_azure_key(&list.value, &local).map(|k| k.authorization_id.as_str()),
+            Some("b6e3e94f-b930-4d97-ac9e-499cd9d79043")
+        );
+        assert!(find_azure_key(&list.value, &normalize_key("ssh-rsa OTHER x")).is_none());
+    }
+
+    #[test]
+    fn the_stored_azure_credential_carries_its_organization() {
+        assert_eq!(split_azure("acme:secret"), Ok(("acme", "secret")));
+        assert!(split_azure("secret").is_err());
+        assert!(split_azure(":secret").is_err());
+        assert_eq!(
+            manual_key_page(Platform::Azure, "acme:secret").as_deref(),
+            Some("https://dev.azure.com/acme/_usersSettings/keys")
+        );
+        assert_eq!(manual_key_page(Platform::Github, "ghp"), None);
     }
 
     /// The delete path builds `<endpoint>/<id>`, so the endpoint has to be the

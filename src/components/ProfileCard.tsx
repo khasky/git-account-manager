@@ -4,7 +4,12 @@ import { fmt, useI18n } from "../i18n";
 import { PLATFORM_LABEL, PLATFORMS, profileUrl } from "../platforms";
 import type { PlatformAccount, PlatformId, Profile } from "../types";
 import ConfirmDialog, { type DialogAction } from "./ConfirmDialog";
-import { BitbucketIcon, GitHubIcon, GitLabIcon } from "./icons";
+import {
+  AzureDevOpsIcon,
+  BitbucketIcon,
+  GitHubIcon,
+  GitLabIcon,
+} from "./icons";
 
 interface Props {
   profile: Profile;
@@ -23,6 +28,7 @@ const PLATFORM_ICON: Record<
   github: GitHubIcon,
   gitlab: GitLabIcon,
   bitbucket: BitbucketIcon,
+  azure: AzureDevOpsIcon,
 };
 
 function PlatformBadge({

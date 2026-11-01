@@ -345,6 +345,7 @@ mod tests {
                     sign_commits: false,
                     token: Some("bb-token".to_string()),
                 }),
+                azure: None,
                 is_active: true,
             }],
             oauth: Default::default(),

@@ -175,6 +175,14 @@ export const en = {
       errCreds: `Enter both your Atlassian email and API token.`,
       emailPrivacy: `Bitbucket has no noreply address. To keep your personal email out of commits, add a confirmed alias under <a>Email aliases</a> and use it as the Git email — commits stay linked to your account.`,
     },
+    azure: {
+      help: `Azure DevOps needs a <a>personal access token</a> issued in your organization, with custom scopes.`,
+      orgPlaceholder: `Organization (dev.azure.com/<organization>)`,
+      tokenPlaceholder: `Personal access token`,
+      scopesHint: `Select scopes: User Profile (Read), Code (Read & write), Tokens (Read & manage).`,
+      errCreds: `Enter both the organization and a personal access token.`,
+      keyManual: `Azure DevOps accepts only RSA keys and does not let a token add them: the generated key is copied to the clipboard and its <a>SSH public keys</a> page opens. Paste it there, then press Upload to confirm it arrived.`,
+    },
     https: {
       label: `HTTPS token`,
       placeholder: `Paste a token for https:// remotes`,
@@ -184,6 +192,7 @@ export const en = {
       hintGithub: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. Issue a <a>personal access token</a> with the <code>repo</code> scope; the sign-in token cannot push over HTTPS.`,
       hintGitlab: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. Issue a <a>personal access token</a> with <code>write_repository</code>; the sign-in token expires within hours.`,
       hintBitbucket: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. The <a>API token</a> you connected with already answers here — add one only to let git use a different token.`,
+      hintAzure: `Used for <code>https://</code> remotes once the HTTPS credential helper is on in Settings. The <a>personal access token</a> you connected with already answers here if it has Code (Read & write) — add one only to let git use a different token.`,
     },
     editTitle: `Edit Profile`,
     newTitle: `New Profile`,

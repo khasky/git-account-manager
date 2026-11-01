@@ -176,6 +176,16 @@ fn credentials(
                 None => ("x-bitbucket-api-token-auth".to_string(), stored),
             })
         }
+        // Azure DevOps reads only the password, a personal access token, and
+        // ignores the username. The connect form stored `org:token`, which
+        // answers when no separate token was added.
+        Platform::Azure => {
+            let stored = https_token
+                .or_else(|| tokens.oauth_token(&profile.id, platform))
+                .filter(|t| !t.trim().is_empty())?;
+            let token = stored.split_once(':').map_or(stored.as_str(), |(_, t)| t);
+            Some((account.username.clone(), token.to_string()))
+        }
     }
 }
 
@@ -230,7 +240,7 @@ pub fn apply(state: &AppState) -> Result<(), String> {
     };
 
     for platform in PLATFORMS {
-        let host = platform.canonical_host();
+        let host = platform.https_host();
         match helper.as_ref().filter(|_| can_answer(state, platform)) {
             Some(path) => git::set_credential_helper(host, &path.to_string_lossy())?,
             None => git::unset_credential_helper(host)?,
@@ -311,6 +321,7 @@ mod tests {
             github: None,
             gitlab: None,
             bitbucket: None,
+            azure: None,
             is_active,
         }
     }
@@ -419,6 +430,57 @@ mod tests {
         assert_eq!(
             get("protocol=https\nhost=bitbucket.org\n\n", &state, &tokens).as_deref(),
             Some("username=x-bitbucket-api-token-auth\npassword=ATATTsecret\n\n")
+        );
+    }
+
+    /// Azure DevOps puts the organization in front of the host in every HTTPS
+    /// remote it hands out (`https://acme@dev.azure.com/...`), so that is the
+    /// username git asks with, and it picks the profile connected to that
+    /// organization rather than the active one.
+    #[test]
+    fn azure_answers_for_the_organization_named_in_the_remote() {
+        let mut work = profile("p1", "Work", true);
+        work.azure = Some(account("work-org"));
+        let mut client = profile("p2", "Client", false);
+        client.azure = Some(account("acme"));
+        let state = AppState {
+            profiles: vec![work, client],
+            ..Default::default()
+        };
+        let tokens = FakeTokens::default()
+            .with_oauth("p1", Platform::Azure, "work-org:work-pat")
+            .with_oauth("p2", Platform::Azure, "acme:acme-pat");
+
+        assert_eq!(
+            get(
+                "url=https://acme@dev.azure.com/acme/Proj/_git/app\n\n",
+                &state,
+                &tokens
+            )
+            .as_deref(),
+            Some("username=acme\npassword=acme-pat\n\n")
+        );
+        assert_eq!(
+            get("protocol=https\nhost=dev.azure.com\n\n", &state, &tokens).as_deref(),
+            Some("username=work-org\npassword=work-pat\n\n")
+        );
+    }
+
+    #[test]
+    fn an_azure_https_token_added_separately_wins_over_the_connect_token() {
+        let mut work = profile("p1", "Work", true);
+        work.azure = Some(account("acme"));
+        let state = AppState {
+            profiles: vec![work],
+            ..Default::default()
+        };
+        let tokens = FakeTokens::default()
+            .with_oauth("p1", Platform::Azure, "acme:connect-pat")
+            .with_https("p1", Platform::Azure, "push-pat");
+
+        assert_eq!(
+            get("protocol=https\nhost=dev.azure.com\n\n", &state, &tokens).as_deref(),
+            Some("username=acme\npassword=push-pat\n\n")
         );
     }
 

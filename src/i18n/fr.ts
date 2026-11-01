@@ -169,6 +169,14 @@ export const fr: Messages = {
       errCreds: `Saisissez votre e-mail Atlassian et votre jeton d'API.`,
       emailPrivacy: `Bitbucket n'a pas d'adresse noreply. Pour que votre e-mail personnel n'apparaisse pas dans les commits, ajoutez un alias confirmé dans <a>Email aliases</a> et utilisez-le comme e-mail Git — les commits restent liés à votre compte.`,
     },
+    azure: {
+      help: `Azure DevOps a besoin d'un <a>jeton d'accès personnel</a> émis dans votre organisation, avec des scopes personnalisés.`,
+      orgPlaceholder: `Organisation (dev.azure.com/<organisation>)`,
+      tokenPlaceholder: `Jeton d'accès personnel`,
+      scopesHint: `Sélectionnez les scopes : User Profile (Read), Code (Read & write), Tokens (Read & manage).`,
+      errCreds: `Saisissez l'organisation et un jeton d'accès personnel.`,
+      keyManual: `Azure DevOps n'accepte que les clés RSA et ne permet pas à un jeton de les ajouter : la clé générée est copiée dans le presse-papiers et sa page <a>SSH public keys</a> s'ouvre. Collez-la là, puis cliquez sur Téléverser pour confirmer qu'elle est arrivée.`,
+    },
     https: {
       label: `Jeton HTTPS`,
       placeholder: `Collez un jeton pour les dépôts https://`,
@@ -178,6 +186,7 @@ export const fr: Messages = {
       hintGithub: `Utilisé pour les dépôts <code>https://</code> dès que le credential helper HTTPS est activé dans les paramètres. Créez un <a>jeton d'accès personnel</a> avec la portée <code>repo</code> ; le jeton de connexion ne permet pas de pousser en HTTPS.`,
       hintGitlab: `Utilisé pour les dépôts <code>https://</code> dès que le credential helper HTTPS est activé dans les paramètres. Créez un <a>jeton d'accès personnel</a> avec <code>write_repository</code> ; le jeton de connexion expire en quelques heures.`,
       hintBitbucket: `Utilisé pour les dépôts <code>https://</code> dès que le credential helper HTTPS est activé dans les paramètres. Le <a>jeton d'API</a> avec lequel vous vous êtes connecté répond déjà ici — n'en ajoutez un que pour que git utilise un autre jeton.`,
+      hintAzure: `Utilisé pour les remotes <code>https://</code> une fois l'assistant d'identifiants HTTPS activé dans les Paramètres. Le <a>jeton d'accès personnel</a> utilisé pour la connexion répond déjà ici s'il a Code (Read & write) — n'en ajoutez un que pour que git utilise un autre jeton.`,
     },
     editTitle: `Modifier le profil`,
     newTitle: `Nouveau profil`,

@@ -14,7 +14,10 @@ fn ssh_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-pub fn generate_key(email: &str, key_name: &str) -> Result<SshKeyPair, String> {
+/// `key_type` is what `ssh-keygen -t` takes. RSA is given 4096 bits rather than
+/// the 3072 `ssh-keygen` defaults to; it is only made where a platform accepts
+/// nothing else.
+pub fn generate_key(email: &str, key_name: &str, key_type: &str) -> Result<SshKeyPair, String> {
     let dir = ssh_dir()?;
     let private_path = dir.join(key_name);
     let public_path = dir.join(format!("{}.pub", key_name));
@@ -24,7 +27,11 @@ pub fn generate_key(email: &str, key_name: &str) -> Result<SshKeyPair, String> {
     }
 
     let mut cmd = hidden_command("ssh-keygen");
-    cmd.args(["-t", "ed25519", "-C", email, "-f"])
+    cmd.args(["-t", key_type]);
+    if key_type == "rsa" {
+        cmd.args(["-b", "4096"]);
+    }
+    cmd.args(["-C", email, "-f"])
         .arg(&private_path)
         .args(["-N", ""]);
     let output = cmd
@@ -42,6 +49,7 @@ pub fn generate_key(email: &str, key_name: &str) -> Result<SshKeyPair, String> {
         private_key_path: private_path.to_string_lossy().to_string(),
         public_key_path: public_path.to_string_lossy().to_string(),
         signing_error: None,
+        manual_upload_url: None,
     })
 }
 
@@ -122,7 +130,7 @@ pub fn bare_host_owners(profiles: &[Profile]) -> Vec<(Platform, Option<&Profile>
 /// Writes the managed region of `~/.ssh/config`.
 ///
 /// The active profile owns the bare `github.com` / `gitlab.com` /
-/// `bitbucket.org` hosts, so a repository without an alias still has a key;
+/// `bitbucket.org` / `ssh.dev.azure.com` hosts, so a repository without an alias still has a key;
 /// a repository pinned to a `<platform>-<slug>` alias keeps its own key no
 /// matter which profile is active, because its block names the key directly
 /// with `IdentitiesOnly`.
@@ -250,6 +258,7 @@ mod tests {
             github: github.then(account),
             gitlab: Some(account()),
             bitbucket: None,
+            azure: None,
             is_active,
         }
     }

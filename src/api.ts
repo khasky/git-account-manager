@@ -90,6 +90,12 @@ export const connectBitbucket = (args: {
   apiToken: string;
 }) => invoke<PlatformUser>("connect_bitbucket", args);
 
+export const connectAzure = (args: {
+  profileId: string;
+  organization: string;
+  token: string;
+}) => invoke<PlatformUser>("connect_azure", args);
+
 export const githubOauthStart = (clientId: string) =>
   invoke<DeviceCodeResponse>("github_oauth_start", { clientId });
 

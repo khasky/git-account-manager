@@ -169,6 +169,14 @@ export const ja: Messages = {
       errCreds: `Atlassian のメールと API トークンの両方を入力してください。`,
       emailPrivacy: `Bitbucket には noreply アドレスがありません。個人のメールをコミットに残さないには、<a>Email aliases</a> で確認済みのエイリアスを追加し、Git のメールに指定してください。コミットはアカウントに紐付いたままです。`,
     },
+    azure: {
+      help: `Azure DevOps には、組織で発行したカスタム スコープ付きの<a>個人用アクセス トークン</a>が必要です。`,
+      orgPlaceholder: `組織 (dev.azure.com/<組織>)`,
+      tokenPlaceholder: `個人用アクセス トークン`,
+      scopesHint: `スコープを選択: User Profile (Read), Code (Read & write), Tokens (Read & manage)。`,
+      errCreds: `組織と個人用アクセス トークンの両方を入力してください。`,
+      keyManual: `Azure DevOps は RSA キーのみを受け付け、トークンによるキーの追加を許可しません。生成したキーはクリップボードにコピーされ、<a>SSH public keys</a> ページが開きます。そこに貼り付けてから「アップロード」を押して、追加されたことを確認してください。`,
+    },
     https: {
       label: `HTTPS トークン`,
       placeholder: `https:// リモート用のトークンを貼り付け`,
@@ -178,6 +186,7 @@ export const ja: Messages = {
       hintGithub: `設定で HTTPS credential helper を有効にすると、<code>https://</code> リモートで使われます。<code>repo</code> スコープを付けた<a>パーソナルアクセストークン</a>を作成してください。サインイン用のトークンでは HTTPS で push できません。`,
       hintGitlab: `設定で HTTPS credential helper を有効にすると、<code>https://</code> リモートで使われます。<code>write_repository</code> を付けた<a>パーソナルアクセストークン</a>を作成してください。サインイン用のトークンは数時間で期限切れになります。`,
       hintBitbucket: `設定で HTTPS credential helper を有効にすると、<code>https://</code> リモートで使われます。接続に使った <a>API トークン</a>がすでにここで応答します。git に別のトークンを使わせたい場合だけ追加してください。`,
+      hintAzure: `設定で HTTPS 認証情報ヘルパーをオンにすると、<code>https://</code> リモートに使われます。接続に使った<a>個人用アクセス トークン</a>に Code (Read & write) があれば、ここでもそのまま使われます。git に別のトークンを使わせる場合のみ追加してください。`,
     },
     editTitle: `プロフィールを編集`,
     newTitle: `新しいプロフィール`,

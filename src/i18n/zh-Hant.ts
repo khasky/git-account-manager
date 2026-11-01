@@ -169,6 +169,14 @@ export const zhHant: Messages = {
       errCreds: `請輸入 Atlassian 電子郵件和 API 權杖。`,
       emailPrivacy: `Bitbucket 沒有 noreply 位址。要讓個人信箱不出現在提交中，請在 <a>Email aliases</a> 新增已確認的別名並用作 Git 信箱——提交仍會關聯到你的帳號。`,
     },
+    azure: {
+      help: `Azure DevOps 需要在你的組織中簽發、帶自訂範圍的<a>個人存取權杖</a>。`,
+      orgPlaceholder: `組織 (dev.azure.com/<組織>)`,
+      tokenPlaceholder: `個人存取權杖`,
+      scopesHint: `選擇範圍：User Profile (Read), Code (Read & write), Tokens (Read & manage)。`,
+      errCreds: `請同時填寫組織和個人存取權杖。`,
+      keyManual: `Azure DevOps 只接受 RSA 金鑰，且不允許透過權杖新增：產生的金鑰會複製到剪貼簿，並開啟 <a>SSH public keys</a> 頁面。將其貼上到那裡，然後點擊「上傳」確認已新增。`,
+    },
     https: {
       label: `HTTPS 權杖`,
       placeholder: `貼上用於 https:// 遠端的權杖`,
@@ -178,6 +186,7 @@ export const zhHant: Messages = {
       hintGithub: `在設定中開啟 HTTPS credential helper 後，用於 <code>https://</code> 遠端。請建立具 <code>repo</code> 範圍的<a>個人存取權杖</a>；登入用的權杖無法透過 HTTPS 推送。`,
       hintGitlab: `在設定中開啟 HTTPS credential helper 後，用於 <code>https://</code> 遠端。請建立具 <code>write_repository</code> 的<a>個人存取權杖</a>；登入用的權杖幾小時就會過期。`,
       hintBitbucket: `在設定中開啟 HTTPS credential helper 後，用於 <code>https://</code> 遠端。你連線時使用的 <a>API 權杖</a>已經能在這裡回應 — 只有想讓 git 使用其他權杖時才需要新增。`,
+      hintAzure: `在設定中開啟 HTTPS 憑證協助程式後，用於 <code>https://</code> 遠端。連線時使用的<a>個人存取權杖</a>若具有 Code (Read & write)，在這裡已可使用——只有當 git 需要使用其他權杖時才新增。`,
     },
     editTitle: `編輯設定檔`,
     newTitle: `新增設定檔`,

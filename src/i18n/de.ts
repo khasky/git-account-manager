@@ -169,6 +169,14 @@ export const de: Messages = {
       errCreds: `Gib sowohl deine Atlassian-E-Mail als auch das API-Token ein.`,
       emailPrivacy: `Bitbucket hat keine Noreply-Adresse. Damit deine private E-Mail nicht in Commits landet, füge unter <a>Email aliases</a> einen bestätigten Alias hinzu und nutze ihn als Git-E-Mail — die Commits bleiben deinem Konto zugeordnet.`,
     },
+    azure: {
+      help: `Azure DevOps braucht ein in deiner Organisation ausgestelltes <a>Personal Access Token</a> mit benutzerdefinierten Scopes.`,
+      orgPlaceholder: `Organisation (dev.azure.com/<organisation>)`,
+      tokenPlaceholder: `Personal Access Token`,
+      scopesHint: `Scopes auswählen: User Profile (Read), Code (Read & write), Tokens (Read & manage).`,
+      errCreds: `Gib die Organisation und ein Personal Access Token ein.`,
+      keyManual: `Azure DevOps akzeptiert nur RSA-Schlüssel und lässt sie nicht per Token hinzufügen: Der erzeugte Schlüssel wird in die Zwischenablage kopiert und die Seite <a>SSH public keys</a> geöffnet. Füge ihn dort ein und klicke dann auf Hochladen, um zu prüfen, dass er angekommen ist.`,
+    },
     https: {
       label: `HTTPS-Token`,
       placeholder: `Token für https://-Remotes einfügen`,
@@ -178,6 +186,7 @@ export const de: Messages = {
       hintGithub: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Erstelle ein <a>Personal Access Token</a> mit dem Scope <code>repo</code>; das Anmelde-Token kann über HTTPS nicht pushen.`,
       hintGitlab: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Erstelle ein <a>Personal Access Token</a> mit <code>write_repository</code>; das Anmelde-Token läuft nach wenigen Stunden ab.`,
       hintBitbucket: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Das <a>API-Token</a>, mit dem du dich verbunden hast, antwortet hier bereits — füge nur eines hinzu, wenn Git ein anderes Token nutzen soll.`,
+      hintAzure: `Wird für <code>https://</code>-Remotes verwendet, sobald der HTTPS-Credential-Helper in den Einstellungen aktiv ist. Das <a>Personal Access Token</a>, mit dem du verbunden hast, antwortet hier bereits, wenn es Code (Read & write) hat — füge nur eines hinzu, wenn git ein anderes Token verwenden soll.`,
     },
     editTitle: `Profil bearbeiten`,
     newTitle: `Neues Profil`,

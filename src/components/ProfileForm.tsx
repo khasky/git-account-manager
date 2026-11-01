@@ -69,7 +69,7 @@ function platformFromAccount(acc?: PlatformAccount): PlatformState {
 }
 
 function noCountdowns(): Record<PlatformId, number> {
-  return { github: 0, gitlab: 0, bitbucket: 0 };
+  return { github: 0, gitlab: 0, bitbucket: 0, azure: 0 };
 }
 
 export default function ProfileForm({
@@ -87,6 +87,7 @@ export default function ProfileForm({
     github: Boolean(profile?.github),
     gitlab: Boolean(profile?.gitlab),
     bitbucket: Boolean(profile?.bitbucket),
+    azure: Boolean(profile?.azure),
   });
 
   const [name, setName] = useState(profile?.name || prefill?.name || "");
@@ -103,6 +104,7 @@ export default function ProfileForm({
       github: platformFromAccount(profile?.github),
       gitlab: platformFromAccount(profile?.gitlab),
       bitbucket: platformFromAccount(profile?.bitbucket),
+      azure: platformFromAccount(profile?.azure),
     }),
   );
 
@@ -120,6 +122,10 @@ export default function ProfileForm({
   // not OAuth — these hold the two inputs until "Connect" combines them.
   const [bbEmail, setBbEmail] = useState("");
   const [bbToken, setBbToken] = useState("");
+  // Azure DevOps connects the same way, with an organization and a personal
+  // access token issued in it.
+  const [azOrg, setAzOrg] = useState("");
+  const [azToken, setAzToken] = useState("");
   const [sshKeys, setSshKeys] = useState<SshKeyInfo[]>([]);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<SaveProgress | null>(null);
@@ -461,10 +467,35 @@ export default function ProfileForm({
     }
   }
 
+  async function connectAzure() {
+    if (!azOrg.trim() || !azToken.trim()) {
+      update("azure", {
+        error: { kind: "message", text: m.form.azure.errCreds },
+      });
+      return;
+    }
+    update("azure", { connecting: true, error: { kind: "none" } });
+    try {
+      const user = await api.connectAzure({
+        profileId,
+        organization: azOrg.trim(),
+        token: azToken.trim(),
+      });
+      update("azure", { ...connectedPatch(user), noreplyEmail: "" });
+      setAzToken("");
+    } catch (e) {
+      update("azure", {
+        connecting: false,
+        error: { kind: "message", text: String(e) },
+      });
+    }
+  }
+
   const connectors: Record<PlatformId, () => void> = {
     github: connectGitHub,
     gitlab: connectGitLab,
     bitbucket: connectBitbucket,
+    azure: connectAzure,
   };
 
   async function generateAndUpload(platform: PlatformId) {
@@ -478,13 +509,28 @@ export default function ProfileForm({
         email: section.gitEmail || "git@git-account-manager",
         sign: section.signCommits,
       });
+      setSshKeys(await api.listSshKeys());
+      if (pair.manual_upload_url) {
+        // The platform will not take the key from a token: hand it to the
+        // user on the page that does, and leave it selected so "Upload"
+        // confirms it arrived once it has been pasted there.
+        update(platform, {
+          sshSource: "existing",
+          selectedKey: pair.private_key_path,
+          sshPrivateKeyPath: pair.private_key_path,
+          sshPublicKeyPath: pair.public_key_path,
+          keyUploaded: false,
+        });
+        await handleCopyPublicKey(pair.public_key_path);
+        await openUrl(pair.manual_upload_url);
+        return;
+      }
       update(platform, {
         sshPrivateKeyPath: pair.private_key_path,
         sshPublicKeyPath: pair.public_key_path,
         keyUploaded: true,
         signingError: pair.signing_error || "",
       });
-      setSshKeys(await api.listSshKeys());
     } catch (e) {
       update(platform, { error: { kind: "message", text: String(e) } });
     }
@@ -555,6 +601,7 @@ export default function ProfileForm({
       github: buildAccount(sections.github),
       gitlab: buildAccount(sections.gitlab),
       bitbucket: buildAccount(sections.bitbucket),
+      azure: buildAccount(sections.azure),
       is_active: profile?.is_active || false,
     };
   }
@@ -790,7 +837,14 @@ export default function ProfileForm({
                       setEmail: setBbEmail,
                       setToken: setBbToken,
                     }
-                  : undefined
+                  : platform === "azure"
+                    ? {
+                        email: azOrg,
+                        token: azToken,
+                        setEmail: setAzOrg,
+                        setToken: setAzToken,
+                      }
+                    : undefined
               }
               sshKeys={sshKeys}
               importedEmail={importedEmail}

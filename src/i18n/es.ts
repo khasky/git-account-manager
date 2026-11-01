@@ -169,6 +169,14 @@ export const es: Messages = {
       errCreds: `Introduce tu correo de Atlassian y el token de API.`,
       emailPrivacy: `Bitbucket no tiene dirección noreply. Para que tu correo personal no aparezca en los commits, añade un alias confirmado en <a>Email aliases</a> y úsalo como correo de Git: los commits siguen vinculados a tu cuenta.`,
     },
+    azure: {
+      help: `Azure DevOps necesita un <a>token de acceso personal</a> emitido en tu organización, con scopes personalizados.`,
+      orgPlaceholder: `Organización (dev.azure.com/<organización>)`,
+      tokenPlaceholder: `Token de acceso personal`,
+      scopesHint: `Selecciona los scopes: User Profile (Read), Code (Read & write), Tokens (Read & manage).`,
+      errCreds: `Introduce la organización y un token de acceso personal.`,
+      keyManual: `Azure DevOps solo acepta claves RSA y no permite que un token las añada: la clave generada se copia al portapapeles y se abre su página <a>SSH public keys</a>. Pégala allí y pulsa Subir para confirmar que llegó.`,
+    },
     https: {
       label: `Token HTTPS`,
       placeholder: `Pega un token para remotos https://`,
@@ -178,6 +186,7 @@ export const es: Messages = {
       hintGithub: `Se usa en los remotos <code>https://</code> cuando el credential helper HTTPS está activado en los ajustes. Crea un <a>token de acceso personal</a> con el ámbito <code>repo</code>; el token de inicio de sesión no puede hacer push por HTTPS.`,
       hintGitlab: `Se usa en los remotos <code>https://</code> cuando el credential helper HTTPS está activado en los ajustes. Crea un <a>token de acceso personal</a> con <code>write_repository</code>; el token de inicio de sesión caduca en unas horas.`,
       hintBitbucket: `Se usa en los remotos <code>https://</code> cuando el credential helper HTTPS está activado en los ajustes. El <a>token de API</a> con el que te conectaste ya responde aquí; añade otro solo si quieres que git use un token distinto.`,
+      hintAzure: `Se usa para remotos <code>https://</code> cuando el asistente de credenciales HTTPS está activado en Ajustes. El <a>token de acceso personal</a> con el que te conectaste ya responde aquí si tiene Code (Read & write); añade otro solo si git debe usar un token distinto.`,
     },
     editTitle: `Editar perfil`,
     newTitle: `Nuevo perfil`,

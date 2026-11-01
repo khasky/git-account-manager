@@ -169,6 +169,14 @@ export const zhHans: Messages = {
       errCreds: `请输入 Atlassian 邮箱和 API 令牌。`,
       emailPrivacy: `Bitbucket 没有 noreply 地址。要让个人邮箱不出现在提交中，请在 <a>Email aliases</a> 添加已确认的别名并用作 Git 邮箱——提交仍会关联到你的账号。`,
     },
+    azure: {
+      help: `Azure DevOps 需要在你的组织中签发、带自定义范围的<a>个人访问令牌</a>。`,
+      orgPlaceholder: `组织 (dev.azure.com/<组织>)`,
+      tokenPlaceholder: `个人访问令牌`,
+      scopesHint: `选择范围：User Profile (Read), Code (Read & write), Tokens (Read & manage)。`,
+      errCreds: `请同时填写组织和个人访问令牌。`,
+      keyManual: `Azure DevOps 只接受 RSA 密钥，且不允许通过令牌添加：生成的密钥会复制到剪贴板，并打开 <a>SSH public keys</a> 页面。将其粘贴到那里，然后点击“上传”确认已添加。`,
+    },
     https: {
       label: `HTTPS 令牌`,
       placeholder: `粘贴用于 https:// 远程的令牌`,
@@ -178,6 +186,7 @@ export const zhHans: Messages = {
       hintGithub: `在设置中开启 HTTPS credential helper 后，用于 <code>https://</code> 远程。请创建带 <code>repo</code> 权限的<a>个人访问令牌</a>；登录用的令牌无法通过 HTTPS 推送。`,
       hintGitlab: `在设置中开启 HTTPS credential helper 后，用于 <code>https://</code> 远程。请创建带 <code>write_repository</code> 的<a>个人访问令牌</a>；登录用的令牌几小时就会过期。`,
       hintBitbucket: `在设置中开启 HTTPS credential helper 后，用于 <code>https://</code> 远程。你连接时用的 <a>API 令牌</a>已经能在这里应答 — 只有想让 git 使用另一个令牌时才需要添加。`,
+      hintAzure: `在设置中开启 HTTPS 凭据助手后，用于 <code>https://</code> 远程。连接时使用的<a>个人访问令牌</a>如果具有 Code (Read & write)，在这里已经可以使用——只有当 git 需要使用其他令牌时才添加。`,
     },
     editTitle: `编辑配置文件`,
     newTitle: `新建配置文件`,

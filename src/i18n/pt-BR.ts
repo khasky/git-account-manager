@@ -169,6 +169,14 @@ export const ptBR: Messages = {
       errCreds: `Informe seu e-mail da Atlassian e o token de API.`,
       emailPrivacy: `O Bitbucket não tem endereço noreply. Para manter seu e-mail pessoal fora dos commits, adicione um alias confirmado em <a>Email aliases</a> e use-o como e-mail do Git — os commits continuam vinculados à sua conta.`,
     },
+    azure: {
+      help: `O Azure DevOps precisa de um <a>token de acesso pessoal</a> emitido na sua organização, com scopes personalizados.`,
+      orgPlaceholder: `Organização (dev.azure.com/<organização>)`,
+      tokenPlaceholder: `Token de acesso pessoal`,
+      scopesHint: `Selecione os scopes: User Profile (Read), Code (Read & write), Tokens (Read & manage).`,
+      errCreds: `Informe a organização e um token de acesso pessoal.`,
+      keyManual: `O Azure DevOps aceita apenas chaves RSA e não permite que um token as adicione: a chave gerada é copiada para a área de transferência e a página <a>SSH public keys</a> é aberta. Cole-a lá e clique em Enviar para confirmar que chegou.`,
+    },
     https: {
       label: `Token HTTPS`,
       placeholder: `Cole um token para remotos https://`,
@@ -178,6 +186,7 @@ export const ptBR: Messages = {
       hintGithub: `Usado nos remotos <code>https://</code> quando o credential helper HTTPS está ligado nas configurações. Crie um <a>token de acesso pessoal</a> com o escopo <code>repo</code>; o token de login não faz push por HTTPS.`,
       hintGitlab: `Usado nos remotos <code>https://</code> quando o credential helper HTTPS está ligado nas configurações. Crie um <a>token de acesso pessoal</a> com <code>write_repository</code>; o token de login expira em poucas horas.`,
       hintBitbucket: `Usado nos remotos <code>https://</code> quando o credential helper HTTPS está ligado nas configurações. O <a>token de API</a> com que você conectou já responde aqui — adicione outro só para o git usar um token diferente.`,
+      hintAzure: `Usado para remotes <code>https://</code> quando o auxiliar de credenciais HTTPS está ativado nas Configurações. O <a>token de acesso pessoal</a> usado na conexão já responde aqui se tiver Code (Read & write) — adicione outro só para o git usar um token diferente.`,
     },
     editTitle: `Editar perfil`,
     newTitle: `Novo perfil`,

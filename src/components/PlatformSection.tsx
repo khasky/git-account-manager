@@ -1,7 +1,12 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { noSuggestions } from "../fieldSuggestions";
 import { fmt, rich, useI18n } from "../i18n";
-import { PLATFORM_LABEL, profileUrl, TOKEN_PAGE_URL } from "../platforms";
+import {
+  azureKeysPageUrl,
+  PLATFORM_LABEL,
+  profileUrl,
+  tokenPageUrl,
+} from "../platforms";
 import type { DeviceCodeResponse, PlatformId, SshKeyInfo } from "../types";
 import { CheckIcon, CopyIcon } from "./icons";
 
@@ -84,7 +89,9 @@ interface Props {
   onCancelAuth?: () => void;
   /** Seconds left in the running flow; 0 hides the counter. */
   countdown: number;
-  /** Bitbucket authenticates with a pasted email + API token, not OAuth. */
+  /** Bitbucket (email + API token) and Azure DevOps (organization + personal
+   *  access token) authenticate with pasted credentials, not OAuth. `email`
+   *  holds the first of the two fields. */
   credentials?: {
     email: string;
     token: string;
@@ -198,35 +205,46 @@ export default function PlatformSection({
 
   function renderConnect() {
     if (credentials) {
+      const text =
+        platform === "azure"
+          ? {
+              help: m.form.azure.help,
+              first: m.form.azure.orgPlaceholder,
+              token: m.form.azure.tokenPlaceholder,
+              scopes: m.form.azure.scopesHint,
+              helpUrl: tokenPageUrl("azure", credentials.email.trim()),
+            }
+          : {
+              help: m.form.bitbucket.help,
+              first: m.form.bitbucket.emailPlaceholder,
+              token: m.form.bitbucket.tokenPlaceholder,
+              scopes: m.form.bitbucket.scopesHint,
+              helpUrl: tokenPageUrl("bitbucket", ""),
+            };
       return (
         <div className="space-y-2">
           <p className="text-xs text-fg-5">
-            {rich(m.form.bitbucket.help, {
-              onLink: () =>
-                openUrl(
-                  "https://id.atlassian.com/manage-profile/security/api-tokens",
-                ),
-            })}
+            {rich(text.help, { onLink: () => openUrl(text.helpUrl) })}
           </p>
           <input
             {...noSuggestions}
             type="text"
-            aria-label={m.form.bitbucket.emailPlaceholder}
+            aria-label={text.first}
             value={credentials.email}
             onChange={(e) => credentials.setEmail(e.target.value)}
-            placeholder={m.form.bitbucket.emailPlaceholder}
+            placeholder={text.first}
             className="field-sm"
           />
           <input
             {...noSuggestions}
             type="password"
-            aria-label={m.form.bitbucket.tokenPlaceholder}
+            aria-label={text.token}
             value={credentials.token}
             onChange={(e) => credentials.setToken(e.target.value)}
-            placeholder={m.form.bitbucket.tokenPlaceholder}
+            placeholder={text.token}
             className="field-sm"
           />
-          <p className="text-xs text-fg-5">{m.form.bitbucket.scopesHint}</p>
+          <p className="text-xs text-fg-5">{text.scopes}</p>
           {renderEmailPrivacy()}
           <button
             type="button"
@@ -365,6 +383,14 @@ export default function PlatformSection({
           </button>
         </div>
 
+        {platform === "azure" && (
+          <p className="text-xs text-fg-5">
+            {rich(m.form.azure.keyManual, {
+              onLink: () => openUrl(azureKeysPageUrl(state.username)),
+            })}
+          </p>
+        )}
+
         {state.sshSource === "generate" ? (
           <button
             type="button"
@@ -433,6 +459,7 @@ export default function PlatformSection({
       github: m.form.https.hintGithub,
       gitlab: m.form.https.hintGitlab,
       bitbucket: m.form.https.hintBitbucket,
+      azure: m.form.https.hintAzure,
     }[platform];
 
     return (
@@ -456,7 +483,7 @@ export default function PlatformSection({
         />
         <p className="mt-1 text-xs text-fg-5">
           {rich(hint, {
-            onLink: () => openUrl(TOKEN_PAGE_URL[platform]),
+            onLink: () => openUrl(tokenPageUrl(platform, state.username)),
             codeClass: "text-fg-4",
           })}
         </p>

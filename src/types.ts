@@ -1,6 +1,6 @@
 /** The platforms this app knows. Mirrors `models::Platform` in the backend,
- *  whose serialized form is exactly these three strings. */
-export type PlatformId = "github" | "gitlab" | "bitbucket";
+ *  whose serialized form is exactly these strings. */
+export type PlatformId = "github" | "gitlab" | "bitbucket" | "azure";
 
 export interface PlatformAccount {
   username: string;
@@ -20,6 +20,8 @@ export interface Profile {
   github?: PlatformAccount;
   gitlab?: PlatformAccount;
   bitbucket?: PlatformAccount;
+  /** One Azure DevOps organization; `username` is the organization's name. */
+  azure?: PlatformAccount;
   is_active: boolean;
 }
 
@@ -35,6 +37,9 @@ export interface SshKeyPair {
   /** Set when the key was created and uploaded but could not be registered for
    *  signing — the key works, the "Verified" badge will not appear. */
   signing_error?: string;
+  /** Set where a token cannot add the key: the page the user pastes it on.
+   *  The key exists locally but is not on the account yet. */
+  manual_upload_url?: string;
 }
 
 export interface PlatformUser {

@@ -169,6 +169,14 @@ export const uk: Messages = {
       errCreds: `Вкажіть і email Atlassian, і API-токен.`,
       emailPrivacy: `У Bitbucket немає noreply-адреси. Щоб особиста пошта не потрапляла в коміти, додай підтверджений аліас у <a>Email aliases</a> і вкажи його як Git-email — коміти лишаться прив'язані до акаунта.`,
     },
+    azure: {
+      help: `Azure DevOps потрібен <a>personal access token</a>, виданий у твоїй організації, з власними scopes.`,
+      orgPlaceholder: `Організація (dev.azure.com/<організація>)`,
+      tokenPlaceholder: `Personal access token`,
+      scopesHint: `Обери scopes: User Profile (Read), Code (Read & write), Tokens (Read & manage).`,
+      errCreds: `Вкажи і організацію, і personal access token.`,
+      keyManual: `Azure DevOps приймає лише RSA-ключі й не дозволяє токену їх додавати: створений ключ копіюється в буфер обміну й відкривається сторінка <a>SSH public keys</a>. Встав його там, потім натисни «Завантажити», щоб перевірити, що його додано.`,
+    },
     https: {
       label: `HTTPS-токен`,
       placeholder: `Встав токен для https://-ремоутів`,
@@ -178,6 +186,7 @@ export const uk: Messages = {
       hintGithub: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. Створи <a>personal access token</a> зі скоупом <code>repo</code>: токеном входу пушити через HTTPS не можна.`,
       hintGitlab: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. Створи <a>personal access token</a> з <code>write_repository</code>: токен входу живе лише кілька годин.`,
       hintBitbucket: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. <a>API-токен</a>, яким ти під'єднувався, уже відповідає тут — додавай інший, лише якщо git має використовувати інший токен.`,
+      hintAzure: `Використовується для <code>https://</code>-ремоутів, коли в налаштуваннях увімкнено HTTPS credential helper. <a>Personal access token</a>, яким ти підключався, вже відповідає тут, якщо має Code (Read & write) — додавай інший, лише якщо git має використовувати інший токен.`,
     },
     editTitle: `Редагувати профіль`,
     newTitle: `Новий профіль`,

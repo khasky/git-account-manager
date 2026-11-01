@@ -14,10 +14,16 @@ pub enum Platform {
     Github,
     Gitlab,
     Bitbucket,
+    Azure,
 }
 
 /// The platforms this app knows, in the order every list and menu shows them.
-pub const PLATFORMS: [Platform; 3] = [Platform::Github, Platform::Gitlab, Platform::Bitbucket];
+pub const PLATFORMS: [Platform; 4] = [
+    Platform::Github,
+    Platform::Gitlab,
+    Platform::Bitbucket,
+    Platform::Azure,
+];
 
 impl Platform {
     pub fn as_str(self) -> &'static str {
@@ -25,6 +31,7 @@ impl Platform {
             Platform::Github => "github",
             Platform::Gitlab => "gitlab",
             Platform::Bitbucket => "bitbucket",
+            Platform::Azure => "azure",
         }
     }
 
@@ -34,16 +41,47 @@ impl Platform {
             Platform::Github => "GitHub",
             Platform::Gitlab => "GitLab",
             Platform::Bitbucket => "Bitbucket",
+            Platform::Azure => "Azure DevOps",
         }
     }
 
-    /// The host a remote for this platform really points at, as opposed to the
-    /// `<platform>-<slug>` alias that may stand in for it.
+    /// The SSH host a remote for this platform really points at, as opposed to
+    /// the `<platform>-<slug>` alias that may stand in for it.
     pub fn canonical_host(self) -> &'static str {
         match self {
             Platform::Github => "github.com",
             Platform::Gitlab => "gitlab.com",
             Platform::Bitbucket => "bitbucket.org",
+            Platform::Azure => "ssh.dev.azure.com",
+        }
+    }
+
+    /// The host git asks for credentials on over HTTPS. Azure DevOps is the one
+    /// platform that serves SSH and HTTPS from different hosts.
+    pub fn https_host(self) -> &'static str {
+        match self {
+            Platform::Azure => "dev.azure.com",
+            other => other.canonical_host(),
+        }
+    }
+
+    /// Whether a remote's host is this platform's, under any name it answers
+    /// to. Azure DevOps still serves the pre-2018 `visualstudio.com` names:
+    /// `vs-ssh.visualstudio.com` for SSH and `<org>.visualstudio.com` for HTTPS.
+    pub fn owns_host(self, host: &str) -> bool {
+        let host = host.to_ascii_lowercase();
+        if host == self.canonical_host() || host == self.https_host() {
+            return true;
+        }
+        self == Platform::Azure && host.ends_with(".visualstudio.com")
+    }
+
+    /// The key type `ssh-keygen` is asked for. Azure DevOps accepts nothing but
+    /// RSA: its key form refuses anything not starting with `ssh-rsa`.
+    pub fn ssh_key_type(self) -> &'static str {
+        match self {
+            Platform::Azure => "rsa",
+            _ => "ed25519",
         }
     }
 }
@@ -132,6 +170,11 @@ pub struct Profile {
     pub gitlab: Option<PlatformAccount>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bitbucket: Option<PlatformAccount>,
+    /// The account here is one Azure DevOps organization: a personal access
+    /// token reaches only the organization it was issued in, so `username`
+    /// holds the organization's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub azure: Option<PlatformAccount>,
     pub is_active: bool,
 }
 
@@ -141,6 +184,7 @@ impl Profile {
             Platform::Github => self.github.as_ref(),
             Platform::Gitlab => self.gitlab.as_ref(),
             Platform::Bitbucket => self.bitbucket.as_ref(),
+            Platform::Azure => self.azure.as_ref(),
         }
     }
 
@@ -149,6 +193,7 @@ impl Profile {
             Platform::Github => self.github.as_mut(),
             Platform::Gitlab => self.gitlab.as_mut(),
             Platform::Bitbucket => self.bitbucket.as_mut(),
+            Platform::Azure => self.azure.as_mut(),
         }
     }
 
@@ -294,6 +339,11 @@ pub struct SshKeyPair {
     /// and on the account with nothing in the profile pointing at it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signing_error: Option<String>,
+    /// Where the user has to paste the public key themselves, on a platform
+    /// that does not let a token add one. The key exists but is not on the
+    /// account yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manual_upload_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -497,6 +547,7 @@ mod tests {
             github: Some(account("gh@example.com")),
             gitlab: Some(account("gl@example.com")),
             bitbucket: None,
+            azure: None,
             is_active: true,
         };
         assert_eq!(profile.active_identity().unwrap().1, "gl@example.com");

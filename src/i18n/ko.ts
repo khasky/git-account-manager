@@ -169,6 +169,14 @@ export const ko: Messages = {
       errCreds: `Atlassian 이메일과 API 토큰을 모두 입력하세요.`,
       emailPrivacy: `Bitbucket에는 noreply 주소가 없습니다. 개인 이메일이 커밋에 남지 않게 하려면 <a>Email aliases</a>에서 확인된 별칭을 추가하고 Git 이메일로 사용하세요. 커밋은 계정에 연결된 상태로 유지됩니다.`,
     },
+    azure: {
+      help: `Azure DevOps에는 조직에서 발급한 사용자 지정 범위의 <a>개인용 액세스 토큰</a>이 필요합니다.`,
+      orgPlaceholder: `조직 (dev.azure.com/<조직>)`,
+      tokenPlaceholder: `개인용 액세스 토큰`,
+      scopesHint: `범위 선택: User Profile (Read), Code (Read & write), Tokens (Read & manage).`,
+      errCreds: `조직과 개인용 액세스 토큰을 모두 입력하세요.`,
+      keyManual: `Azure DevOps는 RSA 키만 받으며 토큰으로 키를 추가할 수 없습니다. 생성된 키가 클립보드에 복사되고 <a>SSH public keys</a> 페이지가 열립니다. 그곳에 붙여 넣은 뒤 업로드를 눌러 추가되었는지 확인하세요.`,
+    },
     https: {
       label: `HTTPS 토큰`,
       placeholder: `https:// 원격용 토큰 붙여넣기`,
@@ -178,6 +186,7 @@ export const ko: Messages = {
       hintGithub: `설정에서 HTTPS credential helper를 켜면 <code>https://</code> 원격에 사용됩니다. <code>repo</code> 범위를 가진 <a>개인용 액세스 토큰</a>을 만드세요. 로그인 토큰으로는 HTTPS 푸시가 되지 않습니다.`,
       hintGitlab: `설정에서 HTTPS credential helper를 켜면 <code>https://</code> 원격에 사용됩니다. <code>write_repository</code> 권한의 <a>개인용 액세스 토큰</a>을 만드세요. 로그인 토큰은 몇 시간이면 만료됩니다.`,
       hintBitbucket: `설정에서 HTTPS credential helper를 켜면 <code>https://</code> 원격에 사용됩니다. 연결할 때 쓴 <a>API 토큰</a>이 이미 여기서 응답합니다. git이 다른 토큰을 쓰게 하려면 그때만 추가하세요.`,
+      hintAzure: `설정에서 HTTPS 자격 증명 도우미를 켜면 <code>https://</code> 원격에 사용됩니다. 연결할 때 쓴 <a>개인용 액세스 토큰</a>에 Code (Read & write)가 있으면 여기서도 그대로 응답합니다. git이 다른 토큰을 쓰게 할 때만 추가하세요.`,
     },
     editTitle: `프로필 편집`,
     newTitle: `새 프로필`,

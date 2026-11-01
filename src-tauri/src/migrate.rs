@@ -132,6 +132,7 @@ mod tests {
             }),
             gitlab: None,
             bitbucket: None,
+            azure: None,
             is_active: true,
         }
     }

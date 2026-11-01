@@ -78,6 +78,10 @@ pub fn parse_remote_url(url: &str) -> Option<RemoteRef> {
 
     let path = path.trim_start_matches('/').trim_end_matches('/');
     let path = path.strip_suffix(".git").unwrap_or(path);
+    let path = match is_azure_host(&host) {
+        true => azure_path(&host, path),
+        false => path.to_string(),
+    };
     let (owner, repo) = path.split_once('/')?;
     if owner.is_empty() || repo.is_empty() {
         return None;
@@ -88,6 +92,36 @@ pub fn parse_remote_url(url: &str) -> Option<RemoteRef> {
         owner: owner.to_string(),
         repo: repo.to_string(),
     })
+}
+
+/// An Azure DevOps host, or the `azure-<slug>` alias standing in for one.
+fn is_azure_host(host: &str) -> bool {
+    Platform::Azure.owns_host(host)
+        || host
+            .to_ascii_lowercase()
+            .starts_with(&format!("{}-", Platform::Azure.as_str()))
+}
+
+/// Reduces an Azure DevOps remote path to `<org>/<project>/<repo>`, so `owner`
+/// is the organization the way it is the namespace elsewhere.
+///
+/// The forms differ by protocol and age: SSH carries a `v3/` prefix
+/// (`v3/org/project/repo`), HTTPS a `_git` segment (`org/project/_git/repo`),
+/// and a `<org>.visualstudio.com` URL names the organization in the host and
+/// may still carry the `DefaultCollection` segment of on-premises TFS.
+fn azure_path(host: &str, path: &str) -> String {
+    let path = path.strip_prefix("v3/").unwrap_or(path);
+    let mut parts: Vec<&str> = path
+        .split('/')
+        .filter(|p| *p != "_git" && !p.eq_ignore_ascii_case("DefaultCollection"))
+        .collect();
+    let host = host.to_ascii_lowercase();
+    if let Some(org) = host.strip_suffix(".visualstudio.com") {
+        if org != "vs-ssh" && !org.contains('.') {
+            parts.insert(0, org);
+        }
+    }
+    parts.join("/")
 }
 
 /// The SSH host alias that pins a remote to one profile's key. Folders carry
@@ -101,7 +135,7 @@ pub fn host_alias(platform: Platform, profile: &Profile) -> String {
 /// included.
 pub fn platform_for_host(host: &str, profiles: &[Profile]) -> Option<Platform> {
     for platform in PLATFORMS {
-        if host.eq_ignore_ascii_case(platform.canonical_host()) {
+        if platform.owns_host(host) {
             return Some(platform);
         }
     }
@@ -294,6 +328,54 @@ mod tests {
         assert_eq!(parse_remote_url(""), None);
     }
 
+    /// Every form Azure DevOps hands out, current and legacy, reduces to the
+    /// same `<org>` owner and `<project>/<repo>` name, so a folder cloned over
+    /// SSH and one cloned over HTTPS are recognised as the same repository.
+    #[test]
+    fn parses_every_azure_devops_remote_form() {
+        let want = r("ssh.dev.azure.com", "acme", "Proj/app");
+        assert_eq!(
+            parse_remote_url("git@ssh.dev.azure.com:v3/acme/Proj/app"),
+            want
+        );
+        assert_eq!(
+            parse_remote_url("https://acme@dev.azure.com/acme/Proj/_git/app"),
+            r("dev.azure.com", "acme", "Proj/app")
+        );
+        assert_eq!(
+            parse_remote_url("acme@vs-ssh.visualstudio.com:v3/acme/Proj/app"),
+            r("vs-ssh.visualstudio.com", "acme", "Proj/app")
+        );
+        assert_eq!(
+            parse_remote_url("https://acme.visualstudio.com/DefaultCollection/Proj/_git/app"),
+            r("acme.visualstudio.com", "acme", "Proj/app")
+        );
+        assert_eq!(
+            parse_remote_url("git@azure-work:v3/acme/Proj/app"),
+            r("azure-work", "acme", "Proj/app")
+        );
+    }
+
+    /// The SSH and the HTTPS host are different names for one platform, and
+    /// the legacy names still resolve.
+    #[test]
+    fn every_azure_devops_host_resolves_to_azure() {
+        for host in [
+            "ssh.dev.azure.com",
+            "dev.azure.com",
+            "vs-ssh.visualstudio.com",
+            "acme.visualstudio.com",
+        ] {
+            assert_eq!(
+                platform_for_host(host, &[]),
+                Some(Platform::Azure),
+                "{}",
+                host
+            );
+        }
+        assert_eq!(platform_for_host("azure.com", &[]), None);
+    }
+
     fn profile() -> Profile {
         Profile {
             id: "p1".to_string(),
@@ -310,6 +392,7 @@ mod tests {
             }),
             gitlab: None,
             bitbucket: None,
+            azure: None,
             is_active: true,
         }
     }

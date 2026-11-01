@@ -154,7 +154,7 @@ pub fn activate_profile(app: tauri::AppHandle, id: String) -> Result<(), String>
 
 #[tauri::command]
 pub fn generate_ssh_key(email: String, key_name: String) -> Result<SshKeyPair, String> {
-    ssh::generate_key(&email, &key_name)
+    ssh::generate_key(&email, &key_name, "ed25519")
 }
 
 #[tauri::command]
@@ -212,16 +212,26 @@ pub async fn generate_and_upload_key(
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let pc_slug = hostname_slug_for_key();
+    let key_type = platform.ssh_key_type();
     let key_name = format!(
-        "id_ed25519_gam_{}_{}_{}_{}",
+        "id_{}_gam_{}_{}_{}_{}",
+        key_type,
         pc_slug,
         platform.as_str(),
         slug,
         ts
     );
 
-    let mut pair = ssh::generate_key(&email, &key_name)?;
+    let mut pair = ssh::generate_key(&email, &key_name, key_type)?;
     let pub_key = ssh::read_public_key(&pair.public_key_path)?;
+
+    // A token cannot add a key on Azure DevOps, so the key is handed to the
+    // user to paste instead, and the form checks for it once they have.
+    if let Some(url) = platform::manual_key_page(platform, &token) {
+        pair.manual_upload_url = Some(url);
+        return Ok(pair);
+    }
+
     let title = format!("git-account-manager: {} ({})", username, platform.label());
     platform::upload_ssh_key(platform, &token, &title, &pub_key).await?;
 
@@ -266,6 +276,25 @@ pub async fn connect_bitbucket(
     let token = format!("{}:{}", email.trim(), api_token.trim());
     let user = platform::verify_token(Platform::Bitbucket, &token).await?;
     secrets::set_token(&profile_id, Platform::Bitbucket, &token)?;
+    Ok(user)
+}
+
+/// Azure DevOps takes an organization and a personal access token, kept
+/// together as `org:token` so every later call knows which organization the
+/// token belongs to.
+#[tauri::command]
+pub async fn connect_azure(
+    profile_id: String,
+    organization: String,
+    token: String,
+) -> Result<PlatformUser, String> {
+    let token = format!(
+        "{}:{}",
+        platform::azure_org_from_input(&organization)?,
+        token.trim()
+    );
+    let user = platform::verify_token(Platform::Azure, &token).await?;
+    secrets::set_token(&profile_id, Platform::Azure, &token)?;
     Ok(user)
 }
 
@@ -421,7 +450,13 @@ pub async fn save_https_token(
             .map(|a| a.username.clone()))
     })?;
 
-    let checked = platform::check_https_token(platform, &token).await?;
+    // A bare Azure DevOps token says nothing of the organization it was issued
+    // in, and the account it is stored for is that organization.
+    let to_check = match (platform, &expected) {
+        (Platform::Azure, Some(org)) if !token.contains(':') => format!("{}:{}", org, token),
+        _ => token.clone(),
+    };
+    let checked = platform::check_https_token(platform, &to_check).await?;
 
     // A token from another account authenticates as that account, which is the
     // one thing this app exists to stop from happening quietly.
