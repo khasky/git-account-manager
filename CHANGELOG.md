@@ -2,6 +2,23 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.0.6](https://github.com/khasky/git-account-manager/compare/v1.0.5...v1.0.6) (2026-11-01)
+
+
+### Features
+
+* **cli:** add list, current and set to gam ([7c5c0e5](https://github.com/khasky/git-account-manager/commit/7c5c0e5134fecf50c718312580acc9d68fbe664b))
+* **platform:** connect azure devops organizations ([84f14f7](https://github.com/khasky/git-account-manager/commit/84f14f79abaad192933be7b2194f18255d36d187))
+* **platform:** verify an HTTPS token before storing ([dad229a](https://github.com/khasky/git-account-manager/commit/dad229a8c05fa8efb8c1e4119d82d13443aa458e))
+* **tauri:** re-apply the active profile on every launch ([ace522d](https://github.com/khasky/git-account-manager/commit/ace522dd395dff0faaadc2606729e835e069639b))
+* **ui:** check the HTTPS token on leaving the field ([58881fb](https://github.com/khasky/git-account-manager/commit/58881fba09539b6e753e828781e15a5337f90e04))
+
+
+### Bug Fixes
+
+* **guard:** name the folder's account to HTTPS credential helpers ([67c930b](https://github.com/khasky/git-account-manager/commit/67c930b8d035511db24aa804606f96bd984dc03c))
+* **ui:** return to the profile list as soon as a save finishes ([ade5081](https://github.com/khasky/git-account-manager/commit/ade5081822f81cce84ce3e65c02eca3a15421fca))
+
 ## [1.0.5](https://github.com/khasky/git-account-manager/compare/v1.0.4...v1.0.5) (2026-09-15)
 
 
