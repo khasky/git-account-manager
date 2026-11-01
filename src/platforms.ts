@@ -27,6 +27,28 @@ export function profileUrl(platform: PlatformId, username: string): string {
   return PROFILE_URL_BASE[platform] + username;
 }
 
+/** The organization out of what a user typed or pasted: its bare name, a
+ *  `dev.azure.com/<org>` URL or a legacy `<org>.visualstudio.com` host. Mirrors
+ *  `platform::azure_org_from_input`, which stores the same answer on connect.
+ *  Empty when nothing usable is there. */
+export function azureOrganization(input: string): string {
+  let raw = input.trim().replace(/^https?:\/\//i, "");
+  const slash = raw.indexOf("/");
+  const at = (slash < 0 ? raw : raw.slice(0, slash)).lastIndexOf("@");
+  if (at >= 0) raw = raw.slice(at + 1);
+  const host = raw.split("/")[0].toLowerCase();
+
+  let org: string;
+  if (raw.toLowerCase().startsWith("dev.azure.com/")) {
+    org = raw.slice("dev.azure.com/".length).split("/")[0];
+  } else if (host.endsWith(".visualstudio.com")) {
+    org = raw.split("/")[0].slice(0, -".visualstudio.com".length);
+  } else {
+    org = raw.replace(/\/+$/, "");
+  }
+  return /^[A-Za-z0-9._-]+$/.test(org) ? org : "";
+}
+
 /** Where each platform issues the token git authenticates HTTPS remotes with.
  *  Azure DevOps issues tokens per organization; without one, `dev.azure.com`
  *  opens the organization the user last visited. */
@@ -39,14 +61,19 @@ export function tokenPageUrl(platform: PlatformId, username: string): string {
     case "bitbucket":
       return "https://id.atlassian.com/manage-profile/security/api-tokens";
     case "azure":
-      return username
-        ? `https://dev.azure.com/${encodeURIComponent(username)}/_usersSettings/tokens`
-        : "https://dev.azure.com/";
+      return azureSettingsUrl(username, "tokens");
   }
 }
 
 /** Azure DevOps keeps SSH keys per organization, and a token cannot add one,
  *  so this is where the user pastes it. */
 export function azureKeysPageUrl(organization: string): string {
-  return `https://dev.azure.com/${encodeURIComponent(organization)}/_usersSettings/keys`;
+  return azureSettingsUrl(organization, "keys");
+}
+
+function azureSettingsUrl(input: string, page: "tokens" | "keys"): string {
+  const org = azureOrganization(input);
+  return org
+    ? `https://dev.azure.com/${encodeURIComponent(org)}/_usersSettings/${page}`
+    : "https://dev.azure.com/";
 }
