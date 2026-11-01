@@ -84,18 +84,18 @@ function App() {
     // never open. It walks each folder, so it is deliberately not awaited
     // before the list renders — a count arriving a moment later beats a window
     // that shows nothing until Git has been asked.
-    try {
-      const report = await api.doctor();
-      const counts: Record<string, number> = {};
-      for (const folder of report.folders) {
-        if (!folder.ok) {
-          counts[folder.profile_id] = (counts[folder.profile_id] ?? 0) + 1;
+    api
+      .doctor()
+      .then((report) => {
+        const counts: Record<string, number> = {};
+        for (const folder of report.folders) {
+          if (!folder.ok) {
+            counts[folder.profile_id] = (counts[folder.profile_id] ?? 0) + 1;
+          }
         }
-      }
-      setProblems(counts);
-    } catch (e) {
-      console.error("Failed to read folder health:", e);
-    }
+        setProblems(counts);
+      })
+      .catch((e) => console.error("Failed to read folder health:", e));
   }, []);
 
   // A folder that stops matching its rule is not something the user goes
