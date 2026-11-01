@@ -2,6 +2,13 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.0.7](https://github.com/khasky/git-account-manager/compare/v1.0.6...v1.0.7) (2026-11-01)
+
+
+### Bug Fixes
+
+* **ui:** open the azure token page of the typed organization ([85e14c9](https://github.com/khasky/git-account-manager/commit/85e14c9d634d3b22546cfbf168ddc607c0911524))
+
 ## [1.0.6](https://github.com/khasky/git-account-manager/compare/v1.0.5...v1.0.6) (2026-11-01)
 
 
