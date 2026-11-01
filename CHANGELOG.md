@@ -2,6 +2,13 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.0.8](https://github.com/khasky/git-account-manager/compare/v1.0.7...v1.0.8) (2026-11-01)
+
+
+### Features
+
+* **platform:** connect codeberg and hugging face accounts ([5892be8](https://github.com/khasky/git-account-manager/commit/5892be8974507b1865d4966383427cad9c8ce110))
+
 ## [1.0.7](https://github.com/khasky/git-account-manager/compare/v1.0.6...v1.0.7) (2026-11-01)
 
 
