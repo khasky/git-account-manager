@@ -130,11 +130,13 @@ and the file it points at carries everything a repository under that folder need
 	email = "you@work.example"
 [core]
 	sshCommand = "ssh -i \"C:/Users/you/.ssh/id_ed25519_work\" -o IdentitiesOnly=yes"
+[credential "https://github.com"]
+	username = "you-at-work"
 [gam]
 	allowedEmail = "you@work.example"
 ```
 
-That reaches **every repository under the folder at any depth**, including one cloned there tomorrow, with no scan and no decision to make. `core.sshCommand` is what carries the key, so `origin` keeps the canonical address and still pushes as the right account whichever profile is active. Everything outside the generated region is preserved and `~/.gitconfig` is backed up once.
+That reaches **every repository under the folder at any depth**, including one cloned there tomorrow, with no scan and no decision to make. `core.sshCommand` is what carries the key, so `origin` keeps the canonical address and still pushes as the right account whichever profile is active. `credential.<host>.username` does the same for HTTPS remotes: git names the folder's account to the credential helper, so this app's helper or Git Credential Manager answers as that account instead of the active one or the one it last signed in with. Everything outside the generated region is preserved and `~/.gitconfig` is backed up once.
 
 The folder view lists the whole hierarchy a rule covers, indented by depth, so what a folder actually claims is visible before you save it. A repository whose remote points at a different site than the folder's platform is marked: the rule still covers it, and if that is wrong it needs a folder of its own.
 
@@ -176,6 +178,18 @@ Download the latest release for your OS from the [Releases](https://github.com/k
 | **Linux**   | Download the `.AppImage`, `chmod +x Git-Account-Manager-*-linux-x64.AppImage`, then run it.               |
 
 > First Windows launch may show a SmartScreen warning (the installer is not yet code-signed) — see [Troubleshooting](#troubleshooting).
+
+### Command line
+
+The installer places a `gam` binary next to the app. It is not added to `PATH`, so call it by its full path or add the install folder yourself.
+
+| Command             | What it does                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `gam list`          | Lists the profiles and their accounts; `*` marks the active one.                                 |
+| `gam current`       | Shows the active profile, the folder rule over the current directory and the identity git uses. |
+| `gam set <profile>` | Activates a profile by name or id, exactly as the app's *Activate* button does.                  |
+
+The app re-applies the active profile on every launch, so `~/.ssh/config` and the global identity are restored if another tool rewrote them.
 
 ## Security Notes
 
