@@ -7,13 +7,12 @@
   "packageFiles": [{ "filename": "package.json", "type": "json" }],
   "bumpFiles": [
     { "filename": "package.json", "type": "json" },
-    { "filename": "src-tauri/tauri.conf.json", "type": "json" },
     {
-      "filename": "src-tauri/Cargo.toml",
+      "filename": "Cargo.toml",
       "updater": "scripts/cargo-toml-updater.cjs"
     },
     {
-      "filename": "src-tauri/Cargo.lock",
+      "filename": "Cargo.lock",
       "updater": "scripts/cargo-lock-updater.cjs"
     }
   ],

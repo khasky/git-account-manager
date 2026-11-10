@@ -1,4 +1,4 @@
-// commit-and-tag-version updater for src-tauri/Cargo.toml.
+// commit-and-tag-version updater for Cargo.toml.
 //
 // Bumps the [package] version only. That version is the first line-anchored
 // `version = "..."` in the file; every dependency uses the inline form

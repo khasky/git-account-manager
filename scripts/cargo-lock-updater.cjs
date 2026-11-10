@@ -1,4 +1,4 @@
-// commit-and-tag-version updater for src-tauri/Cargo.lock.
+// commit-and-tag-version updater for Cargo.lock.
 //
 // Bumps the version of this crate's own [[package]] entry only, identified by
 // its `name`. In Cargo.lock each package block lists `name` immediately
