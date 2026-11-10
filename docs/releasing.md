@@ -17,7 +17,7 @@ Rehearse the packaging when the `[package.metadata.packager]` config, the icons,
 gh workflow run "Build & Release" --ref main
 ```
 
-A `workflow_dispatch` run builds all four platforms and keeps the installers as CI artifacts without signing or publishing anything. Failing there costs a rerun; failing on a tag leaves a half-published release to clean up.
+A `workflow_dispatch` run builds all four platforms and signs them and keeps them as CI artifacts without publishing anything. Failing there costs a rerun; failing on a tag leaves a half-published release to clean up.
 
 ## The first release
 
@@ -114,9 +114,9 @@ gh release edit v<version> --notes-file release-notes.md
 
 ## Signing and the updater
 
-Installers are signed with a [minisign](https://jedisct1.github.io/minisign/) key pair; `cargo packager signer sign` writes each `.sig`. It is the same key pair the Tauri releases were signed with, so copies installed before the move to GPUI keep accepting updates. The private half lives in the `TAURI_SIGNING_PRIVATE_KEY` repository secret, with `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` alongside it when the key carries a passphrase; the secret names stayed so nothing had to be re-entered. The public half is `PUBLIC_KEY` in `src/updater.rs`.
+Installers are signed with a [minisign](https://jedisct1.github.io/minisign/) key pair; the Tauri CLI (`tauri signer sign`) writes each `.sig`, because the minisign inside `cargo packager signer` cannot decrypt a key whose password is empty. It is the same key pair the Tauri releases were signed with, so copies installed before the move to GPUI keep accepting updates. The private half lives in the `TAURI_SIGNING_PRIVATE_KEY` repository secret, with `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` alongside it when the key carries a passphrase; the secret names stayed so nothing had to be re-entered. The public half is `PUBLIC_KEY` in `src/updater.rs`.
 
-A local `pnpm build:desktop` signs nothing. On a tag the `build` job checks the secret before building and fails if it is missing, since unsigned payloads would leave `finalize-release` unable to write `latest.json`.
+A local `pnpm build:desktop` signs nothing. The `build` job checks the secret before building and fails if it is missing, since unsigned payloads would leave `finalize-release` unable to write `latest.json`.
 
 **Losing the private key ends the update path for every installed copy.** A new key means a new `PUBLIC_KEY` in `src/updater.rs`, and only builds signed by the old key are accepted by the apps already out there; those users have to reinstall by hand.
 

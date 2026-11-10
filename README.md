@@ -335,7 +335,7 @@ Cutting a release is `pnpm release` followed by `git push --follow-tags` — the
 
 The app checks **GitHub Releases** on startup and, when a newer signed build exists, shows a banner that downloads, installs, and relaunches in one click. The updater endpoint and signing **public** key live in [`src/updater.rs`](src/updater.rs).
 
-Every build is signed with a [minisign](https://jedisct1.github.io/minisign/) key pair (`cargo packager signer generate`). The signatures are embedded in `latest.json`, which is the only thing the updater fetches to decide whether an update is genuine.
+Every build is signed with a [minisign](https://jedisct1.github.io/minisign/) key pair (`tauri signer generate`). The signatures are embedded in `latest.json`, which is the only thing the updater fetches to decide whether an update is genuine.
 
 ### IDE Setup
 
