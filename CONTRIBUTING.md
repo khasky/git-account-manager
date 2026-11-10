@@ -26,7 +26,7 @@ Outside contributors work in a fork; the branches in this repo belong to the mai
 ```bash
 git switch -c fix/ssh-config-rewrite main
 # commits following the convention below
-pnpm build:web && cargo test --all-targets --manifest-path src-tauri/Cargo.toml
+cargo test --all-targets
 git push -u origin fix/ssh-config-rewrite
 ```
 
@@ -41,16 +41,15 @@ PRs land as a **squash merge**, so `main` keeps a linear history where 1 PR is 1
 A pull request runs the `smoke` job on Linux and Windows. Both platforms are built because a fair amount of the Rust side sits behind `#[cfg(windows)]` or `#[cfg(unix)]`. Reproduce it locally with:
 
 ```bash
-pnpm check:tauri                                                            # the tauri crate and @tauri-apps/api must share a major/minor
-pnpm build:web                                                              # tsc --noEmit plus the Vite build
-cargo fmt --check --manifest-path src-tauri/Cargo.toml
-cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
-cargo test --all-targets --manifest-path src-tauri/Cargo.toml
+pnpm lint && pnpm test   # release tooling under scripts/
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
 ```
 
 Formatting and lints gate in CI rather than in a hook: `commit-msg` is the only hook installed, and a fork's clone runs none of ours at all.
 
-Installers are not built for a pull request — bundling needs the signing secrets, which a fork never receives. They are produced when a maintainer pushes a `v*` tag.
+Installers are not built for a pull request — packaging needs the signing secrets, which a fork never receives. They are produced when a maintainer pushes a `v*` tag.
 
 ## What CI runs, and when
 
@@ -59,11 +58,12 @@ CI is one workflow, [`.github/workflows/build.yml`](.github/workflows/build.yml)
 | Job | Runs on | Does |
 | --- | --- | --- |
 | `pr-title` | pull requests | validates the title a squash merge will use as the commit message |
-| `smoke` | pushes and PRs, never tags | the gate above, on Linux and Windows |
-| `build` | `v*` tags, `workflow_dispatch` | bundles all four platforms; on a tag, publishes the release |
-| `finalize-release` | `v*` tags | renames the installers and writes the release notes |
+| `smoke` | pushes, PRs and tags | the gate above, on Linux and Windows |
+| `create-release` | `v*` tags | creates the draft release the builds upload to |
+| `build` | `v*` tags, `workflow_dispatch` | packages all four platforms; on a tag, uploads them to the draft |
+| `finalize-release` | `v*` tags | renames the installers, writes `latest.json` and the release notes |
 
-Your PR reaches `pr-title` and `smoke`. The other two are the maintainer's path — [docs/releasing.md](docs/releasing.md).
+Your PR reaches `pr-title` and `smoke`. The rest are the maintainer's path — [docs/releasing.md](docs/releasing.md).
 
 ## Commit messages
 

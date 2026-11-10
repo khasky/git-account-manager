@@ -32,7 +32,7 @@ This is a solo, unpaid project: there is no bug bounty.
 
 In scope: this repository — the desktop app and everything it writes or reads on your machine (the OS credential store entries, `profiles.json`, `~/.ssh/config`, global and per-repository Git config, the installed `pre-push` hook), the OAuth flows it drives, and the signed-update path.
 
-Out of scope: vulnerabilities in GitHub, GitLab, Bitbucket, Git itself, OpenSSH, Tauri, or the OS credential store — report those to their own programs. Also out of scope: findings that require physical access to an unlocked device, an attacker who already has code execution as your OS user, or social engineering of the maintainer.
+Out of scope: vulnerabilities in GitHub, GitLab, Bitbucket, Git itself, OpenSSH, GPUI, or the OS credential store — report those to their own programs. Also out of scope: findings that require physical access to an unlocked device, an attacker who already has code execution as your OS user, or social engineering of the maintainer.
 
 ## Safe harbor
 

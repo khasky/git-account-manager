@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src-tauri/icons/128x128.png" width="104" alt="Git Account Manager">
+<img src="icons/128x128.png" width="104" alt="Git Account Manager">
 
 # Git Account Manager
 
@@ -16,7 +16,7 @@ A desktop Git account manager for identity switching across popular code hosting
   <img src="screenshots/dark1.webp" width="760" alt="Profile list with three Git identities, one active">
 </picture>
 
-<sub>Built with <b>Tauri v2</b> (Rust) · <b>React</b> · <b>TypeScript</b> · <b>Tailwind CSS</b></sub>
+<sub>Built with <b>Rust</b> · <b>GPUI</b> (<b>GPUI Kit</b>)</sub>
 
 </div>
 
@@ -262,10 +262,10 @@ xcode-select --install
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-sudo apt install build-essential libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+sudo apt install build-essential libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libfontconfig-dev
 ```
 
-`build-essential` provides **gcc** and the system linker (`cc` / `ld`) that Rust needs; without it the build fails with `error: linker 'cc' not found`. The remaining packages are Tauri's WebView and runtime dependencies. (See the [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for other distros.)
+`build-essential` provides **gcc** and the system linker (`cc` / `ld`) that Rust needs; without it the build fails with `error: linker 'cc' not found`. The remaining packages are what GPUI needs to open a window (X11/Wayland, Vulkan, fontconfig).
 
 #### Visual C++ Build Tools (Windows only)
 
@@ -287,25 +287,23 @@ ssh-keygen -V
 ### Install & Run
 
 ```bash
-pnpm install
+pnpm install   # commit hooks and release tooling only; the app itself is plain Cargo
 ```
 
 **Development**
 
-| Target                                                         | Command            | Notes                                                              |
-| -------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------ |
-| **Web** (browser only, faster UI work; Tauri APIs unavailable) | `pnpm dev:web`     | Vite on [http://localhost:1420](http://localhost:1420)             |
-| **Desktop** (full Tauri shell)                                 | `pnpm dev:desktop` | Same as `pnpm tauri dev`; starts the Vite dev server automatically |
-| **Screenshots** (regenerate `screenshots/`)                    | `pnpm screenshots` | Drives the real UI against an invented fixture — see [`scripts/screenshots/`](scripts/screenshots/). Needs `pnpm exec playwright install chromium` once |
+| Target                                      | Command            | Notes                                                                                           |
+| ------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------- |
+| **Desktop**                                 | `pnpm dev:desktop` | Same as `cargo run`                                                                             |
+| **Screenshots** (regenerate `screenshots/`) | `pnpm screenshots` | Renders the real window against an invented fixture — see [`src/ui/screenshots.rs`](src/ui/screenshots.rs) |
 
 ### Build
 
-| Target      | Command              | Output                                                               |
-| ----------- | -------------------- | -------------------------------------------------------------------- |
-| **Web**     | `pnpm build:web`     | Static files in `dist/`                                              |
-| **Desktop** | `pnpm build:desktop` | Same as `pnpm tauri build`; runs `build:web` first, then Rust bundle |
+| Target      | Command              | Output                                                                                                         |
+| ----------- | -------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Desktop** | `pnpm build:desktop` | A release build, then the installers via [`cargo-packager`](https://github.com/crabnebula-dev/cargo-packager) (`cargo install cargo-packager --locked`) |
 
-Installers are generated under `src-tauri/target/release/bundle/`.
+Installers are generated under `target/packager/`.
 
 <details>
 <summary><b>Windows packaging: why not MSIX / Microsoft Store?</b></summary>
@@ -327,21 +325,21 @@ Until these are adapted (unvirtualized registry writes for TortoiseGit, a `Start
 
 ### GitHub releases (CI)
 
-Pushing a `v*` tag triggers the [Build & Release](.github/workflows/build.yml) workflow: it bundles installers for Windows, Linux, and macOS (ARM and Intel) via [`tauri-action`](https://github.com/tauri-apps/tauri-action) and publishes them to a GitHub Release together with the updater manifest, `latest.json`.
+Pushing a `v*` tag triggers the [Build & Release](.github/workflows/build.yml) workflow: it bundles installers for Windows, Linux, and macOS (ARM and Intel) via [`cargo-packager`](https://github.com/crabnebula-dev/cargo-packager) and publishes them to a GitHub Release together with the updater manifest, `latest.json`.
 
-A push to `main` runs the typecheck-and-test job only; a manual `workflow_dispatch` run bundles all four platforms and keeps the installers as CI artifacts without publishing.
+A push to `main` runs the lint-and-test job only; a manual `workflow_dispatch` run bundles all four platforms and keeps the installers as CI artifacts without publishing.
 
-Cutting a release is `pnpm release` followed by `git push --follow-tags` — the version bump across all four version files, the changelog, the commit, and the tag all come from that one command. The full runbook is [docs/releasing.md](docs/releasing.md).
+Cutting a release is `pnpm release` followed by `git push --follow-tags` — the version bump across all three version files, the changelog, the commit, and the tag all come from that one command. The full runbook is [docs/releasing.md](docs/releasing.md).
 
-### Auto-updates (tauri-plugin-updater)
+### Auto-updates
 
-The app checks **GitHub Releases** on startup and, when a newer signed build exists, shows a banner that downloads, installs, and relaunches in one click. The updater endpoint and signing **public** key live in `src-tauri/tauri.conf.json` under `plugins.updater`.
+The app checks **GitHub Releases** on startup and, when a newer signed build exists, shows a banner that downloads, installs, and relaunches in one click. The updater endpoint and signing **public** key live in [`src/updater.rs`](src/updater.rs).
 
-Every build is signed with a [minisign](https://jedisct1.github.io/minisign/) key pair generated by `pnpm tauri signer generate`. The signatures are embedded in `latest.json`, which is the only thing the updater fetches to decide whether an update is genuine.
+Every build is signed with a [minisign](https://jedisct1.github.io/minisign/) key pair (`cargo packager signer generate`). The signatures are embedded in `latest.json`, which is the only thing the updater fetches to decide whether an update is genuine.
 
 ### IDE Setup
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- [VS Code](https://code.visualstudio.com/) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
 
 ## Troubleshooting
 

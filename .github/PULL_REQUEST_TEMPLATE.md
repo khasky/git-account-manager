@@ -17,8 +17,8 @@
      the commit convention — see CONTRIBUTING.md. -->
 
 - [ ] PR title follows Conventional Commits (`fix(ssh): …`)
-- [ ] `pnpm build:web` passes (typecheck + frontend build)
-- [ ] `cargo test --all-targets --manifest-path src-tauri/Cargo.toml` passes
+- [ ] `cargo clippy --all-targets -- -D warnings` is clean
+- [ ] `cargo test --all-targets` passes
 - [ ] Rust changes behind `#[cfg(windows)]` / `#[cfg(unix)]` were checked on both, or the platform is named above
-- [ ] User-visible strings added to every `src/i18n/*.ts` locale, if the PR adds any
+- [ ] User-visible strings added to every `locales/*.json` file, if the PR adds any
 - [ ] No secret, token, or private key path committed
