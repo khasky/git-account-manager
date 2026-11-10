@@ -41,11 +41,10 @@ jobs:
           # squashed away on merge - only the title survives.
           validateSingleCommit: false
 
-  # Everyday feedback: typecheck, unit tests and a compile of the Rust side on
-  # the two platforms that carry `#[cfg]` branches. No bundling, no signing key,
-  # so it also passes on pull requests from forks, which never receive secrets.
+  # Everyday feedback: formatting, lints and tests on the two platforms that
+  # carry the most `#[cfg]` branches. No packaging, no signing key, so it also
+  # passes on pull requests from forks, which never receive secrets.
   smoke:
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,6 +56,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          components: clippy, rustfmt
 
       - name: Install pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -68,59 +69,66 @@ jobs:
           cache: pnpm
 
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            librsvg2-dev \
-            patchelf \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libfontconfig-dev
 
-      - name: Install frontend dependencies
-        run: pnpm install
-
-      # `tauri build` makes this same comparison, and only the tag-only `build`
-      # job reaches it - so a drifted pair surfaced as a failed release instead
-      # of as a failed push. Runs before the Rust steps to fail fast.
-      - name: Check Tauri version parity
-        run: pnpm check:tauri
+      - name: Install tooling
+        run: pnpm install --frozen-lockfile
 
       - name: Rust cache
         uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          workspaces: src-tauri -> target
           # Debug artifacts, unlike the release ones the build job caches.
           key: smoke
 
-      - name: Typecheck and build frontend
-        run: pnpm build:web
-
       # Formatting and lints gate here rather than in a hook: `commit-msg` is the
       # only hook installed, and a fork's clone runs no hook of ours at all.
-      - name: Lint and format frontend
+      - name: Lint tooling
         run: pnpm lint
 
-      - name: Test frontend
+      - name: Test tooling
         run: pnpm test
 
       - name: Check Rust formatting
-        run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
+        run: cargo fmt --check
 
       - name: Lint Rust
-        run: cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
-      - name: Test and compile Rust
-        run: cargo test --all-targets --manifest-path src-tauri/Cargo.toml
+      - name: Test Rust
+        run: cargo test --locked --all-targets
 
-  # The full four-platform bundle. Only a `v*` tag needs installers, and only a
-  # tag has the signing secrets; running this per commit spent ~40 runner-minutes
-  # to rebuild artifacts nobody downloaded. Use workflow_dispatch to exercise it
-  # before tagging whenever the bundler config or icons changed — that path is
-  # not covered by `smoke`.
+  # The release is created as a draft so nobody downloads a half-uploaded set;
+  # finalize-release publishes nothing either, the draft is published by hand.
+  create-release:
+    needs: smoke
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 ||
+            gh release create "$TAG" --draft --verify-tag --title "${TAG#v}" \
+              --notes "Builds are in progress. Publish this draft after all platform jobs succeed."
+
+  # The full four-platform package. Only a `v*` tag needs installers, and only a
+  # tag has the signing secrets. Use workflow_dispatch to exercise it before
+  # tagging whenever the packager config or icons changed - `smoke` does not
+  # cover that path.
   build:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+    needs: [smoke, create-release]
+    if: >-
+      always() && needs.smoke.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/v') && needs.create-release.result == 'success' ||
+      github.event_name == 'workflow_dispatch')
     permissions:
       contents: write
     strategy:
@@ -129,15 +137,22 @@ jobs:
         include:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
+            formats: nsis,wix
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            formats: appimage,deb
           - platform: macos-latest
             target: aarch64-apple-darwin
+            formats: app,dmg
           # macos-13 retired Dec 2025; Intel macOS builds use macos-15-intel until Aug 2027
           - platform: macos-15-intel
             target: x86_64-apple-darwin
+            formats: app,dmg
 
     runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -146,85 +161,87 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            librsvg2-dev \
-            patchelf \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev
-
-      - name: Install frontend dependencies
-        run: pnpm install
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libfontconfig-dev libfuse2
 
       - name: Rust cache
         uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          workspaces: src-tauri -> target
+          key: release
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+      # The updater rejects anything not signed with this key, so a build that
+      # cannot sign must fail here rather than publish unusable payloads.
+      - name: Check signing key
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Required to sign updater artifacts (latest.json + *.sig). Generate the
-          # key pair with `pnpm tauri signer generate` and store both as repo secrets.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          # The base config has `createUpdaterArtifacts: false` so local
-          # `pnpm build:desktop` builds without needing the signing key. CI always
-          # merges tauri.updater.conf.json to flip it on and produce signed
-          # *.sig + latest.json (requires the secrets above).
-          args: --target ${{ matrix.target }} --config src-tauri/tauri.updater.conf.json
-          tauriScript: pnpm tauri
-          # On a `v*` tag push, create/append to a GitHub Release and publish the
-          # signed installers + updater manifest (latest.json). Empty on branch/PR
-          # runs, where tauri-action only builds (no release).
-          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          # The tag keeps its `v` prefix - the workflow trigger, the asset
-          # renamer and latest.json all glob it. Only the release title drops it,
-          # so the page reads the same version as the CHANGELOG heading.
-          # tauri-action substitutes __VERSION__ from src-tauri/tauri.conf.json,
-          # which commit-and-tag-version bumps in the same commit as the tag.
-          releaseName: __VERSION__
-          # Fallback body only. The `release-notes` job below replaces this with
-          # GitHub's auto-generated notes ("Full Changelog: <prev>...<tag>" link)
-          # once every platform's build has finished.
-          releaseBody: "Auto-generated release. Existing installs update in-app via the built-in updater."
-          releaseDraft: false
-          prerelease: false
+        run: test -n "$TAURI_SIGNING_PRIVATE_KEY"
+
+      - name: Build application
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager@0.11.8 --locked
+
+      - name: Package application
+        run: cargo packager --release --target ${{ matrix.target }} --formats ${{ matrix.formats }}
+
+      # The updater replaces the whole bundle, so macOS gets it as an archive.
+      - name: Archive macOS application for the updater
+        if: runner.os == 'macOS'
+        run: |
+          case "${{ matrix.target }}" in
+            aarch64-*) architecture=aarch64 ;;
+            *) architecture=x64 ;;
+          esac
+          tar -czf "target/packager/Git-Account-Manager_${architecture}.app.tar.gz" -C target/packager "Git Account Manager.app"
+
+      # The key pair is the one the Tauri releases were signed with, so copies
+      # installed before this updater existed still accept these payloads.
+      - name: Sign packages
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          shopt -s nullglob
+          for file in target/packager/*-setup.exe target/packager/*.msi target/packager/*.AppImage target/packager/*.deb target/packager/*.dmg target/packager/*.app.tar.gz; do
+            cargo packager signer sign "$file"
+          done
+
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          shopt -s nullglob
+          gh release upload "$TAG" --clobber target/packager/*-setup.exe target/packager/*.msi target/packager/*.AppImage target/packager/*.deb target/packager/*.dmg target/packager/*.app.tar.gz target/packager/*.sig
 
       # A manual run publishes no release, so keep the installers as CI artifacts
       # for download. Tag builds upload to the release instead.
-      - name: Upload artifacts
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+      - name: Upload manual build artifacts
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binaries-${{ matrix.target }}
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
-            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
-            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
-            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
-            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
-          if-no-files-found: ignore
+            target/packager/*-setup.exe
+            target/packager/*.msi
+            target/packager/*.AppImage
+            target/packager/*.deb
+            target/packager/*.dmg
+            target/packager/*.app.tar.gz
+          if-no-files-found: error
 
-  # tauri-action publishes the release with the signed updater artifacts, but
-  # under Tauri's own bundle filenames and with a static body. Both are fixed
-  # here, after every platform build has finished, in a job of its own so it
-  # never races tauri-action creating the release.
+  # Runs once every platform has uploaded: renames the installers to
+  # Git-Account-Manager-<version>-<os>-<arch>[-setup].<ext>, writes latest.json
+  # with the signatures embedded, and replaces the placeholder notes with the
+  # CHANGELOG section.
   finalize-release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
@@ -234,44 +251,35 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      # Git-Account-Manager-<version>-<os>-<arch>[-setup].<ext> for every
-      # installer, with latest.json re-pointed at the new URLs. See the script
-      # header for why this is a post-publish rename; `--self-test` covers the
-      # naming rules locally.
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
       - name: Rename release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-        run: bash scripts/rename-release-assets.sh
+        run: node scripts/rename-release-assets.mjs
 
-      # Every signature the updater checks is already embedded in latest.json,
-      # which the rename step just rewrote - it never fetches a .sig asset. The
-      # loose files are 400 bytes each and only pad the download list, so they
-      # go once latest.json carries them.
+      # Every signature the updater checks is now embedded in latest.json, which
+      # never points at a .sig asset; the loose files only pad the download list.
       - name: Drop detached signature assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh api "repos/$REPO/releases/tags/$TAG" \
-            --jq '.assets[] | select(.name | endswith(".sig")) | "\(.id) \(.name)"' |
-            while read -r id name; do
-              gh api --method DELETE "repos/$REPO/releases/assets/$id"
-              echo "dropped $name"
+          gh release view "$TAG" --repo "$REPO" --json assets \
+            --jq '.assets[].name | select(endswith(".sig"))' |
+            while read -r name; do
+              gh release delete-asset "$TAG" "$name" --repo "$REPO" --yes
             done
 
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-
-      # GitHub's own generate-notes builds its list from the pull requests in the
-      # tag range, and everything here lands on `main` as a direct push - so it
-      # returns a bare compare link over an otherwise empty body.
-      # CHANGELOG.md, written by commit-and-tag-version from those same commits,
-      # already holds the text the page was missing.
+      # GitHub's own generate-notes builds its list from pull requests, and
+      # everything here lands on `main` as a direct push. CHANGELOG.md, written
+      # by commit-and-tag-version from those same commits, holds the text.
       - name: Generate release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
