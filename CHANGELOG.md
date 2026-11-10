@@ -2,6 +2,13 @@
 
 All notable changes are documented here. The format follows [Conventional Commits](https://www.conventionalcommits.org/) and the version scheme is [Semantic Versioning](https://semver.org/).
 
+## [1.1.0](https://github.com/khasky/git-account-manager/compare/v1.0.8...v1.1.0) (2026-11-10)
+
+
+### Features
+
+* **ui:** replace Tauri with a native GPUI interface ([1e2cd7e](https://github.com/khasky/git-account-manager/commit/1e2cd7e81d57035c2209e2ca83e8f8b4b74334c3))
+
 ## [1.0.8](https://github.com/khasky/git-account-manager/compare/v1.0.7...v1.0.8) (2026-11-01)
 
 
