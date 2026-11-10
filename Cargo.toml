@@ -46,7 +46,7 @@ minisign-verify = "0.3"
 png = "0.18"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.55"
+winreg = "0.56"
 windows-native-keyring-store = "1"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
